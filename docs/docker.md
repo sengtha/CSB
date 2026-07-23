@@ -1,6 +1,12 @@
 # Docker deployment
 
-Two compose stacks: a one-command **demo stack** and a **ministry validator node**. For hosting them on Elestio, see [`docs/elestio.md`](elestio.md).
+Three compose stacks. For hosting them on Elestio, see [`docs/elestio.md`](elestio.md).
+
+| File | What it runs | When |
+|---|---|---|
+| `docker-compose.app.yml` | **The real thing**: UIs + contract deployment against the live CSB L1 | Once validators are up |
+| `docker-compose.validator.yml` | A ministry validator node of the CSB L1 | Per institution |
+| `docker-compose.demo.yml` | UIs + a simulated devnet chain, seeded | Before the L1 exists, offline demos |
 
 ## Demo stack (one command)
 
@@ -43,16 +49,20 @@ Ministry ops checklist (production):
 3. Monitoring: `info.isBootstrapped`, `health.health`, disk headroom; alert to the shared NOC during the phase where operations are centralized.
 4. Upgrades are coordinated by the council (validator versions must stay within the network's compatibility window).
 
-## App image standalone
+## App stack against the real CSB L1
 
-The demo server can run against any existing deployment (e.g. the VM L1 from `docs/cloud-deployment.md`):
+`docker-compose.app.yml` runs the wallet/explorer/admin UIs against the **live chain** — no simulated devnet anywhere. One-time contract deployment (profile `deploy`), then the gated app:
 
 ```bash
-docker build -t csb-app .
-docker run -p 8080:8080 \
-  -e CSB_RPC_URL='http://<node>:9650/ext/bc/<blockchainID>/rpc' \
-  -e CSB_DEPLOYMENTS_FILE=/data/deployments.json \
-  -e EXPLORER_PASSCODE='<passcode>' \
-  -v $(pwd)/demo/deployments.json:/data/deployments.json:ro \
-  csb-app
+export CSB_RPC_URL='http://<node>:9650/ext/bc/<blockchainID>/rpc'
+export CSB_DEPLOYER_KEY='<txAllowList-admin key>'
+docker compose -f docker-compose.app.yml --profile deploy run --rm deployer
+
+EXPLORER_PASSCODE='<strong passcode>' docker compose -f docker-compose.app.yml up -d app
 ```
+
+Run it on (or next to) a validator host and point `CSB_RPC_URL` at the localhost-bound node API — the chain RPC stays private and only the gated app is exposed. Real-chain notes:
+
+- The deployer key must be a **txAllowList admin** (genesis admin or enabled since).
+- Institutional role addresses (`COUNCIL_ADDR`, `MOI_ADDR`, `ENFORCER_ADDR`, `ISSUER_ADDR`) should be set to the real multisigs; unset they default to the deployer (pilot mode).
+- `CSB_SEED_DEMO=1` also creates the demo cast — accounts must additionally be enabled in the txAllowList precompile before they can transact on the real L1.

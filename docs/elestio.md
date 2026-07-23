@@ -6,6 +6,7 @@
 |---|---|---|
 | Demo (chain + UIs) | **CI/CD pipeline** from GitHub, `docker-compose.demo.yml` | HTTPS out of the box, redeploys on push |
 | Validator node | **VM + SSH**, `docker-compose.validator.yml` | Needs raw public TCP 9651 and long-lived identity volumes — keep it pinned to one VM, not a rebuild pipeline |
+| App vs real CSB | **VM + SSH**, `docker-compose.app.yml`, ideally co-located with a validator | UIs talk to the live chain's private RPC; same CI/CD pattern as the demo works too once `CSB_RPC_URL` points at a reachable node |
 
 Dashboard labels drift between Elestio versions; if a menu name differs slightly, look for the equivalent.
 

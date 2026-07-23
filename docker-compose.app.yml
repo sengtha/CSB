@@ -1,0 +1,64 @@
+# CSB application stack against the REAL CSB chain (no simulated devnet).
+#
+# Prerequisite: a running CSB L1 (validators up, RPC reachable) — see
+# docker-compose.validator.yml / docs/cloud-deployment.md.
+#
+# One-time: deploy the contract suite to the chain (writes deployments.json
+# into the shared volume the app reads):
+#
+#   CSB_RPC_URL='http://<node>:9650/ext/bc/<blockchainID>/rpc' \
+#   CSB_CHAIN_ID=8555 \
+#   CSB_DEPLOYER_KEY='<txAllowList-admin key>' \
+#   docker compose -f docker-compose.app.yml --profile deploy run --rm deployer
+#
+# Then run the UIs (wallet / explorer / admin) against the chain:
+#
+#   CSB_RPC_URL='http://<node>:9650/ext/bc/<blockchainID>/rpc' \
+#   EXPLORER_PASSCODE='<strong passcode>' \
+#   docker compose -f docker-compose.app.yml up -d app
+#
+# If this runs on a validator host, CSB_RPC_URL can use the localhost-bound
+# node API (http://172.17.0.1:9650/… or host networking) — the chain RPC
+# itself stays private; only the gated app on :8080 is exposed.
+services:
+  deployer:
+    build: .
+    profiles: ["deploy"]
+    environment:
+      CSB_RPC_URL: ${CSB_RPC_URL:?set CSB_RPC_URL to the CSB chain RPC}
+      CSB_CHAIN_ID: ${CSB_CHAIN_ID:-8555}
+      CSB_DEPLOYER_KEY: ${CSB_DEPLOYER_KEY:?set CSB_DEPLOYER_KEY (txAllowList admin)}
+      CSB_DEPLOYMENTS_FILE: /data/deployments.json
+      # Institutional role holders (default: deployer — fine for a pilot,
+      # multisigs for production):
+      COUNCIL_ADDR: ${COUNCIL_ADDR:-}
+      MOI_ADDR: ${MOI_ADDR:-}
+      ENFORCER_ADDR: ${ENFORCER_ADDR:-}
+      ISSUER_ADDR: ${ISSUER_ADDR:-}
+      # Set CSB_SEED_DEMO=1 to also create the seeded demo cast (test riel,
+      # Sokha/Dara/Vanna). On the real L1 those accounts must additionally be
+      # enabled in the txAllowList precompile before they can transact.
+      CSB_SEED_DEMO: ${CSB_SEED_DEMO:-0}
+    volumes:
+      - app-data:/data
+    command: >
+      sh -c "npx hardhat run scripts/deploy.js --network csbRemote &&
+             if [ \"$$CSB_SEED_DEMO\" = \"1\" ]; then
+               npx hardhat run scripts/seed-demo.js --network csbRemote;
+             fi"
+    restart: "no"
+
+  app:
+    build: .
+    environment:
+      CSB_RPC_URL: ${CSB_RPC_URL:?set CSB_RPC_URL to the CSB chain RPC}
+      CSB_DEPLOYMENTS_FILE: /data/deployments.json
+      EXPLORER_PASSCODE: ${EXPLORER_PASSCODE:?set a strong EXPLORER_PASSCODE}
+    volumes:
+      - app-data:/data:ro
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  app-data:

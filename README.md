@@ -33,7 +33,8 @@ demo/
                                address inspector, access log
   public/admin.html            Admin console: MoI / enforcement / council / issuer
 Dockerfile                     App image: toolchain + demo server
-docker-compose.demo.yml        One-command demo stack (chain/deployer/demo)
+docker-compose.app.yml         UIs + contract deployment against the REAL CSB L1
+docker-compose.demo.yml        One-command demo stack (simulated chain)
 docker/Dockerfile.validator    Ministry validator: AvalancheGo + Subnet-EVM plugin
 docker-compose.validator.yml   Validator node service (identity on volumes)
 infra/setup-vm.sh              Cloud VM bootstrap (Ubuntu, any provider)
