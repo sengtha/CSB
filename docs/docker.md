@@ -1,6 +1,6 @@
 # Docker deployment
 
-Two compose stacks: a one-command **demo stack** and a **ministry validator node**.
+Two compose stacks: a one-command **demo stack** and a **ministry validator node**. For hosting them on Elestio, see [`docs/elestio.md`](elestio.md).
 
 ## Demo stack (one command)
 
