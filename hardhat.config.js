@@ -33,10 +33,11 @@ module.exports = {
     },
   },
   networks: {
-    // Local Avalanche L1 devnet (avalanche-cli blockchain deploy --local)
-    csbLocal: {
-      url: "http://127.0.0.1:9650/ext/bc/CSB/rpc",
-      chainId: 8555,
+    // Avalanche L1 node (local VM or remote): set CSB_RPC_URL to the chain's
+    // RPC, e.g. http://127.0.0.1:9650/ext/bc/<blockchainID>/rpc
+    csbRemote: {
+      url: process.env.CSB_RPC_URL ?? "http://127.0.0.1:9650/ext/bc/CSB/rpc",
+      chainId: Number(process.env.CSB_CHAIN_ID ?? 8555),
       accounts: process.env.CSB_DEPLOYER_KEY ? [process.env.CSB_DEPLOYER_KEY] : [],
     },
   },

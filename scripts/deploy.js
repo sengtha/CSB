@@ -1,4 +1,6 @@
 const hre = require("hardhat");
+const fs = require("fs");
+const path = require("path");
 
 /**
  * Deploys the CSB v0 contract suite. Role holders default to the deployer for
@@ -59,6 +61,23 @@ async function main() {
       "\nNOTE: council is a multisig — via the multisig: grant KHR ENFORCER_ROLE, call adapter.setGateway, and mark the adapter as a system contract on KHR."
     );
   }
+
+  const deployments = {
+    network: hre.network.name,
+    chainId: Number((await hre.ethers.provider.getNetwork()).chainId),
+    contracts: {
+      IdentityRegistry: identity.target,
+      EnforcementRegistry: enforcement.target,
+      KHRStablecoin: khr.target,
+      EgressGateway: gateway.target,
+      MockBridgeAdapter: adapter.target,
+    },
+    roles: { council, moi, enforcer, issuer },
+  };
+  const outPath = path.join(__dirname, "..", "demo", "deployments.json");
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, JSON.stringify(deployments, null, 2));
+  console.log(`\nWrote ${outPath}`);
 }
 
 main().catch((error) => {

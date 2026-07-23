@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CSB Wallet</title>
+  <link rel="stylesheet" href="app.css" />
+  <script src="vendor/ethers.umd.min.js"></script>
+  <script src="common.js"></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB Wallet</h1>
+    <span class="sub">citizen wallet — zero fees, KYC-bound accounts</span>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="wallet.html" class="active">Wallet</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+  <main>
+    <div class="card">
+      <h2>Account</h2>
+      <div class="grid2">
+        <div>
+          <label>Demo account</label>
+          <select id="acct-select"><option value="">— choose or paste a key —</option></select>
+          <label>Private key (devnet only)</label>
+          <input id="acct-key" type="password" placeholder="0x…" autocomplete="off" />
+          <button id="acct-load">Load account</button>
+        </div>
+        <div id="acct-info" class="kv"><span class="small">No account loaded.</span></div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>Pay (KHRt)</h2>
+        <label>Recipient</label>
+        <select id="pay-preset"><option value="">— custom address —</option></select>
+        <input id="pay-to" placeholder="0x…" />
+        <label>Amount (KHRt)</label>
+        <input id="pay-amount" placeholder="e.g. 25,000.00" />
+        <button id="pay-send">Send payment</button>
+      </div>
+      <div class="card">
+        <h2>Bridge out (egress gateway)</h2>
+        <label>Destination chain</label>
+        <select id="eg-dest"></select>
+        <label>Recipient on destination (address)</label>
+        <input id="eg-to" placeholder="0x…" />
+        <label>Amount (KHRt)</label>
+        <input id="eg-amount" placeholder="e.g. 500.00" />
+        <button id="eg-send">Approve &amp; bridge</button>
+        <p class="small" style="margin-top:8px">⚠ Assets crossing the gateway become permanently public on external chains.</p>
+      </div>
+    </div>
+
+    <div id="msg" class="banner"></div>
+
+    <div class="card">
+      <h2>My activity</h2>
+      <table id="activity"><tr><th>Block</th><th>Event</th><th>Detail</th></tr></table>
+    </div>
+  </main>
+  <div class="footer">CSB v0 prototype — devnet demonstration, not a production system.</div>
+
+<script>
+"use strict";
+let wallet = null;
+
+async function refreshAccount() {
+  if (!wallet) return;
+  const s = await kycSummary(wallet.address);
+  const badge =
+    s.frozen ? '<span class="badge bad">FROZEN</span>' :
+    s.status === "active" ? '<span class="badge ok">KYC ACTIVE</span>' :
+    `<span class="badge warn">${s.status.toUpperCase()}</span>`;
+  document.getElementById("acct-info").innerHTML = `
+    <b>Address</b> <span class="mono">${wallet.address}</span><br/>
+    <b>KYC</b> ${badge} &nbsp; <span class="badge info">tier ${TIER_NAMES[s.tier]}</span><br/>
+    <b>Balance</b> ${fmtKHR(s.balance)} KHRt<br/>
+    <b>Recovery</b> <span class="small">MoI-backed (smart-account rotation) — lost key ≠ lost assets</span>`;
+  await refreshActivity();
+}
+
+async function refreshActivity() {
+  const { khr, gateway } = await getContracts();
+  const latest = await getProvider().getBlockNumber();
+  const from = Math.max(0, latest - 5000);
+  const me = wallet.address;
+  const rows = [];
+  const [sent, recv, eg] = await Promise.all([
+    khr.queryFilter(khr.filters.Transfer(me), from),
+    khr.queryFilter(khr.filters.Transfer(null, me), from),
+    gateway.queryFilter(gateway.filters.EgressInitiated(me), from),
+  ]);
+  for (const ev of sent) rows.push([ev.blockNumber, "Sent", `${fmtKHR(ev.args[2])} KHRt → ${short(ev.args[1])}`]);
+  for (const ev of recv) if (ev.args[0] !== me) rows.push([ev.blockNumber, "Received", `${fmtKHR(ev.args[2])} KHRt ← ${short(ev.args[0])}`]);
+  for (const ev of eg) rows.push([ev.blockNumber, "Egress", `${fmtKHR(ev.args[2])} KHRt bridged out`]);
+  rows.sort((a, b) => b[0] - a[0]);
+  const table = document.getElementById("activity");
+  table.innerHTML = "<tr><th>Block</th><th>Event</th><th>Detail</th></tr>" +
+    (rows.length ? rows.map((r) => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join("") :
+     '<tr><td colspan="3" class="small">No activity yet.</td></tr>');
+}
+
+async function run(fn) {
+  const msg = document.getElementById("msg");
+  msg.className = "banner";
+  if (!wallet) return banner(msg, "err", "Load an account first.");
+  try {
+    const r = await fn();
+    banner(msg, "ok", r);
+    await refreshAccount();
+  } catch (e) {
+    banner(msg, "err", explainError(e));
+  }
+}
+
+(async () => {
+  await ensureSession();
+  const cfg = await loadConfig();
+
+  const sel = document.getElementById("acct-select");
+  const pay = document.getElementById("pay-preset");
+  for (const [name, a] of Object.entries(cfg.demo?.accounts ?? {})) {
+    sel.add(new Option(`${name} — ${a.note}`, a.key));
+    pay.add(new Option(`${name} (${short(a.address)})`, a.address));
+  }
+  sel.onchange = () => (document.getElementById("acct-key").value = sel.value);
+  pay.onchange = () => (document.getElementById("pay-to").value = pay.value);
+
+  const dest = document.getElementById("eg-dest");
+  const d = cfg.demo?.destinationChain;
+  if (d) dest.add(new Option(d.label, d.id));
+
+  document.getElementById("acct-load").onclick = async () => {
+    try {
+      const base = new ethers.Wallet(document.getElementById("acct-key").value.trim(), getProvider());
+      wallet = new ethers.NonceManager(base);
+      wallet.address = base.address; // NonceManager doesn't surface .address itself
+      document.getElementById("msg").className = "banner";
+      await refreshAccount();
+    } catch (e) {
+      banner(document.getElementById("msg"), "err", "Invalid private key.");
+    }
+  };
+
+  document.getElementById("pay-send").onclick = () => run(async () => {
+    const { khr } = await getContracts(wallet);
+    const to = document.getElementById("pay-to").value.trim();
+    const amount = parseKHR(document.getElementById("pay-amount").value);
+    const tx = await khr.transfer(to, amount);
+    await tx.wait();
+    return `Paid ${fmtKHR(amount)} KHRt to ${short(to)} — fee: 0. Tx ${shortHash(tx.hash)}`;
+  });
+
+  document.getElementById("eg-send").onclick = () => run(async () => {
+    const { khr, gateway } = await getContracts(wallet);
+    const amount = parseKHR(document.getElementById("eg-amount").value);
+    const to = document.getElementById("eg-to").value.trim();
+    if (!ethers.isAddress(to)) throw new Error("Recipient must be a valid address on the destination chain.");
+    const destChain = document.getElementById("eg-dest").value;
+    const allowance = await khr.allowance(wallet.address, gateway.target);
+    if (allowance < amount) await (await khr.approve(gateway.target, amount)).wait();
+    const tx = await gateway.requestEgress(khr.target, amount, destChain, to);
+    await tx.wait();
+    return `Egress accepted: ${fmtKHR(amount)} KHRt routed to ${short(to)} via the governed gateway. Tx ${shortHash(tx.hash)}`;
+  });
+})();
+</script>
+</body>
+</html>

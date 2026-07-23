@@ -1,0 +1,75 @@
+:root {
+  --blue: #032ea1;   /* Cambodian flag blue */
+  --red: #e00025;    /* Cambodian flag red */
+  --bg: #f4f6fb;
+  --card: #ffffff;
+  --ink: #1a2233;
+  --muted: #64708a;
+  --line: #dde3ef;
+  --ok: #0a7d33;
+  --warn: #b45309;
+}
+* { box-sizing: border-box; margin: 0; }
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans Khmer", sans-serif;
+  background: var(--bg); color: var(--ink); min-height: 100vh;
+}
+header.site {
+  background: var(--blue); color: #fff; padding: 14px 24px;
+  display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+}
+header.site h1 { font-size: 18px; font-weight: 600; }
+header.site .sub { font-size: 12.5px; opacity: 0.85; }
+header.site nav { margin-left: auto; display: flex; gap: 14px; }
+header.site nav a { color: #fff; text-decoration: none; font-size: 13.5px; opacity: .9; padding: 4px 2px; }
+header.site nav a.active, header.site nav a:hover { border-bottom: 2px solid var(--red); opacity: 1; }
+main { max-width: 1100px; margin: 24px auto; padding: 0 20px; display: grid; gap: 18px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+.card h2 { font-size: 15px; margin-bottom: 12px; color: var(--blue); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+input, select {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+  font-size: 13.5px; font-family: inherit; background: #fff;
+}
+input:focus, select:focus { outline: 2px solid #b9c6f2; border-color: var(--blue); }
+button {
+  margin-top: 12px; padding: 8px 16px; border: 0; border-radius: 6px; cursor: pointer;
+  background: var(--blue); color: #fff; font-size: 13.5px; font-weight: 600;
+}
+button:hover { filter: brightness(1.15); }
+button.danger { background: var(--red); }
+button.ghost { background: #e8ecf7; color: var(--blue); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+td.mono, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; word-break: break-all; }
+.badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+.badge.ok { background: #e2f5e9; color: var(--ok); }
+.badge.bad { background: #fde8e8; color: var(--red); }
+.badge.warn { background: #fef3e2; color: var(--warn); }
+.badge.info { background: #e8ecf7; color: var(--blue); }
+.banner { padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none; white-space: pre-wrap; }
+.banner.err { background: #fdecec; border: 1px solid #f5c2c2; color: #8f1d1d; display: block; }
+.banner.ok { background: #e6f6ec; border: 1px solid #bfe5cd; color: #14532d; display: block; }
+.stat { text-align: center; }
+.stat .v { font-size: 22px; font-weight: 700; color: var(--blue); }
+.stat .k { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.statrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); margin-bottom: 14px; flex-wrap: wrap; }
+.tabs button { margin: 0; border-radius: 6px 6px 0 0; background: #e8ecf7; color: var(--ink); font-weight: 600; }
+.tabs button.active { background: var(--blue); color: #fff; }
+.tabpane { display: none; }
+.tabpane.active { display: block; }
+.kv { font-size: 13px; line-height: 1.9; }
+.kv b { color: var(--muted); font-weight: 600; margin-right: 6px; }
+#login-overlay {
+  position: fixed; inset: 0; background: rgba(3, 20, 60, .92); display: flex;
+  align-items: center; justify-content: center; z-index: 50;
+}
+#login-overlay .box { background: #fff; border-radius: 12px; padding: 30px 34px; width: 360px; }
+#login-overlay h2 { color: var(--blue); font-size: 16px; }
+#login-overlay p { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+.small { font-size: 12px; color: var(--muted); }
+.footer { text-align: center; color: var(--muted); font-size: 11.5px; padding: 20px 0 30px; }

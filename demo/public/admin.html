@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CSB Admin Console</title>
+  <link rel="stylesheet" href="app.css" />
+  <script src="vendor/ethers.umd.min.js"></script>
+  <script src="common.js"></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB Admin Console</h1>
+    <span class="sub">institutional operations — every role is a separate authority</span>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="wallet.html">Wallet</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="admin.html" class="active">Admin</a>
+    </nav>
+  </header>
+  <main>
+    <div class="card">
+      <h2>Acting authority</h2>
+      <label>Authority signing key (devnet; production: institutional multisig)</label>
+      <input id="auth-key" type="password" placeholder="0x… (Hardhat devnet: account #0 key)" autocomplete="off" />
+      <p class="small" style="margin-top:6px">On the devnet the deployer holds all roles. In production each tab's actions succeed only for the institution holding that role — try the wrong key and the chain refuses.</p>
+    </div>
+
+    <div class="card">
+      <div class="tabs">
+        <button data-tab="moi" class="active">Ministry of Interior</button>
+        <button data-tab="enf">Enforcement authority</button>
+        <button data-tab="cnl">Governing council</button>
+        <button data-tab="iss">KHR issuer</button>
+      </div>
+
+      <div id="tab-moi" class="tabpane active">
+        <div class="grid2">
+          <div>
+            <h2>Register address</h2>
+            <label>Address</label><input id="moi-reg-addr" placeholder="0x…" />
+            <label>Identity reference (hashed on submit — no PII on chain)</label><input id="moi-reg-id" placeholder="e.g. national-id-XXXX" />
+            <label>Tier</label>
+            <select id="moi-reg-tier">
+              <option value="1">1 · citizen basic</option>
+              <option value="2">2 · full KYC</option>
+              <option value="3">3 · business</option>
+              <option value="4">4 · institutional</option>
+            </select>
+            <button id="moi-reg-go">Register</button>
+          </div>
+          <div>
+            <h2>Lifecycle</h2>
+            <label>Address</label><input id="moi-life-addr" placeholder="0x…" />
+            <button id="moi-suspend" class="ghost">Suspend</button>
+            <button id="moi-react" class="ghost">Reactivate</button>
+            <button id="moi-revoke" class="danger">Revoke</button>
+            <h2 style="margin-top:18px">Address quota (paid)</h2>
+            <label>Identity reference</label><input id="moi-q-id" placeholder="e.g. national-id-XXXX" />
+            <label>New quota</label><input id="moi-q-n" type="number" min="2" value="2" />
+            <label>MoI payment receipt ref</label><input id="moi-q-ref" placeholder="receipt no." />
+            <button id="moi-q-go">Grant slots</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-enf" class="tabpane">
+        <div class="grid2">
+          <div>
+            <h2>Freeze / unfreeze</h2>
+            <label>Address</label><input id="enf-addr" placeholder="0x…" />
+            <label>Court / AML order reference (mandatory)</label><input id="enf-ref" placeholder="order no." />
+            <button id="enf-freeze" class="danger">Freeze</button>
+            <button id="enf-unfreeze" class="ghost">Unfreeze</button>
+          </div>
+          <div>
+            <h2>Confiscate (court order)</h2>
+            <label>From</label><input id="enf-c-from" placeholder="0x…" />
+            <label>To (custody)</label><input id="enf-c-to" placeholder="0x…" />
+            <label>Amount (KHRt)</label><input id="enf-c-amt" placeholder="e.g. 1,000.00" />
+            <label>Order reference (mandatory)</label><input id="enf-c-ref" placeholder="order no." />
+            <button id="enf-c-go" class="danger">Confiscate</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-cnl" class="tabpane">
+        <div class="grid2">
+          <div>
+            <h2>Egress gateway</h2>
+            <div class="kv"><b>Status</b> <span id="cnl-status">–</span></div>
+            <button id="cnl-pause" class="danger">Pause (circuit breaker)</button>
+            <button id="cnl-unpause" class="ghost">Unpause</button>
+            <h2 style="margin-top:18px">Token egress policy</h2>
+            <label>Token</label><input id="cnl-p-token" placeholder="0x… (prefilled: KHRt)" />
+            <label>Permitted</label><select id="cnl-p-allowed"><option value="1">yes</option><option value="0">no</option></select>
+            <label>Minimum tier</label><input id="cnl-p-tier" type="number" min="1" max="4" value="2" />
+            <label>Daily cap (KHRt, 0 = none)</label><input id="cnl-p-cap" placeholder="e.g. 1,000,000.00" />
+            <label>Bridge adapter</label><input id="cnl-p-adapter" placeholder="0x…" />
+            <button id="cnl-p-go">Set policy</button>
+          </div>
+          <div>
+            <h2>Tier transfer caps</h2>
+            <label>Tier</label><input id="cnl-t-tier" type="number" min="1" max="4" value="1" />
+            <label>Per-transfer cap (KHRt, 0 = none)</label><input id="cnl-t-cap" placeholder="e.g. 400,000.00" />
+            <button id="cnl-t-go">Set cap</button>
+            <h2 style="margin-top:18px">Vetted system contracts</h2>
+            <label>Contract</label><input id="cnl-s-addr" placeholder="0x…" />
+            <label>Allowed</label><select id="cnl-s-allowed"><option value="1">yes</option><option value="0">no</option></select>
+            <button id="cnl-s-go">Update</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-iss" class="tabpane">
+        <div class="grid2">
+          <div>
+            <h2>Issue KHRt</h2>
+            <label>To</label><input id="iss-to" placeholder="0x…" />
+            <label>Amount (KHRt)</label><input id="iss-amt" placeholder="e.g. 1,000,000.00" />
+            <button id="iss-go">Issue</button>
+          </div>
+          <div>
+            <h2>Redeem (burn own balance)</h2>
+            <label>Amount (KHRt)</label><input id="iss-r-amt" placeholder="e.g. 1,000,000.00" />
+            <button id="iss-r-go" class="ghost">Redeem</button>
+            <p class="small" style="margin-top:10px">The issuer is a pluggable role: NBC, a licensed bank consortium, or a treasury-backed entity can hold it without changing the rails.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="msg" class="banner"></div>
+  </main>
+  <div class="footer">CSB v0 prototype — devnet demonstration, not a production system.</div>
+
+<script>
+"use strict";
+
+function signer() {
+  const k = document.getElementById("auth-key").value.trim();
+  if (!k) throw new Error("Enter the authority signing key first.");
+  return new ethers.Wallet(k, getProvider());
+}
+
+async function run(fn) {
+  const msg = document.getElementById("msg");
+  msg.className = "banner";
+  try {
+    banner(msg, "ok", await fn());
+    refreshStatus();
+  } catch (e) {
+    banner(msg, "err", explainError(e));
+  }
+}
+
+async function refreshStatus() {
+  try {
+    const { gateway } = await getContracts();
+    document.getElementById("cnl-status").innerHTML = (await gateway.paused())
+      ? '<span class="badge bad">PAUSED</span>' : '<span class="badge ok">OPEN</span>';
+  } catch (_) {}
+}
+
+(async () => {
+  await ensureSession();
+  const cfg = await loadConfig();
+  document.getElementById("cnl-p-token").value = cfg.contracts.KHRStablecoin;
+  document.getElementById("cnl-p-adapter").value = cfg.contracts.MockBridgeAdapter;
+
+  document.querySelectorAll(".tabs button").forEach((b) => {
+    b.onclick = () => {
+      document.querySelectorAll(".tabs button").forEach((x) => x.classList.remove("active"));
+      document.querySelectorAll(".tabpane").forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      document.getElementById("tab-" + b.dataset.tab).classList.add("active");
+    };
+  });
+
+  const val = (id) => document.getElementById(id).value.trim();
+
+  // --- MoI
+  document.getElementById("moi-reg-go").onclick = () => run(async () => {
+    const { identity } = await getContracts(signer());
+    const tx = await identity.register(val("moi-reg-addr"), ethers.id(val("moi-reg-id")), Number(val("moi-reg-tier")));
+    await tx.wait();
+    return `Registered ${short(val("moi-reg-addr"))} at tier ${val("moi-reg-tier")}. Only the identity commitment hash went on chain.`;
+  });
+  for (const [btn, method, label] of [["moi-suspend", "suspend", "Suspended"], ["moi-react", "reactivate", "Reactivated"], ["moi-revoke", "revoke", "Revoked"]]) {
+    document.getElementById(btn).onclick = () => run(async () => {
+      const { identity } = await getContracts(signer());
+      await (await identity[method](val("moi-life-addr"))).wait();
+      return `${label} ${short(val("moi-life-addr"))}.`;
+    });
+  }
+  document.getElementById("moi-q-go").onclick = () => run(async () => {
+    const { identity } = await getContracts(signer());
+    await (await identity.increaseAddressQuota(ethers.id(val("moi-q-id")), Number(val("moi-q-n")), ethers.id(val("moi-q-ref")))).wait();
+    return `Quota for identity raised to ${val("moi-q-n")} addresses (receipt recorded).`;
+  });
+
+  // --- Enforcement
+  document.getElementById("enf-freeze").onclick = () => run(async () => {
+    const { enforcement } = await getContracts(signer());
+    await (await enforcement.freeze(val("enf-addr"), ethers.id(val("enf-ref")))).wait();
+    return `Froze ${short(val("enf-addr"))} under order "${val("enf-ref")}".`;
+  });
+  document.getElementById("enf-unfreeze").onclick = () => run(async () => {
+    const { enforcement } = await getContracts(signer());
+    await (await enforcement.unfreeze(val("enf-addr"), ethers.id(val("enf-ref")))).wait();
+    return `Unfroze ${short(val("enf-addr"))}.`;
+  });
+  document.getElementById("enf-c-go").onclick = () => run(async () => {
+    const { khr } = await getContracts(signer());
+    await (await khr.confiscate(val("enf-c-from"), val("enf-c-to"), parseKHR(val("enf-c-amt")), ethers.id(val("enf-c-ref")))).wait();
+    return `Confiscated ${val("enf-c-amt")} KHRt under order "${val("enf-c-ref")}".`;
+  });
+
+  // --- Council
+  document.getElementById("cnl-pause").onclick = () => run(async () => {
+    const { gateway } = await getContracts(signer());
+    await (await gateway.pause()).wait();
+    return "Egress gateway PAUSED — no assets can leave the country's chain.";
+  });
+  document.getElementById("cnl-unpause").onclick = () => run(async () => {
+    const { gateway } = await getContracts(signer());
+    await (await gateway.unpause()).wait();
+    return "Egress gateway reopened.";
+  });
+  document.getElementById("cnl-p-go").onclick = () => run(async () => {
+    const { gateway } = await getContracts(signer());
+    const cap = val("cnl-p-cap") ? parseKHR(val("cnl-p-cap")) : 0n;
+    await (await gateway.setTokenPolicy(val("cnl-p-token"), val("cnl-p-allowed") === "1", Number(val("cnl-p-tier")), cap, val("cnl-p-adapter"))).wait();
+    return "Egress policy updated.";
+  });
+  document.getElementById("cnl-t-go").onclick = () => run(async () => {
+    const { khr } = await getContracts(signer());
+    const cap = val("cnl-t-cap") ? parseKHR(val("cnl-t-cap")) : 0n;
+    await (await khr.setTierTransferCap(Number(val("cnl-t-tier")), cap)).wait();
+    return `Tier-${val("cnl-t-tier")} per-transfer cap updated.`;
+  });
+  document.getElementById("cnl-s-go").onclick = () => run(async () => {
+    const { khr } = await getContracts(signer());
+    await (await khr.setSystemContract(val("cnl-s-addr"), val("cnl-s-allowed") === "1")).wait();
+    return "System-contract list updated.";
+  });
+
+  // --- Issuer
+  document.getElementById("iss-go").onclick = () => run(async () => {
+    const { khr } = await getContracts(signer());
+    await (await khr.issue(val("iss-to"), parseKHR(val("iss-amt")))).wait();
+    return `Issued ${val("iss-amt")} KHRt to ${short(val("iss-to"))}.`;
+  });
+  document.getElementById("iss-r-go").onclick = () => run(async () => {
+    const { khr } = await getContracts(signer());
+    await (await khr.redeem(parseKHR(val("iss-r-amt")))).wait();
+    return `Redeemed ${val("iss-r-amt")} KHRt.`;
+  });
+
+  refreshStatus();
+  setInterval(refreshStatus, 5000);
+})();
+</script>
+</body>
+</html>

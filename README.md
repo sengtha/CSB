@@ -6,7 +6,7 @@ Full design rationale: [`docs/architecture.md`](docs/architecture.md).
 
 ## Status
 
-**v0 prototype.** The core contract suite is implemented and tested. The Avalanche L1 genesis config is drafted. Devnet UIs (wallet, tiered explorer, admin console) and the production ICTT bridge adapter are next (see roadmap in the architecture doc).
+**v0 prototype, demo-ready.** Core contract suite implemented and tested (24 tests), including the production **ICTT bridge adapter**. Demo UIs — citizen wallet, gated explorer, and institutional admin console — run against any deployment behind an access-gated server. Cloud-VM tooling stands the whole stack up on a single Ubuntu VM ([`docs/cloud-deployment.md`](docs/cloud-deployment.md)); the real-egress path to Fuji C-Chain is documented in [`docs/fuji-ictt.md`](docs/fuji-ictt.md).
 
 ## Repository layout
 
@@ -22,12 +22,25 @@ contracts/
                                      order refs, system-contract allowlist
   egress/EgressGateway.sol           The sovereign boundary: token allowlist,
                                      min tiers, daily caps, circuit breaker
-  egress/IBridgeAdapter.sol          Transport abstraction (production: Avalanche ICTT)
+  egress/IBridgeAdapter.sol          Transport abstraction (policy/transport split)
+  egress/ICTTBridgeAdapter.sol       Production adapter: Avalanche ICTT TokenHome,
+                                     council-owned route table
   egress/MockBridgeAdapter.sol       Devnet transport stand-in
+demo/
+  server.js                    Gated demo server: static UIs + authenticated RPC proxy
+  public/wallet.html           Citizen wallet: zero-fee payments, egress requests
+  public/explorer.html         Whitelisted explorer: stats, decoded events,
+                               address inspector, access log
+  public/admin.html            Admin console: MoI / enforcement / council / issuer
+infra/setup-vm.sh              Cloud VM bootstrap (Ubuntu, any provider)
+infra/deploy-l1.sh             Create + deploy the Avalanche L1 on the VM
 scripts/deploy.js              Deploys and wires the suite (multisig-aware)
-test/                          20 tests covering KYC lifecycle, separation of
-                               powers, compliance gating, and egress policy
+scripts/seed-demo.js           Seeds demo identities, balances, egress policy
+test/                          24 tests: KYC lifecycle, separation of powers,
+                               compliance gating, egress policy, ICTT adapter
 docs/architecture.md           Architecture v0
+docs/cloud-deployment.md       Full-stack deployment on a cloud VM
+docs/fuji-ictt.md              Real egress to Fuji C-Chain via ICTT
 ```
 
 ## Quickstart
@@ -38,11 +51,16 @@ npm run compile
 npm test
 ```
 
-Deploy against a local Hardhat network:
+Run the full demo (contracts + UIs) on a plain Hardhat node:
 
 ```bash
-npm run deploy:local
+npx hardhat node &
+npx hardhat run scripts/deploy.js --network localhost
+npx hardhat run scripts/seed-demo.js --network localhost
+EXPLORER_PASSCODE=csb-demo node demo/server.js   # open http://localhost:8080
 ```
+
+For the real Avalanche L1 on a cloud VM, follow [`docs/cloud-deployment.md`](docs/cloud-deployment.md).
 
 Role holders (council, MoI issuer, enforcement authority, KHR issuer) default to the deployer for devnet runs; set `COUNCIL_ADDR`, `MOI_ADDR`, `ENFORCER_ADDR`, `ISSUER_ADDR` for real deployments — every administrative role is designed to be held by an institutional multisig.
 

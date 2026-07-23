@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CSB Explorer</title>
+  <link rel="stylesheet" href="app.css" />
+  <script src="vendor/ethers.umd.min.js"></script>
+  <script src="common.js"></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB Explorer</h1>
+    <span class="sub">whitelisted explorer — authorized access only</span>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="wallet.html">Wallet</a>
+      <a href="explorer.html" class="active">Explorer</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+  <main>
+    <div class="card">
+      <div class="statrow">
+        <div class="stat"><div class="v" id="st-block">–</div><div class="k">latest block</div></div>
+        <div class="stat"><div class="v" id="st-supply">–</div><div class="k">KHRt supply</div></div>
+        <div class="stat"><div class="v" id="st-gateway">–</div><div class="k">egress gateway</div></div>
+        <div class="stat"><div class="v" id="st-events">–</div><div class="k">events (recent)</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Address inspector</h2>
+      <div class="grid2">
+        <div>
+          <label>Address</label>
+          <input id="insp-addr" placeholder="0x…" />
+          <button id="insp-go">Inspect</button>
+        </div>
+        <div id="insp-out" class="kv"><span class="small">KYC status, tier, freeze state, balance and system-contract flag for any address.</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Chain events</h2>
+      <table id="events"><tr><th>Block</th><th>Contract</th><th>Event</th><th>Detail</th></tr></table>
+    </div>
+
+    <div class="card">
+      <h2>Access log (gated explorer sessions)</h2>
+      <table id="access"><tr><th>Time</th><th>Event</th><th>From</th></tr></table>
+      <p class="small" style="margin-top:8px">In production every explorer query and every de-anonymization request against the MoI registry is logged and audited.</p>
+    </div>
+  </main>
+  <div class="footer">CSB v0 prototype — devnet demonstration, not a production system.</div>
+
+<script>
+"use strict";
+
+function describe(name, ev) {
+  const a = ev.args;
+  switch (ev.fragment.name) {
+    case "AddressRegistered": return `MoI registered ${short(a[0])} (tier ${a[2]}) under identity ${shortHash(a[1])}`;
+    case "AddressRevoked": return `MoI revoked ${short(a[0])}`;
+    case "AddressSuspended": return `MoI suspended ${short(a[0])}`;
+    case "AddressReactivated": return `MoI reactivated ${short(a[0])}`;
+    case "TierChanged": return `${short(a[0])} tier ${a[1]} → ${a[2]}`;
+    case "AddressQuotaIncreased": return `identity ${shortHash(a[0])} quota → ${a[1]} addresses (MoI receipt ${shortHash(a[2])})`;
+    case "Frozen": return `⚠ ${short(a[0])} FROZEN under order ${shortHash(a[1])}`;
+    case "Unfrozen": return `${short(a[0])} unfrozen under order ${shortHash(a[1])}`;
+    case "Transfer":
+      if (a[0] === ethers.ZeroAddress) return `mint ${fmtKHR(a[2])} KHRt → ${short(a[1])}`;
+      if (a[1] === ethers.ZeroAddress) return `burn ${fmtKHR(a[2])} KHRt from ${short(a[0])}`;
+      return `${short(a[0])} → ${short(a[1])}: ${fmtKHR(a[2])} KHRt`;
+    case "Issued": return `issuer minted ${fmtKHR(a[1])} KHRt to ${short(a[0])}`;
+    case "Redeemed": return `issuer redeemed ${fmtKHR(a[1])} KHRt`;
+    case "Confiscated": return `⚠ ${fmtKHR(a[2])} KHRt confiscated from ${short(a[0])} → ${short(a[1])} (order ${shortHash(a[3])})`;
+    case "TierTransferCapSet": return `tier-${a[0]} per-transfer cap set to ${fmtKHR(a[1])} KHRt`;
+    case "SystemContractSet": return `${short(a[0])} ${a[1] ? "added to" : "removed from"} vetted system contracts`;
+    case "TokenPolicySet": return `egress policy: token ${short(a[0])} ${a[1] ? "PERMITTED" : "blocked"}, min tier ${a[2]}, daily cap ${fmtKHR(a[3])}`;
+    case "EgressInitiated": return `⇈ ${short(a[0])} bridged ${fmtKHR(a[2])} KHRt out via the gateway`;
+    default: return ev.fragment.name;
+  }
+}
+
+async function refresh() {
+  const provider = getProvider();
+  const { identity, enforcement, khr, gateway } = await getContracts();
+  const latest = await provider.getBlockNumber();
+  const from = Math.max(0, latest - 5000);
+
+  document.getElementById("st-block").textContent = latest;
+  document.getElementById("st-supply").textContent = fmtKHR(await khr.totalSupply());
+  document.getElementById("st-gateway").textContent = (await gateway.paused()) ? "PAUSED" : "open";
+
+  const sources = [
+    ["Identity", identity],
+    ["Enforcement", enforcement],
+    ["KHRt", khr],
+    ["Gateway", gateway],
+  ];
+  const rows = [];
+  for (const [name, c] of sources) {
+    const evs = await c.queryFilter("*", from);
+    for (const ev of evs) {
+      if (!ev.fragment) continue;
+      rows.push({ block: ev.blockNumber, name, ev });
+    }
+  }
+  rows.sort((x, y) => y.block - x.block || 0);
+  document.getElementById("st-events").textContent = rows.length;
+  document.getElementById("events").innerHTML =
+    "<tr><th>Block</th><th>Contract</th><th>Event</th><th>Detail</th></tr>" +
+    rows.slice(0, 100).map((r) =>
+      `<tr><td>${r.block}</td><td>${r.name}</td><td class="mono">${r.ev.fragment.name}</td><td>${describe(r.name, r.ev)}</td></tr>`
+    ).join("");
+
+  const log = await (await fetch("/access-log")).json();
+  document.getElementById("access").innerHTML =
+    "<tr><th>Time</th><th>Event</th><th>From</th></tr>" +
+    log.slice().reverse().map((l) =>
+      `<tr><td>${l.at}</td><td>${l.event === "login" ? '<span class="badge ok">login</span>' : '<span class="badge bad">denied</span>'}</td><td class="mono">${l.ip ?? ""}</td></tr>`
+    ).join("");
+}
+
+(async () => {
+  await ensureSession();
+  document.getElementById("insp-go").onclick = async () => {
+    const out = document.getElementById("insp-out");
+    const addr = document.getElementById("insp-addr").value.trim();
+    if (!ethers.isAddress(addr)) { out.innerHTML = '<span class="badge bad">invalid address</span>'; return; }
+    const s = await kycSummary(addr);
+    const badge =
+      s.frozen ? '<span class="badge bad">FROZEN</span>' :
+      s.status === "active" ? '<span class="badge ok">KYC ACTIVE</span>' :
+      `<span class="badge warn">${s.status.toUpperCase()}</span>`;
+    out.innerHTML = `
+      <b>Status</b> ${badge} ${s.system ? '<span class="badge info">SYSTEM CONTRACT</span>' : ""}<br/>
+      <b>Tier</b> ${TIER_NAMES[s.tier]}<br/>
+      <b>Identity</b> <span class="mono">${s.identity === ethers.ZeroHash ? "—" : shortHash(s.identity) + " (commitment — PII stays in the MoI registry)"}</span><br/>
+      <b>Balance</b> ${fmtKHR(s.balance)} KHRt`;
+  };
+  await refresh();
+  setInterval(refresh, 5000);
+})();
+</script>
+</body>
+</html>
