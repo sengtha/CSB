@@ -1,5 +1,5 @@
 {
-  "_comment": "Subnet-EVM genesis for the Cambodia Sovereign Blockchain (CSB) devnet. Replace the 0xC0DE... placeholder addresses with the real council/MoI multisig addresses before deployment. Deploy with: avalanche blockchain create csb --genesis chain/genesis.example.json && avalanche blockchain deploy csb --local",
+  "_comment": "Subnet-EVM genesis for the Cambodia Sovereign Blockchain (CSB) devnet. Field-by-field reference: docs/chain-config.md. Replace the 0xC0DE... placeholder addresses with the real council/MoI multisig addresses before deployment. Deploy with: avalanche blockchain create csb --genesis chain/genesis.example.json && avalanche blockchain deploy csb --local",
   "config": {
     "chainId": 8555,
     "homesteadBlock": 0,

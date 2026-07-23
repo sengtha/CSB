@@ -43,10 +43,13 @@ scripts/seed-accounts.js       Seeds pilot identities, balances, egress policy
 test/                          24 tests: KYC lifecycle, separation of powers,
                                compliance gating, egress policy, ICTT adapter
 docs/architecture.md           Architecture v0
+docs/chain-config.md           Chain rules reference: genesis, gas/fee settings,
+                               precompiles, what Docker does NOT configure
 docs/cloud-deployment.md       Full-stack deployment on a cloud VM
 docs/docker.md                 Validator + app stacks with Docker
 docs/elestio.md                Hosting both stacks on Elestio
 docs/fuji-ictt.md              Real egress to Fuji C-Chain via ICTT
+docs/testnet-to-mainnet.md     Promotion guide: Fuji testnet -> Avalanche mainnet
 ```
 
 ## Quickstart

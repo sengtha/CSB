@@ -1,6 +1,6 @@
 # Docker deployment
 
-Two deployables. For hosting them on Elestio, see [`docs/elestio.md`](elestio.md).
+Two deployables. For hosting them on Elestio, see [`docs/elestio.md`](elestio.md). Note that Docker configures only the node process — chain rules (gas fees, allowlists, chainId) live in the genesis and on-chain precompiles: see [`docs/chain-config.md`](chain-config.md).
 
 | File | What it runs | Who runs it |
 |---|---|---|
