@@ -32,6 +32,10 @@ demo/
   public/explorer.html         Whitelisted explorer: stats, decoded events,
                                address inspector, access log
   public/admin.html            Admin console: MoI / enforcement / council / issuer
+Dockerfile                     App image: toolchain + demo server
+docker-compose.demo.yml        One-command demo stack (chain/deployer/demo)
+docker/Dockerfile.validator    Ministry validator: AvalancheGo + Subnet-EVM plugin
+docker-compose.validator.yml   Validator node service (identity on volumes)
 infra/setup-vm.sh              Cloud VM bootstrap (Ubuntu, any provider)
 infra/deploy-l1.sh             Create + deploy the Avalanche L1 on the VM
 scripts/deploy.js              Deploys and wires the suite (multisig-aware)
@@ -44,6 +48,17 @@ docs/fuji-ictt.md              Real egress to Fuji C-Chain via ICTT
 ```
 
 ## Quickstart
+
+Fastest path — Docker (chain + contracts + seeded demo + gated UIs):
+
+```bash
+docker compose -f docker-compose.demo.yml up --build
+# open http://localhost:8080  (passcode: csb-demo)
+```
+
+Ministry validator node (AvalancheGo + Subnet-EVM plugin): see [`docs/docker.md`](docs/docker.md) and `docker-compose.validator.yml`.
+
+Without Docker:
 
 ```bash
 npm install

@@ -97,7 +97,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === "/config") {
-    const file = path.join(__dirname, "deployments.json");
+    const file = process.env.CSB_DEPLOYMENTS_FILE ?? path.join(__dirname, "deployments.json");
     if (!fs.existsSync(file)) {
       send(res, 404, { error: "deployments.json missing — run scripts/deploy.js and scripts/seed-demo.js" });
       return;

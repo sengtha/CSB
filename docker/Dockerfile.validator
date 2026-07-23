@@ -1,0 +1,34 @@
+# CSB validator node image: AvalancheGo + the Subnet-EVM VM plugin.
+#
+# Each ministry runs one of these containers as its validator. The image bakes
+# the VM plugin under the blockchain's VM ID; the subnet to track and all node
+# settings are provided at runtime via AVAGO_* environment variables (see
+# docker-compose.validator.yml).
+#
+#   docker build -f docker/Dockerfile.validator \
+#     --build-arg VM_ID=<vm-id from `avalanche blockchain describe csb`> \
+#     -t csb-validator .
+#
+# Version pins: AvalancheGo and Subnet-EVM move in lockstep — before bumping
+# either, check the compatibility table in the ava-labs/subnet-evm README.
+ARG AVALANCHEGO_VERSION=v1.13.3
+
+FROM debian:bookworm-slim AS plugin
+ARG SUBNET_EVM_VERSION=0.7.6
+ARG TARGETARCH=amd64
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+    curl -fsSL -o /tmp/subnet-evm.tar.gz \
+      "https://github.com/ava-labs/subnet-evm/releases/download/v${SUBNET_EVM_VERSION}/subnet-evm_${SUBNET_EVM_VERSION}_linux_${TARGETARCH}.tar.gz" && \
+    tar -xzf /tmp/subnet-evm.tar.gz -C /tmp subnet-evm
+
+FROM avaplatform/avalanchego:${AVALANCHEGO_VERSION}
+# VM ID of the CSB blockchain. Default is the canonical Subnet-EVM VM ID;
+# avalanche-cli-created blockchains derive their own — read it from
+# `avalanche blockchain describe <name>` and pass it as a build arg.
+ARG VM_ID=srEXiWaHuhNyGwPUi444Tu47ZEDwxTWrbQiuD7FmgSAQ6X7Dy
+COPY --from=plugin /tmp/subnet-evm /avalanchego/build/plugins/${VM_ID}
+
+# Runtime configuration comes from AVAGO_* env vars (network id, tracked
+# subnets, ports). Staking keys and the database live on mounted volumes so a
+# container upgrade never touches validator identity. Entry point is inherited
+# from the base image (avalanchego).

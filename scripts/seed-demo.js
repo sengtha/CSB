@@ -14,7 +14,7 @@ const path = require("path");
  *   Vanna  — not KYC'd (every action involving Vanna fails, on purpose)
  */
 async function main() {
-  const file = path.join(__dirname, "..", "demo", "deployments.json");
+  const file = process.env.CSB_DEPLOYMENTS_FILE ?? path.join(__dirname, "..", "demo", "deployments.json");
   const deployments = JSON.parse(fs.readFileSync(file, "utf8"));
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
