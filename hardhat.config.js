@@ -40,11 +40,5 @@ module.exports = {
       chainId: Number(process.env.CSB_CHAIN_ID ?? 8555),
       accounts: process.env.CSB_DEPLOYER_KEY ? [process.env.CSB_DEPLOYER_KEY] : [],
     },
-    // In-compose devnet chain (docker-compose.demo.yml); uses the node's
-    // unlocked accounts, so no key is needed.
-    docker: {
-      url: process.env.CSB_RPC_URL ?? "http://chain:8545",
-      chainId: 31337,
-    },
   },
 };

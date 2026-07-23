@@ -1,6 +1,6 @@
 # Real egress: CSB → Fuji C-Chain via Avalanche ICTT
 
-How to connect the `ICTTBridgeAdapter` (contracts/egress/ICTTBridgeAdapter.sol) to a real Interchain Token Transfer deployment, bridging KHRt from the CSB L1 to Avalanche's Fuji testnet C-Chain. This replaces the `MockBridgeAdapter` used on the devnet.
+How to connect the `ICTTBridgeAdapter` (contracts/egress/ICTTBridgeAdapter.sol) to a real Interchain Token Transfer deployment, bridging KHRt from the CSB L1 to Avalanche's Fuji testnet C-Chain. This replaces the `MockBridgeAdapter` used in development.
 
 ## Architecture
 
@@ -56,7 +56,7 @@ Policy lives in the gateway (ours); transport is audited ICTT + ICM infrastructu
 
 ## Notes
 
-- **The demo narrative moment:** the recipient balance on Fuji is visible in any public explorer — this is the boundary where sovereign-private becomes world-public, by council-governed exception only.
+- **The boundary, made visible:** the recipient balance on Fuji is visible in any public explorer — this is the boundary where sovereign-private becomes world-public, by council-governed exception only.
 - Return path (Fuji → CSB): TokenRemote's `send()` back to the TokenHome unlocks collateral. v1 can leave ingress ungated (funds re-enter the KYC'd perimeter; the recipient must still be KYC'd to receive KHRt — non-KYC'd returns will revert unless sent to a system contract or an `IngressGateway` escrow, which is future work).
 - Fees: ICTT primary/secondary fees are set to zero (state-run relayer needs no fee incentive).
 - The `SendTokensInput` struct in `contracts/egress/interfaces/IERC20TokenTransferrer.sol` mirrors `icm-contracts`; re-verify the layout against the pinned icm-contracts release before production.

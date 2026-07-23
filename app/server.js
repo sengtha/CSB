@@ -1,16 +1,16 @@
 /**
- * CSB demo server — serves the wallet / explorer / admin UIs and proxies
+ * CSB app server — serves the wallet / explorer / admin UIs and proxies
  * JSON-RPC to the chain node behind an access gate, so the browser never
  * needs direct node access ("public within the country": all chain access
  * is authenticated and auditable).
  *
  * Env:
- *   CSB_RPC_URL       upstream node RPC (default http://127.0.0.1:8545 — Hardhat;
- *                     for an Avalanche L1 use http://127.0.0.1:9650/ext/bc/<id>/rpc)
- *   DEMO_PORT         listen port (default 8080)
- *   EXPLORER_PASSCODE access passcode (default "csb-demo")
+ *   CSB_RPC_URL       upstream node RPC, e.g. http://127.0.0.1:9650/ext/bc/<id>/rpc
+ *                     (default http://127.0.0.1:8545 — local Hardhat, for development)
+ *   PORT              listen port (default 8080)
+ *   EXPLORER_PASSCODE access passcode (default "csb-demo" — development only)
  *
- * Plain Node, no dependencies. Demo-grade auth (shared passcode + cookie):
+ * Plain Node, no dependencies. Pilot-grade auth (shared passcode + cookie):
  * production uses the national identity login instead.
  */
 const http = require("http");
@@ -19,7 +19,7 @@ const path = require("path");
 const crypto = require("crypto");
 
 const RPC_URL = process.env.CSB_RPC_URL ?? "http://127.0.0.1:8545";
-const PORT = Number(process.env.DEMO_PORT ?? 8080);
+const PORT = Number(process.env.PORT ?? process.env.DEMO_PORT ?? 8080);
 const PASSCODE = process.env.EXPLORER_PASSCODE ?? "csb-demo";
 const TOKEN = crypto.createHash("sha256").update(`csb:${PASSCODE}`).digest("hex");
 
@@ -99,7 +99,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/config") {
     const file = process.env.CSB_DEPLOYMENTS_FILE ?? path.join(__dirname, "deployments.json");
     if (!fs.existsSync(file)) {
-      send(res, 404, { error: "deployments.json missing — run scripts/deploy.js and scripts/seed-demo.js" });
+      send(res, 404, { error: "deployments.json missing — run scripts/deploy.js (and optionally scripts/seed-accounts.js)" });
       return;
     }
     send(res, 200, fs.readFileSync(file, "utf8"));
@@ -124,6 +124,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`CSB demo server on http://0.0.0.0:${PORT}  (RPC upstream: ${RPC_URL})`);
+  console.log(`CSB app server on http://0.0.0.0:${PORT}  (RPC upstream: ${RPC_URL})`);
   console.log(`Passcode: ${PASSCODE === "csb-demo" ? "csb-demo (default — set EXPLORER_PASSCODE)" : "(from env)"}`);
 });

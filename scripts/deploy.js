@@ -74,7 +74,7 @@ async function main() {
     },
     roles: { council, moi, enforcer, issuer },
   };
-  const outPath = process.env.CSB_DEPLOYMENTS_FILE ?? path.join(__dirname, "..", "demo", "deployments.json");
+  const outPath = process.env.CSB_DEPLOYMENTS_FILE ?? path.join(__dirname, "..", "app", "deployments.json");
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(deployments, null, 2));
   console.log(`\nWrote ${outPath}`);

@@ -1,6 +1,5 @@
-# CSB application image: contract toolchain + demo server.
-# Used by docker-compose.demo.yml for the chain/deployer/demo services, and
-# standalone as the demo server against any RPC:
+# CSB application image: contract toolchain + the gated app server
+# (wallet / explorer / admin console). Used by docker-compose.app.yml.
 #
 #   docker build -t csb-app .
 #   docker run -p 8080:8080 -e CSB_RPC_URL=... -e EXPLORER_PASSCODE=... csb-app
@@ -16,10 +15,10 @@ COPY contracts ./contracts
 COPY scripts ./scripts
 COPY test ./test
 COPY chain ./chain
-COPY demo ./demo
+COPY app ./app
 
 # Compiles offline: hardhat.config.js falls back to the npm-installed solc-js.
 RUN npx hardhat compile
 
 EXPOSE 8080
-CMD ["node", "demo/server.js"]
+CMD ["node", "app/server.js"]

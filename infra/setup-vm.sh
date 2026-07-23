@@ -30,9 +30,9 @@ avalanche --version
 echo "==> Project dependencies"
 npm install --no-audit --no-fund
 
-echo "==> Firewall (SSH + demo server only; the node RPC stays private)"
+echo "==> Firewall (SSH + app server only; the node RPC stays private)"
 sudo ufw allow OpenSSH
-sudo ufw allow 8080/tcp comment 'CSB demo server'
+sudo ufw allow 8080/tcp comment 'CSB app server'
 sudo ufw --force enable
 sudo ufw status
 
@@ -40,11 +40,11 @@ cat <<'EOF'
 
 Done. Next steps:
   bash infra/deploy-l1.sh          # create + deploy the CSB Avalanche L1 on this VM
-  # then follow docs/cloud-deployment.md to deploy contracts and start the demo.
+  # then follow docs/cloud-deployment.md to deploy contracts and start the app.
 
 Security notes:
-  - Port 9650 (node RPC) is NOT exposed; the demo server (8080) proxies RPC
+  - Port 9650 (node RPC) is NOT exposed; the app server (8080) proxies RPC
     behind its access gate. Tighten 8080 to your own IP if you prefer:
       sudo ufw delete allow 8080/tcp && sudo ufw allow from <your-ip> to any port 8080 proto tcp
-  - For a leadership demo over the internet, put Caddy/nginx with TLS in front.
+  - For internet access, put Caddy/nginx with TLS in front.
 EOF

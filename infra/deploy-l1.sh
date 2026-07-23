@@ -25,9 +25,9 @@ avalanche blockchain deploy "${NAME}" --local
 
 echo
 echo "==> Look for the RPC URL in the output above (http://127.0.0.1:9650/ext/bc/<blockchainID>/rpc)."
-echo "    Export it for the contract deployment and the demo server:"
+echo "    Export it for the contract deployment and the app server:"
 echo "      export CSB_RPC_URL='http://127.0.0.1:9650/ext/bc/<blockchainID>/rpc'"
 echo "      export CSB_DEPLOYER_KEY='<key of a txAllowList-admin funded account>'"
 echo "    Then: npx hardhat run scripts/deploy.js --network csbRemote"
-echo "          npx hardhat run scripts/seed-demo.js --network csbRemote"
-echo "          EXPLORER_PASSCODE=<passcode> node demo/server.js"
+echo "          npx hardhat run scripts/seed-accounts.js --network csbRemote"
+echo "          EXPLORER_PASSCODE=<passcode> node app/server.js"

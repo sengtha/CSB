@@ -5,4 +5,4 @@ coverage/
 coverage.json
 typechain-types/
 .env
-demo/deployments.json
+app/deployments.json

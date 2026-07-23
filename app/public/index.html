@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Cambodia Sovereign Blockchain — Demo</title>
+  <title>Cambodia Sovereign Blockchain — Portal</title>
   <link rel="stylesheet" href="app.css" />
 </head>
 <body>
   <header class="site">
     <h1>🇰🇭 Cambodia Sovereign Blockchain</h1>
-    <span class="sub">devnet demo — public within the country, private to the world</span>
+    <span class="sub">public within the country, private to the world</span>
     <nav>
       <a href="index.html" class="active">Home</a>
       <a href="wallet.html">Wallet</a>
@@ -19,7 +19,7 @@
   </header>
   <main>
     <div class="card">
-      <h2>Demo storyline</h2>
+      <h2>Walkthrough</h2>
       <table>
         <tr><th>Step</th><th>Where</th><th>What it shows</th></tr>
         <tr><td>1</td><td><a href="wallet.html">Wallet</a></td><td>A KYC'd citizen (Sokha) holds tokenized riel and pays another citizen — zero fees, instant finality, lost-key recovery backed by MoI.</td></tr>
@@ -29,7 +29,8 @@
         <tr><td>5</td><td><a href="explorer.html">Explorer</a></td><td>The whitelisted explorer: full sovereign auditability behind authenticated access.</td></tr>
       </table>
       <p class="small" style="margin-top:10px">
-        Seeded accounts (keys in <span class="mono">demo/deployments.json</span>): Sokha — tier 2 (full KYC), Dara — tier 1 (capped), Vanna — no KYC.
+        Pilot accounts (optional, seeded by <span class="mono">scripts/seed-accounts.js</span>; keys in <span class="mono">app/deployments.json</span>):
+        Sokha — tier 2 (full KYC), Dara — tier 1 (capped), Vanna — no KYC.
       </p>
     </div>
     <div class="card">
@@ -44,6 +45,6 @@
       </p>
     </div>
   </main>
-  <div class="footer">CSB v0 prototype — devnet demonstration, not a production system.</div>
+  <div class="footer">CSB v0 prototype — pilot system, not yet production.</div>
 </body>
 </html>

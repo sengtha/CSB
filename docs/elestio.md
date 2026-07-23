@@ -1,32 +1,17 @@
 # Deploying CSB on Elestio
 
-[Elestio](https://elest.io) provisions managed VMs (on Hetzner, DigitalOcean, AWS, Vultr, Scaleway, …) with Docker preinstalled, a TLS-terminating reverse proxy, firewall management, and Git-based CI/CD. Two deployment paths, matching the two stacks:
+[Elestio](https://elest.io) provisions managed VMs (on Hetzner, DigitalOcean, AWS, Vultr, Scaleway, …) with Docker preinstalled, a TLS-terminating reverse proxy, firewall management, and Git-based CI/CD. Two deployables, two paths:
 
 | Stack | Path | Why |
 |---|---|---|
-| Demo (chain + UIs) | **CI/CD pipeline** from GitHub, `docker-compose.demo.yml` | HTTPS out of the box, redeploys on push |
-| Validator node | **VM + SSH**, `docker-compose.validator.yml` | Needs raw public TCP 9651 and long-lived identity volumes — keep it pinned to one VM, not a rebuild pipeline |
-| App vs real CSB | **VM + SSH**, `docker-compose.app.yml`, ideally co-located with a validator | UIs talk to the live chain's private RPC; same CI/CD pattern as the demo works too once `CSB_RPC_URL` points at a reachable node |
+| Validator node | **VM + SSH**, `docker-compose.validator.yml` | Needs raw public TCP 9651 and long-lived identity volumes — pin it to one VM, don't put it in a rebuild pipeline |
+| App (UIs vs the live chain) | **VM + SSH** co-located with a validator, `docker-compose.app.yml`; or a CI/CD pipeline once `CSB_RPC_URL` points at a reachable node | The app needs the chain's private RPC; Elestio's proxy gives the gated UI HTTPS |
 
 Dashboard labels drift between Elestio versions; if a menu name differs slightly, look for the equivalent.
 
-## A. Demo stack via CI/CD
+## A. Validator node via VM + SSH
 
-1. **Create the pipeline.** Dashboard → **CI/CD** → *Create pipeline* → source **GitHub** → authorize Elestio's GitHub app for `sengtha/csb` (it's private, so grant access explicitly) → pick the repo and branch.
-2. **Build method: docker-compose**, compose file `docker-compose.demo.yml`.
-3. **Target:** create a new VM. 2 vCPU / 4 GB is enough for the demo; pick a region close to your audience (Singapore is the usual choice for Cambodia).
-4. **Exposed port:** point Elestio's reverse proxy at the `demo` service, container port **8080**. Elestio terminates TLS on 443 and gives you an `https://….elestio.app` URL (custom domains can be added later under the service's *Custom domain* settings).
-5. **Environment variables:** set `EXPLORER_PASSCODE` to a strong value — the default `csb-demo` must not survive on a public URL.
-6. **Deploy.** Build takes a few minutes (three images from one Dockerfile — layer cache makes rebuilds fast). Every push to the branch redeploys.
-
-Two operational notes:
-
-- **The demo chain is ephemeral by design.** The Hardhat devnet keeps state in memory. A full pipeline redeploy re-runs the one-shot `deployer` service, so you always get a freshly seeded demo. If the stack ever gets into a half-restarted state (chain reset but stale `deployments.json`), redeploy the pipeline, or on the VM: `docker compose -f docker-compose.demo.yml down -v && docker compose -f docker-compose.demo.yml up -d`.
-- **Do not expose the `chain` service.** Only the `demo` service (8080) goes behind the proxy; the compose file already keeps the chain internal — don't add a port mapping for it in Elestio.
-
-## B. Validator node via VM + SSH
-
-1. **Provision a VM.** Dashboard → create a VM/custom service: Ubuntu, **4 vCPU / 8 GB RAM / 100+ GB SSD**. Elestio images ship with Docker + Compose.
+1. **Provision a VM.** Dashboard → create a VM/custom service: Ubuntu, **4 vCPU / 8 GB RAM / 100+ GB SSD**. Elestio images ship with Docker + Compose. Pick a region close to Cambodia (Singapore).
 2. **SSH in** (keys are under the service's *Access/SSH* tab), then:
 
    ```bash
@@ -65,6 +50,23 @@ Store that archive offline (HSM-custody procedure in production); losing it mean
 
 **Upgrades:** bump `AVALANCHEGO_VERSION`/`SUBNET_EVM_VERSION` in `.env` (check the subnet-evm compatibility table), then `docker compose -f docker-compose.validator.yml up -d --build`. Coordinate with the council — validator versions must stay within the network's compatibility window.
 
+## B. App on the same (or an adjacent) VM
+
+Simplest layout: run the app on a validator VM, pointing at that node's localhost RPC.
+
+```bash
+export CSB_RPC_URL='http://127.0.0.1:9650/ext/bc/<blockchainID>/rpc'
+export CSB_DEPLOYER_KEY='<txAllowList-admin key>'
+docker compose -f docker-compose.app.yml --profile deploy run --rm deployer   # one-time
+EXPLORER_PASSCODE='<strong passcode>' docker compose -f docker-compose.app.yml up -d app
+```
+
+Note on networking: inside the app container, "localhost" is the container — reach the host's node API via the Docker bridge gateway (`http://172.17.0.1:9650/…`) or run the app service with `network_mode: host`.
+
+Then expose the app: in Elestio, map the reverse proxy to port **8080** of this service — Elestio terminates TLS on 443 and gives you an `https://….elestio.app` URL (custom domains under *Custom domain* settings). Set a strong `EXPLORER_PASSCODE`. Never map the chain RPC (9650) through the proxy.
+
+Alternatively, run the app as a CI/CD pipeline (source: GitHub → build method docker-compose → `docker-compose.app.yml`, expose service `app` port 8080, set `CSB_RPC_URL`/`EXPLORER_PASSCODE` as pipeline env vars) — useful once the chain RPC is reachable from the pipeline's VM over a private network.
+
 ## Sovereignty note
 
-Elestio VMs run on foreign cloud providers. That's fine for the demo and the Fuji testnet phase; it is **not** the production posture — the architecture requires ministry validators in Cambodian data centers under sovereign jurisdiction (`docs/architecture.md` §9). Treat Elestio as the rehearsal environment, and the migration path is trivial by design: the same compose files run on any Docker host, and the staking-volume backup moves the validator identity.
+Elestio VMs run on foreign cloud providers. That's fine for the Fuji testnet phase; it is **not** the production posture — the architecture requires ministry validators in Cambodian data centers under sovereign jurisdiction (`docs/architecture.md` §9). Treat Elestio as the rehearsal environment; the migration path is trivial by design: the same compose files run on any Docker host, and the staking-volume backup moves the validator identity.

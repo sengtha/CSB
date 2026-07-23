@@ -35,16 +35,16 @@ services:
       MOI_ADDR: ${MOI_ADDR:-}
       ENFORCER_ADDR: ${ENFORCER_ADDR:-}
       ISSUER_ADDR: ${ISSUER_ADDR:-}
-      # Set CSB_SEED_DEMO=1 to also create the seeded demo cast (test riel,
+      # Set CSB_SEED_ACCOUNTS=1 to also create pilot/test accounts (test riel,
       # Sokha/Dara/Vanna). On the real L1 those accounts must additionally be
       # enabled in the txAllowList precompile before they can transact.
-      CSB_SEED_DEMO: ${CSB_SEED_DEMO:-0}
+      CSB_SEED_ACCOUNTS: ${CSB_SEED_ACCOUNTS:-0}
     volumes:
       - app-data:/data
     command: >
       sh -c "npx hardhat run scripts/deploy.js --network csbRemote &&
-             if [ \"$$CSB_SEED_DEMO\" = \"1\" ]; then
-               npx hardhat run scripts/seed-demo.js --network csbRemote;
+             if [ \"$$CSB_SEED_ACCOUNTS\" = \"1\" ]; then
+               npx hardhat run scripts/seed-accounts.js --network csbRemote;
              fi"
     restart: "no"
 

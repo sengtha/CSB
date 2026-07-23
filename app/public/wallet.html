@@ -24,9 +24,9 @@
       <h2>Account</h2>
       <div class="grid2">
         <div>
-          <label>Demo account</label>
-          <select id="acct-select"><option value="">— choose or paste a key —</option></select>
-          <label>Private key (devnet only)</label>
+          <label>Pilot account</label>
+          <select id="acct-select"><option value="">— pilot account, or paste a key —</option></select>
+          <label>Private key (pilot/dev only)</label>
           <input id="acct-key" type="password" placeholder="0x…" autocomplete="off" />
           <button id="acct-load">Load account</button>
         </div>
@@ -64,7 +64,7 @@
       <table id="activity"><tr><th>Block</th><th>Event</th><th>Detail</th></tr></table>
     </div>
   </main>
-  <div class="footer">CSB v0 prototype — devnet demonstration, not a production system.</div>
+  <div class="footer">CSB v0 prototype — pilot system, not yet production.</div>
 
 <script>
 "use strict";
@@ -125,7 +125,7 @@ async function run(fn) {
 
   const sel = document.getElementById("acct-select");
   const pay = document.getElementById("pay-preset");
-  for (const [name, a] of Object.entries(cfg.demo?.accounts ?? {})) {
+  for (const [name, a] of Object.entries(cfg.pilot?.accounts ?? {})) {
     sel.add(new Option(`${name} — ${a.note}`, a.key));
     pay.add(new Option(`${name} (${short(a.address)})`, a.address));
   }
@@ -133,7 +133,7 @@ async function run(fn) {
   pay.onchange = () => (document.getElementById("pay-to").value = pay.value);
 
   const dest = document.getElementById("eg-dest");
-  const d = cfg.demo?.destinationChain;
+  const d = cfg.pilot?.destinationChain;
   if (d) dest.add(new Option(d.label, d.id));
 
   document.getElementById("acct-load").onclick = async () => {

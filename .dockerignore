@@ -4,5 +4,5 @@ cache
 coverage
 .git
 .env
-demo/deployments.json
+app/deployments.json
 *.log

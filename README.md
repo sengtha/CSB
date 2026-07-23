@@ -6,7 +6,7 @@ Full design rationale: [`docs/architecture.md`](docs/architecture.md).
 
 ## Status
 
-**v0 prototype, demo-ready.** Core contract suite implemented and tested (24 tests), including the production **ICTT bridge adapter**. Demo UIs — citizen wallet, gated explorer, and institutional admin console — run against any deployment behind an access-gated server. Cloud-VM tooling stands the whole stack up on a single Ubuntu VM ([`docs/cloud-deployment.md`](docs/cloud-deployment.md)); the real-egress path to Fuji C-Chain is documented in [`docs/fuji-ictt.md`](docs/fuji-ictt.md).
+**v0 prototype.** Core contract suite implemented and tested (24 tests), including the production **ICTT bridge adapter**. The application — citizen wallet, gated explorer, and institutional admin console — runs against the live chain behind an access-gated server (`docker-compose.app.yml`); ministries run validators via `docker-compose.validator.yml`. Cloud-VM tooling stands the whole stack up on a single Ubuntu VM ([`docs/cloud-deployment.md`](docs/cloud-deployment.md)); the real-egress path to Fuji C-Chain is documented in [`docs/fuji-ictt.md`](docs/fuji-ictt.md).
 
 ## Repository layout
 
@@ -26,57 +26,55 @@ contracts/
   egress/ICTTBridgeAdapter.sol       Production adapter: Avalanche ICTT TokenHome,
                                      council-owned route table
   egress/MockBridgeAdapter.sol       Devnet transport stand-in
-demo/
-  server.js                    Gated demo server: static UIs + authenticated RPC proxy
+app/
+  server.js                    Gated app server: static UIs + authenticated RPC proxy
   public/wallet.html           Citizen wallet: zero-fee payments, egress requests
   public/explorer.html         Whitelisted explorer: stats, decoded events,
                                address inspector, access log
   public/admin.html            Admin console: MoI / enforcement / council / issuer
-Dockerfile                     App image: toolchain + demo server
-docker-compose.app.yml         UIs + contract deployment against the REAL CSB L1
-docker-compose.demo.yml        One-command demo stack (simulated chain)
+Dockerfile                     App image: toolchain + app server
+docker-compose.app.yml         UIs + contract deployment against the live CSB L1
 docker/Dockerfile.validator    Ministry validator: AvalancheGo + Subnet-EVM plugin
 docker-compose.validator.yml   Validator node service (identity on volumes)
 infra/setup-vm.sh              Cloud VM bootstrap (Ubuntu, any provider)
 infra/deploy-l1.sh             Create + deploy the Avalanche L1 on the VM
 scripts/deploy.js              Deploys and wires the suite (multisig-aware)
-scripts/seed-demo.js           Seeds demo identities, balances, egress policy
+scripts/seed-accounts.js       Seeds pilot identities, balances, egress policy
 test/                          24 tests: KYC lifecycle, separation of powers,
                                compliance gating, egress policy, ICTT adapter
 docs/architecture.md           Architecture v0
 docs/cloud-deployment.md       Full-stack deployment on a cloud VM
+docs/docker.md                 Validator + app stacks with Docker
+docs/elestio.md                Hosting both stacks on Elestio
 docs/fuji-ictt.md              Real egress to Fuji C-Chain via ICTT
 ```
 
 ## Quickstart
 
-Fastest path — Docker (chain + contracts + seeded demo + gated UIs):
+Deployables (Docker, see [`docs/docker.md`](docs/docker.md)):
 
 ```bash
-docker compose -f docker-compose.demo.yml up --build
-# open http://localhost:8080  (passcode: csb-demo)
+# Ministry validator node (AvalancheGo + Subnet-EVM):
+docker compose -f docker-compose.validator.yml up -d --build
+
+# Application (contracts + gated UIs) against the live CSB chain:
+docker compose -f docker-compose.app.yml --profile deploy run --rm deployer   # one-time
+docker compose -f docker-compose.app.yml up -d app
 ```
 
-Ministry validator node (AvalancheGo + Subnet-EVM plugin): see [`docs/docker.md`](docs/docker.md) and `docker-compose.validator.yml`.
-
-Without Docker:
+Development without Docker:
 
 ```bash
-npm install
-npm run compile
-npm test
-```
+npm install && npm test
 
-Run the full demo (contracts + UIs) on a plain Hardhat node:
-
-```bash
+# local devnet stand-in for the chain (development only):
 npx hardhat node &
 npx hardhat run scripts/deploy.js --network localhost
-npx hardhat run scripts/seed-demo.js --network localhost
-EXPLORER_PASSCODE=csb-demo node demo/server.js   # open http://localhost:8080
+npx hardhat run scripts/seed-accounts.js --network localhost
+node app/server.js   # http://localhost:8080, passcode csb-demo
 ```
 
-For the real Avalanche L1 on a cloud VM, follow [`docs/cloud-deployment.md`](docs/cloud-deployment.md).
+To stand up the real Avalanche L1 on a cloud VM, follow [`docs/cloud-deployment.md`](docs/cloud-deployment.md).
 
 Role holders (council, MoI issuer, enforcement authority, KHR issuer) default to the deployer for devnet runs; set `COUNCIL_ADDR`, `MOI_ADDR`, `ENFORCER_ADDR`, `ISSUER_ADDR` for real deployments — every administrative role is designed to be held by an institutional multisig.
 
