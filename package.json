@@ -1,0 +1,19 @@
+{
+  "name": "cambodia-sovereign-blockchain",
+  "version": "0.1.0",
+  "description": "Cambodia Sovereign Blockchain (CSB) — Avalanche L1 prototype: sovereign permissioned EVM chain with MoI-issued on-chain KYC, KHR stablecoin rails, and a governed egress gateway to public blockchains.",
+  "private": true,
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:local": "hardhat run scripts/deploy.js"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.24.0",
+    "solc": "^0.8.24"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.1.0"
+  }
+}
