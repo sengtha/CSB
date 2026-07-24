@@ -30,13 +30,15 @@ async function main() {
   const dara = ethers.Wallet.createRandom().connect(ethers.provider);
   const vanna = ethers.Wallet.createRandom().connect(ethers.provider);
 
-  // Fund native gas. On the real CSB L1 fees are zero and this is unnecessary;
-  // on a local Hardhat node the accounts need gas money.
-  const feeData = await ethers.provider.getFeeData();
-  if (feeData.gasPrice === null || feeData.gasPrice > 0n) {
-    for (const w of [sokha, dara, vanna]) {
-      await (await deployer.sendTransaction({ to: w.address, value: ethers.parseEther("1") })).wait();
-    }
+  // Fund native gas for every seeded account. Even where the CSB fee floor is
+  // set to zero, the node still reserves maxFeePerGas * gasLimit from the
+  // sender's NATIVE balance up front (ethers populates a non-zero maxFeePerGas
+  // from the node's fee suggestion), so an account holding KHRt but zero tRIEL
+  // cannot send a single transfer. Always give them gas money — a tiny amount
+  // is harmless on a truly-free-gas chain and essential otherwise. (To top up
+  // already-seeded accounts on the live chain, use scripts/fund-native.js.)
+  for (const w of [sokha, dara, vanna]) {
+    await (await deployer.sendTransaction({ to: w.address, value: ethers.parseEther("10") })).wait();
   }
 
   await (await identity.register(sokha.address, ethers.id("identity-sokha"), 2)).wait();

@@ -137,6 +137,13 @@ function allInterfaces() {
 }
 
 function explainError(e) {
+  // Native-gas shortfall: the sender holds KHRt but no tRIEL to pay gas, so the
+  // node rejects the tx up front. Give an actionable message instead of the raw
+  // "insufficient funds" string (fix: scripts/fund-native.js on the chain host).
+  const msg = String(e?.shortMessage ?? e?.message ?? "");
+  if (e?.code === "INSUFFICIENT_FUNDS" || /insufficient funds/i.test(msg)) {
+    return "This account has no tRIEL to pay gas. An operator must fund it (scripts/fund-native.js) before it can transact.";
+  }
   const data = e?.info?.error?.data ?? e?.data ?? e?.error?.data;
   if (typeof data === "string" && data.startsWith("0x") && data.length >= 10) {
     for (const iface of allInterfaces()) {

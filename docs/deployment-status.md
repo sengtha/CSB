@@ -90,6 +90,11 @@ curl -s -X POST -H 'content-type:application/json' --data '{"jsonrpc":"2.0","id"
 pkill -f 'app/server.js'; cd ~/csb
 EXPLORER_PASSCODE=<your-passcode> CSB_RPC_URL=$RPC nohup node app/server.js > /tmp/app.log 2>&1 &
 
+# fund pilot accounts with native tRIEL so the wallet "Send payment" works
+# (they hold KHRt but need tRIEL to pay gas — see Troubleshooting below):
+CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
+  npx hardhat run scripts/fund-native.js --network csbRemote
+
 # after a VM reboot, the bootstrap node must be restarted:
 avalanche node local start csb-local-node-fuji   # (name may vary; see `avalanche node local list`)
 ```
@@ -108,6 +113,28 @@ Browser access: `https://csb-u70984.vm.elestio.app` (passcode-gated). **Easiest 
 - `~/.avalanche-cli/key/csb-deployer.pk` — chain root authority.
 - `app/deployments.json` — contract addresses + pilot keys.
 - (validator identity) `csb_avalanchego-staking` Docker volume, once node #2 exists.
+
+## Troubleshooting
+
+**Wallet "Send payment" does nothing / fails with an insufficient-funds error.**
+The pilot accounts (Sokha/Dara) were seeded with KHRt but no native **tRIEL**.
+Every EVM transaction — including a KHRt transfer — makes the node reserve
+`maxFeePerGas × gasLimit` from the sender's *native* balance up front, and the
+effective gas price on this chain is not actually zero (setting the fee floor to
+0 does not force the node's fee suggestion to 0). With 0 tRIEL the transfer
+reverts before it runs. Fix: give the accounts a little tRIEL with the Native
+Minter (deployer is admin):
+
+```bash
+export PATH=$PATH:$HOME/bin
+export RPC=http://127.0.0.1:9650/ext/bc/2s8QnZT5RNuoN4hvZDcmD787kcApP7tH97QtDUVN9atkxh3VSv/rpc
+cd ~/csb
+CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
+  npx hardhat run scripts/fund-native.js --network csbRemote
+```
+
+Then reload the wallet and send again. (`scripts/seed-accounts.js` now funds
+native gas at seed time too, so future deployments won't hit this.)
 
 ## Single-validator caveat
 
