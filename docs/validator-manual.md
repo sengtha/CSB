@@ -31,6 +31,36 @@ A validator is a server that holds a copy of the CSB ledger and participates in 
 
 Any provider is fine — your own data center, or a cloud VM. On **Elestio**: create a VM service (Ubuntu, 4 vCPU/8 GB/100 GB; Docker comes preinstalled), then open port 9651/tcp in the service's *Security → Firewall* panel. Keep 9650 closed — the setup below already restricts it to the machine itself.
 
+## Security obligation — keep your node's RPC API private
+
+**This is a term of participation, not a suggestion.** Your node's HTTP **RPC API**
+port (`9650`, or `9652` if you remap it) serves the **entire ledger to anyone who
+can reach it, with no authentication**. If you expose it to the internet, you
+break the chain's "private to the world" guarantee for *every* participant — not
+just your own users. So:
+
+- **The API port must never be reachable from the internet.** Two independent
+  locks, keep both: (1) it stays **bound to `127.0.0.1`** (localhost) — the
+  provided compose/config already does this, do not change `http-host`; and
+  (2) **never open `9650`/`9652` in your firewall / cloud security group.**
+- **Only the P2P port (`9651`, or `9653`) is public** — that is how validators
+  reach consensus, and it does not answer data queries. Public P2P is correct;
+  public API is not.
+- **A non-standard or "secret" port is NOT security.** Obscurity does not protect
+  an open port — it will be found by scanning. Localhost-binding + a closed
+  firewall is the protection; a renamed port is not.
+- **To query your own node**, do it from the machine itself (`curl 127.0.0.1:9650/…`)
+  or over an **SSH tunnel** — never by opening the port.
+- If you run any public-facing app/explorer against your node, put it behind an
+  **authenticated, filtered proxy** (as the reference app does — see
+  `docs/dev-access.md`), which reads from the node over localhost. The node's raw
+  port stays private; the gated app is the only public door.
+
+Reads are transparent *to vetted operators* like you (that is the point — the
+authorities can audit), but must stay closed to the public. Exposing the raw API
+is the one misconfiguration that silently defeats the whole sovereignty model,
+and the chain cannot prevent it for you — only your server hygiene can.
+
 ## 3. Setup (about 10 minutes of work)
 
 ```bash
