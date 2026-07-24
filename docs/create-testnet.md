@@ -2,6 +2,23 @@
 
 The validator manual tells operators to get `CSB_SUBNET_ID`, `CSB_VM_ID`, and the Blockchain ID "from the coordinator". **This document is for the coordinator — the person who creates the chain and thereby mints those IDs.** Run it once, on your VM (Elestio or other, with `infra/setup-vm.sh` already run so `avalanche-cli` is installed).
 
+## Order of operations (do not skip ahead)
+
+```
+0. bash infra/setup-vm.sh                      → installs avalanche-cli
+1. avalanche key create csb-deployer           → your key (0 AVAX at first)
+2. faucet → C-Chain 0x address, then
+   avalanche key transfer                      → ~3 AVAX onto the P-Chain
+3. edit genesis (0xC0DE… → your 0x address), then
+   avalanche blockchain create csb …           → mints the VM ID
+4. avalanche blockchain deploy csb --fuji      → mints Subnet ID + Blockchain ID
+5. avalanche blockchain describe csb           → READ the three IDs
+6. fill .env with those IDs                    → only NOW build the validator:
+   docker compose -f docker-compose.validator.yml up -d --build
+```
+
+Running the validator compose before step 5 fails on purpose: it refuses to start without a real `CSB_SUBNET_ID`, because no such ID exists until step 4 creates it. Nothing is wrong with your setup when you see that error — you're just at an earlier step.
+
 Quick orientation on the three values:
 
 | Value | What it is | Where it comes from |
