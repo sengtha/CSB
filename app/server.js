@@ -17,6 +17,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { filterBody } = require("./rpc-filter");
 
 const RPC_URL = process.env.CSB_RPC_URL ?? "http://127.0.0.1:8545";
 const PORT = Number(process.env.PORT ?? process.env.DEMO_PORT ?? 8080);
@@ -41,6 +42,20 @@ const accessLog = [];
 function authed(req) {
   const cookies = req.headers.cookie ?? "";
   return cookies.split(";").some((c) => c.trim() === `csb_session=${TOKEN}`);
+}
+
+// Scoped-RPC token registry: maps a per-user URL token to a KYC'd address, so a
+// wallet (MetaMask etc.) at /rpc/<token> gets a read-filtered view of only that
+// address's data. File format: { "<token>": { "address": "0x..", "label": ".." } }.
+// Read per-request so newly issued tokens work without a restart. Gitignored.
+function lookupToken(token) {
+  const file = process.env.CSB_RPC_TOKENS_FILE ?? path.join(__dirname, "rpc-tokens.json");
+  if (!token || !fs.existsSync(file)) return null;
+  try {
+    const entry = JSON.parse(fs.readFileSync(file, "utf8"))[token];
+    if (entry && typeof entry.address === "string") return entry;
+  } catch (_) { /* malformed file → treat as no match */ }
+  return null;
 }
 
 function readBody(req) {
@@ -89,6 +104,37 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === "/session") {
     send(res, 200, { authed: authed(req) });
+    return;
+  }
+
+  // Scoped per-user RPC: /rpc/<token>. Token-authenticated (no cookie — wallets
+  // can't send one), read-filtered to the token's address. This is the door a
+  // KYC user points MetaMask at; they see only their own data.
+  if (url.pathname.startsWith("/rpc/")) {
+    const cors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    };
+    if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
+    if (req.method !== "POST") { send(res, 405, { error: "POST only" }, cors); return; }
+    const entry = lookupToken(decodeURIComponent(url.pathname.slice(5)));
+    if (!entry) { send(res, 401, { error: "invalid or unknown RPC token" }, cors); return; }
+    try {
+      const body = JSON.parse((await readBody(req)).toString() || "null");
+      const forward = async (call) => {
+        const up = await fetch(RPC_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(call),
+        });
+        return up.json();
+      };
+      const out = await filterBody(body, entry.address, forward);
+      send(res, 200, out, cors);
+    } catch (e) {
+      send(res, 502, { error: `scoped RPC error: ${e.message}` }, cors);
+    }
     return;
   }
 

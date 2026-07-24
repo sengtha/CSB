@@ -35,32 +35,50 @@ To enable several at once: `CSB_DEV_ADDR=0xdev1,0xdev2`. Change the gas grant wi
 ## 2. Reach the RPC from the developer's machine
 
 The node's RPC listens on `127.0.0.1:9650` on the VM and is **not** public (that's
-the "private to the world" boundary). The gated app proxy (`/rpc`) is
-passcode+cookie protected and can't be used by MetaMask directly. Two ways to
-give a developer RPC access:
+the "private to the world" boundary). The node's raw port must never face the
+internet. Two ways to give a user RPC access from their own wallet:
 
-### Option A — SSH tunnel (recommended, keeps RPC private)
+### Option A — Scoped RPC token (recommended: no tunnel, read-filtered) ⭐
 
-The developer forwards the port over SSH and points MetaMask at their own
-localhost:
+The app server exposes a per-user endpoint `https://<host>/rpc/<token>` that maps
+the token to one KYC'd address and returns a **read-filtered** view: the user
+sees only their own balances, their own transaction history, and chain/fee data —
+never other users' activity — and can submit their own signed transactions.
+Bulk reads (logs/blocks/txs) are filtered to the caller; balance/KYC lookups of
+other addresses are refused; `admin`/`debug`/`platform` namespaces are blocked
+(see `app/rpc-filter.js`). The raw node stays private; the app is the only door.
+
+Issue a token for an (already KYC-enabled) address:
+
+```bash
+node scripts/make-rpc-token.js 0xUSERADDRESS "Sokha"
+# prints a URL like https://<your-elestio-host>/rpc/<token>
+```
+
+The user puts that URL in MetaMask (§3). Requires the app to be served over your
+HTTPS proxy (`docs/ssl.md`). This is the "public within the country" door: no SSH,
+but each holder sees only what they're entitled to.
+
+> Honest scope: this is practical scoping (no casual or bulk access to others'
+> data), not cryptographic confidentiality — see the header of `app/rpc-filter.js`.
+> The URL token is a bearer secret: give it only to that user; if it leaks, the
+> holder can read that one user's scoped data (never anyone else's), so rotate it
+> by re-running the script and removing the old entry from `app/rpc-tokens.json`.
+
+### Option B — SSH tunnel (for a trusted operator/developer who needs raw RPC)
+
+A developer who needs the *unfiltered* node (e.g. to run an indexer or debug)
+forwards the port over SSH and points tools at their own localhost:
 
 ```bash
 # on the developer's machine
 ssh -L 9650:127.0.0.1:9650 root@cicd-upecy-u70984.vm.elestio.app -N
 ```
 
-Their MetaMask RPC URL is then
-`http://127.0.0.1:9650/ext/bc/mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3/rpc`.
-Nothing is exposed publicly; access is controlled by who has SSH.
-
-### Option B — dedicated public dev RPC (only for a controlled pilot)
-
-If you must hand out a URL, put a reverse-proxy route in front of the RPC on a
-**hard-to-guess path** and treat it as semi-public — the allowlists still stop
-anyone unapproved from transacting, but anyone with the URL can *read* all chain
-data. Do **not** expose port 9650 directly; proxy it (see `docs/ssl.md`) at e.g.
-`https://cicd-upecy-u70984.vm.elestio.app/dev-rpc/…`. Prefer Option A unless a browser
-dapp needs it.
+Their RPC URL is then
+`http://127.0.0.1:9650/ext/bc/mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3/rpc`
+(full, unfiltered). Nothing is exposed publicly; access is controlled by who has
+SSH. Use this only for trusted operators — it is the whole ledger.
 
 ## 3. Add the network to MetaMask
 
@@ -69,7 +87,7 @@ MetaMask → Networks → **Add network manually**:
 | Field | Value |
 |---|---|
 | Network name | `CSB Testnet` |
-| New RPC URL | `http://127.0.0.1:9650/ext/bc/mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3/rpc` (via the tunnel), or your dev-RPC URL |
+| New RPC URL | **Scoped (recommended):** `https://<your-elestio-host>/rpc/<token>` from `make-rpc-token.js`. **Or raw via tunnel:** `http://127.0.0.1:9650/ext/bc/mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3/rpc` |
 | Chain ID | `8555` |
 | Currency symbol | `tRIEL` |
 | Block explorer | *(leave blank — the app's gated `explorer.html` is not an Etherscan-style API)* |

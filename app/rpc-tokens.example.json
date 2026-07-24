@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to app/rpc-tokens.json (gitignored) or generate entries with scripts/make-rpc-token.js. Each token maps a per-user RPC URL (/rpc/<token>) to a KYC'd address; the app returns a read-filtered view of only that address's data.",
+  "example0000replace0000with0000a0000random0000token": {
+    "address": "0x0000000000000000000000000000000000000000",
+    "label": "Sokha"
+  }
+}

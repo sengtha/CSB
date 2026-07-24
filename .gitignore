@@ -6,3 +6,6 @@ coverage.json
 typechain-types/
 .env
 app/deployments.json
+
+# Scoped-RPC per-user tokens (secrets)
+app/rpc-tokens.json
