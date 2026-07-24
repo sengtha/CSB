@@ -18,11 +18,16 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { filterBody } = require("./rpc-filter");
+const { deriveToken, addressFromToken, verifySignature } = require("./rpc-access");
 
 const RPC_URL = process.env.CSB_RPC_URL ?? "http://127.0.0.1:8545";
 const PORT = Number(process.env.PORT ?? process.env.DEMO_PORT ?? 8080);
 const PASSCODE = process.env.EXPLORER_PASSCODE ?? "csb-demo";
 const TOKEN = crypto.createHash("sha256").update(`csb:${PASSCODE}`).digest("hex");
+// Secret that keys the self-service scoped-RPC tokens. Stable across restarts as
+// long as the passcode is stable; override with SCOPED_RPC_SECRET to rotate all
+// issued URLs at once.
+const SCOPED_SECRET = process.env.SCOPED_RPC_SECRET ?? crypto.createHash("sha256").update(`csb-scoped-rpc:${PASSCODE}`).digest("hex");
 // Set COOKIE_SECURE=1 once the app is always served over HTTPS (behind a TLS
 // reverse proxy — see docs/ssl.md). Left off by default so plain-HTTP / SSH
 // tunnel access still works during setup.
@@ -63,6 +68,50 @@ function lookupToken(token) {
   if (!token) return null;
   const entry = readTokens()[token];
   return entry && typeof entry.address === "string" ? entry : null;
+}
+
+// Admin revoke list for scoped RPC (denylist of lowercased addresses). Gitignored.
+function revokedFile() {
+  return process.env.CSB_RPC_REVOKED_FILE ?? path.join(__dirname, "rpc-revoked.json");
+}
+function readRevoked() {
+  try { return new Set(JSON.parse(fs.readFileSync(revokedFile(), "utf8")).map((a) => String(a).toLowerCase())); }
+  catch (_) { return new Set(); }
+}
+function writeRevoked(set) {
+  fs.writeFileSync(revokedFile(), JSON.stringify([...set], null, 2));
+}
+
+// IdentityRegistry address from deployments.json (for live KYC checks).
+function identityAddress() {
+  try {
+    const file = process.env.CSB_DEPLOYMENTS_FILE ?? path.join(__dirname, "deployments.json");
+    return JSON.parse(fs.readFileSync(file, "utf8")).contracts.IdentityRegistry;
+  } catch (_) { return null; }
+}
+
+// Live on-chain KYC check: IdentityRegistry.isActive(address). Cached ~30s so a
+// chatty wallet doesn't hammer the node. Fails closed (false) if unavailable.
+const ISACTIVE_SELECTOR = "0x9f8a13d7";
+const _kycCache = new Map();
+async function isKycActive(address) {
+  const now = Date.now();
+  const cached = _kycCache.get(address);
+  if (cached && now - cached.at < 30000) return cached.active;
+  const identity = identityAddress();
+  if (!identity) return false;
+  const data = ISACTIVE_SELECTOR + "000000000000000000000000" + address.toLowerCase().replace(/^0x/, "");
+  try {
+    const up = await fetch(RPC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: identity, data }, "latest"] }),
+    });
+    const j = await up.json();
+    const active = typeof j.result === "string" && j.result.length >= 3 && BigInt(j.result) !== 0n;
+    _kycCache.set(address, { active, at: now });
+    return active;
+  } catch (_) { return false; }
 }
 
 function readBody(req) {
@@ -125,8 +174,19 @@ const server = http.createServer(async (req, res) => {
     };
     if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
     if (req.method !== "POST") { send(res, 405, { error: "POST only" }, cors); return; }
-    const entry = lookupToken(decodeURIComponent(url.pathname.slice(5)));
-    if (!entry) { send(res, 401, { error: "invalid or unknown RPC token" }, cors); return; }
+    const rawToken = decodeURIComponent(url.pathname.slice(5));
+    // Self-service token (address embedded + HMAC): gate live on KYC status and
+    // the admin revoke list, so access follows on-chain KYC automatically.
+    let address = addressFromToken(rawToken, SCOPED_SECRET);
+    if (address) {
+      if (readRevoked().has(address)) { send(res, 403, { error: "scoped RPC access revoked by admin" }, cors); return; }
+      if (!(await isKycActive(address))) { send(res, 403, { error: "address is not KYC-active" }, cors); return; }
+    } else {
+      // Fall back to a manually-issued stored token (optional override).
+      const entry = lookupToken(rawToken);
+      if (!entry) { send(res, 401, { error: "invalid or unknown RPC token" }, cors); return; }
+      address = entry.address;
+    }
     try {
       const body = JSON.parse((await readBody(req)).toString() || "null");
       const forward = async (call) => {
@@ -137,11 +197,64 @@ const server = http.createServer(async (req, res) => {
         });
         return up.json();
       };
-      const out = await filterBody(body, entry.address, forward);
+      const out = await filterBody(body, address, forward);
       send(res, 200, out, cors);
     } catch (e) {
       send(res, 502, { error: `scoped RPC error: ${e.message}` }, cors);
     }
+    return;
+  }
+
+  // Self-service scoped-RPC minting: a wallet proves control of its address with
+  // a signature and gets its scoped URL. No admin, no cookie — the signature is
+  // the auth. Access is still gated live (KYC + revoke) on every /rpc call.
+  if (url.pathname === "/rpc-access/challenge" && req.method === "GET") {
+    const message = `CSB scoped RPC access\nSign this to prove you control this address. It grants a read-only view of only your own data.\nnonce: ${Date.now()}`;
+    send(res, 200, { message });
+    return;
+  }
+  if (url.pathname === "/rpc-access/mint" && req.method === "POST") {
+    const b = JSON.parse((await readBody(req)).toString() || "{}");
+    const { address, message, signature } = b;
+    const m = /nonce: (\d+)/.exec(message || "");
+    if (!m || Date.now() - Number(m[1]) > 10 * 60 * 1000) { send(res, 400, { error: "challenge expired — reload and sign again" }); return; }
+    if (!/^0x[0-9a-fA-F]{40}$/.test(address || "") || !verifySignature(address, message, signature)) {
+      send(res, 401, { error: "signature does not match the address" });
+      return;
+    }
+    if (readRevoked().has(address.toLowerCase())) { send(res, 403, { error: "access revoked by admin" }); return; }
+    if (!(await isKycActive(address))) { send(res, 403, { error: "this address is not KYC-active — complete KYC first" }); return; }
+    send(res, 200, { path: `/rpc/${deriveToken(address, SCOPED_SECRET)}` });
+    return;
+  }
+
+  // Admin revoke list management (cookie-gated).
+  if (url.pathname === "/rpc-revoked" || url.pathname.startsWith("/rpc-revoked/")) {
+    if (!authed(req)) { send(res, 401, { error: "not authenticated" }); return; }
+    const set = readRevoked();
+    if (req.method === "GET") { send(res, 200, [...set]); return; }
+    if (req.method === "POST") {
+      const b = JSON.parse((await readBody(req)).toString() || "{}");
+      if (!/^0x[0-9a-fA-F]{40}$/.test(b.address ?? "")) { send(res, 400, { error: "a valid 0x address is required" }); return; }
+      set.add(b.address.toLowerCase()); writeRevoked(set); send(res, 200, { ok: true });
+      return;
+    }
+    if (req.method === "DELETE") {
+      set.delete(decodeURIComponent(url.pathname.slice("/rpc-revoked/".length)).toLowerCase());
+      writeRevoked(set); send(res, 200, { ok: true });
+      return;
+    }
+    send(res, 405, { error: "method not allowed" });
+    return;
+  }
+
+  // Admin convenience: compute the scoped URL for any address (to hand to a user
+  // who can't self-serve). Cookie-gated; does not itself grant access.
+  if (url.pathname === "/rpc-access/url-for" && req.method === "POST") {
+    if (!authed(req)) { send(res, 401, { error: "not authenticated" }); return; }
+    const b = JSON.parse((await readBody(req)).toString() || "{}");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(b.address ?? "")) { send(res, 400, { error: "a valid 0x address is required" }); return; }
+    send(res, 200, { path: `/rpc/${deriveToken(b.address, SCOPED_SECRET)}` });
     return;
   }
 

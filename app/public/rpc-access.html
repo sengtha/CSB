@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CSB — Activate wallet access</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB — Wallet Access</h1>
+    <span class="sub">connect your KYC'd wallet to get your private RPC URL</span>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="wallet.html">Wallet</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="https://github.com/sengtha/CSB/blob/main/docs/dev-access.md" target="_blank" rel="noopener">Dev Guide ↗</a>
+    </nav>
+  </header>
+  <main>
+    <div class="card">
+      <h2>Get your scoped RPC URL</h2>
+      <p class="small" style="line-height:1.8">
+        Connect the wallet whose address is <b>KYC-registered</b> on CSB and sign a short message to prove you
+        control it. You'll get a personal RPC URL to add to MetaMask (or any EVM wallet) that shows
+        <b>only your own data</b> — your balance and your transactions — and lets you send. No one else can use it
+        to read anyone else's activity. Access follows your KYC status automatically and can be revoked by the authority.
+      </p>
+      <button id="go">Connect wallet &amp; activate</button>
+      <div id="msg" class="banner" style="margin-top:12px"></div>
+      <div id="result" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Then, in MetaMask</h2>
+      <p class="small" style="line-height:1.8">
+        Networks → <b>Add network manually</b> → Network name <span class="mono">CSB Testnet</span>,
+        RPC URL = the URL above, Chain ID <span class="mono">8555</span>, Currency symbol <span class="mono">tRIEL</span>,
+        Block explorer blank. Then import your account and you're live.
+      </p>
+      <p class="small">Note: your address must already be KYC-registered and txAllowList-enabled by the Identity Authority — otherwise activation is refused and transactions won't go through.</p>
+    </div>
+  </main>
+  <div class="footer">CSB v0 prototype — a personal experiment; not affiliated with or endorsed by any government. Test tokens only.</div>
+
+<script>
+"use strict";
+function banner(el, kind, msg) { el.className = `banner ${kind}`; el.textContent = msg; }
+
+document.getElementById("go").onclick = async () => {
+  const msg = document.getElementById("msg");
+  const result = document.getElementById("result");
+  result.innerHTML = "";
+  msg.className = "banner";
+  try {
+    if (!window.ethereum) throw new Error("No EVM wallet found. Install MetaMask (or another wallet) and retry.");
+    const [address] = await window.ethereum.request({ method: "eth_requestAccounts" });
+    banner(msg, "", "Requesting challenge…");
+    const ch = await (await fetch("/rpc-access/challenge")).json();
+    banner(msg, "", "Check your wallet and sign the message…");
+    const signature = await window.ethereum.request({ method: "personal_sign", params: [ch.message, address] });
+    const res = await fetch("/rpc-access/mint", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address, message: ch.message, signature }),
+    });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || "activation failed");
+    const url = location.origin + j.path;
+    banner(msg, "ok", "Activated. Your personal RPC URL:");
+    result.innerHTML =
+      `<div class="card" style="background:#f4f6fb"><b>Your CSB RPC URL</b><br/>` +
+      `<span class="mono" style="word-break:break-all">${url}</span><br/>` +
+      `<button id="copy" class="ghost" style="margin-top:8px">Copy</button>` +
+      `<p class="small" style="margin-top:8px">Keep this URL private — it is yours. It reads only your data; revoke or KYC-change cuts it off.</p></div>`;
+    document.getElementById("copy").onclick = () => navigator.clipboard.writeText(url);
+  } catch (e) {
+    banner(msg, "err", e.message || String(e));
+  }
+};
+</script>
+</body>
+</html>

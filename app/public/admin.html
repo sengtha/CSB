@@ -136,17 +136,20 @@
       <div id="tab-rpc" class="tabpane">
         <div class="grid2">
           <div>
-            <h2>Issue scoped RPC URL</h2>
-            <p class="small">Give a KYC'd address a MetaMask URL that reads <b>only their own data</b> (balance, their history, chain/fees) and lets them submit their own signed transactions. This is an <b>app-level</b> access grant — not a chain transaction, so no signing key is needed. The address must already be KYC-registered and txAllowList-enabled to actually transact.</p>
+            <h2>Access is self-service</h2>
+            <p class="small" style="line-height:1.7">Any <b>KYC-active</b> address activates its own scoped RPC URL at <a href="rpc-access.html" target="_blank">rpc-access.html</a> by signing with its wallet — no per-user issuing, no admin step. Access is re-checked live on every request against on-chain KYC and the revoke list, so revoking KYC also cuts RPC. Use the tools here only to <b>revoke</b> an address, or to fetch a URL for someone who can't self-serve.</p>
+            <h2 style="margin-top:14px">Look up a URL for an address</h2>
             <label>Address</label><input id="rpc-addr" placeholder="0x…" />
-            <label>Label</label><input id="rpc-label" placeholder="e.g. Sokha" />
-            <button id="rpc-issue">Issue URL</button>
-            <div id="rpc-new" class="small" style="margin-top:12px"></div>
+            <button id="rpc-url" class="ghost">Get scoped URL</button>
+            <div id="rpc-new" class="small" style="margin-top:10px"></div>
           </div>
           <div>
-            <h2>Active RPC tokens</h2>
-            <table id="rpc-list"><tr><th>Label</th><th>Address</th><th></th></tr></table>
-            <p class="small" style="margin-top:8px">Revoking a token immediately cuts that URL's access. The raw node RPC is never exposed — every wallet reads through this filtered door.</p>
+            <h2>Revoke access</h2>
+            <label>Address to revoke</label><input id="rpc-rev-addr" placeholder="0x…" />
+            <button id="rpc-rev-go" class="danger">Revoke</button>
+            <p class="small" style="margin-top:6px">Immediately blocks that address's scoped RPC URL, regardless of KYC.</p>
+            <h2 style="margin-top:14px">Revoked addresses</h2>
+            <table id="rpc-rev-list"><tr><th>Address</th><th></th></tr></table>
           </div>
         </div>
       </div>
@@ -279,44 +282,49 @@ async function refreshStatus() {
     return `Redeemed ${val("iss-r-amt")} KHRt.`;
   });
 
-  // --- Scoped RPC tokens (app-level, not a chain transaction)
-  async function loadRpcTokens() {
-    const r = await fetch("/rpc-tokens");
+  // --- Scoped RPC: self-service model — admin only revokes / looks up URLs
+  async function loadRevoked() {
+    const r = await fetch("/rpc-revoked");
     const list = r.ok ? await r.json() : [];
-    const t = document.getElementById("rpc-list");
-    t.innerHTML = "<tr><th>Label</th><th>Address</th><th></th></tr>" +
-      (list.length ? list.map((x) =>
-        `<tr><td>${x.label || "—"}</td><td class="mono">${short(x.address)}</td>` +
-        `<td><button class="danger" data-tok="${x.token}">Revoke</button></td></tr>`).join("")
-      : '<tr><td colspan="3" class="small">No tokens issued.</td></tr>');
-    t.querySelectorAll("button[data-tok]").forEach((b) => {
+    const t = document.getElementById("rpc-rev-list");
+    t.innerHTML = "<tr><th>Address</th><th></th></tr>" +
+      (list.length ? list.map((a) =>
+        `<tr><td class="mono">${short(a)}</td><td><button class="ghost" data-un="${a}">Un-revoke</button></td></tr>`).join("")
+      : '<tr><td colspan="2" class="small">None revoked.</td></tr>');
+    t.querySelectorAll("button[data-un]").forEach((b) => {
       b.onclick = () => run(async () => {
-        const res = await fetch("/rpc-tokens/" + b.dataset.tok, { method: "DELETE" });
-        if (!res.ok) throw new Error("revoke failed");
-        await loadRpcTokens();
-        return "Scoped RPC token revoked.";
+        const res = await fetch("/rpc-revoked/" + b.dataset.un, { method: "DELETE" });
+        if (!res.ok) throw new Error("failed");
+        await loadRevoked();
+        return "Access restored (still subject to KYC status).";
       });
     });
   }
-  document.getElementById("rpc-issue").onclick = () => run(async () => {
-    const address = val("rpc-addr");
-    const label = val("rpc-label");
-    const res = await fetch("/rpc-tokens", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address, label }),
+  document.getElementById("rpc-rev-go").onclick = () => run(async () => {
+    const res = await fetch("/rpc-revoked", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address: val("rpc-rev-addr") }),
     });
     const j = await res.json();
-    if (!res.ok) throw new Error(j.error || "issue failed");
-    const url = `${location.origin}/rpc/${j.token}`;
-    document.getElementById("rpc-new").innerHTML =
-      `<b>MetaMask RPC URL for ${label || short(address)}:</b><br/>` +
-      `<span class="mono" style="word-break:break-all">${url}</span><br/>` +
-      `<span class="small">Add network in MetaMask — Chain ID <b>8555</b>, symbol <b>tRIEL</b>. Give this URL only to that user.</span>`;
-    await loadRpcTokens();
-    return "Scoped RPC URL issued.";
+    if (!res.ok) throw new Error(j.error || "failed");
+    await loadRevoked();
+    return `Revoked scoped RPC access for ${short(val("rpc-rev-addr"))}.`;
   });
-  loadRpcTokens();
+  document.getElementById("rpc-url").onclick = () => run(async () => {
+    const res = await fetch("/rpc-access/url-for", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address: val("rpc-addr") }),
+    });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || "failed");
+    const url = location.origin + j.path;
+    document.getElementById("rpc-new").innerHTML =
+      `<b>Scoped URL for ${short(val("rpc-addr"))}:</b><br/>` +
+      `<span class="mono" style="word-break:break-all">${url}</span><br/>` +
+      `<span class="small">Works only while that address is KYC-active and not revoked. Chain ID <b>8555</b>, symbol <b>tRIEL</b>.</span>`;
+    return "URL computed.";
+  });
+  loadRevoked();
 
   refreshStatus();
   setInterval(refreshStatus, 5000);

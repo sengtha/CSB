@@ -38,32 +38,39 @@ The node's RPC listens on `127.0.0.1:9650` on the VM and is **not** public (that
 the "private to the world" boundary). The node's raw port must never face the
 internet. Two ways to give a user RPC access from their own wallet:
 
-### Option A — Scoped RPC token (recommended: no tunnel, read-filtered) ⭐
+### Option A — Self-service scoped RPC (recommended: no tunnel, no admin issuing) ⭐
 
-The app server exposes a per-user endpoint `https://<host>/rpc/<token>` that maps
-the token to one KYC'd address and returns a **read-filtered** view: the user
-sees only their own balances, their own transaction history, and chain/fee data —
-never other users' activity — and can submit their own signed transactions.
-Bulk reads (logs/blocks/txs) are filtered to the caller; balance/KYC lookups of
-other addresses are refused; `admin`/`debug`/`platform` namespaces are blocked
-(see `app/rpc-filter.js`). The raw node stays private; the app is the only door.
+The app exposes a per-user endpoint `https://<host>/rpc/<token>` that returns a
+**read-filtered** view: the user sees only their own balances, their own
+transaction history, and chain/fee data — never other users' activity — and can
+submit their own signed transactions. Bulk reads (logs/blocks/txs) are filtered
+to the caller; balance/KYC lookups of other addresses are refused;
+`admin`/`debug`/`platform` namespaces are blocked (see `app/rpc-filter.js`). The
+raw node stays private; the app is the only door.
 
-Issue a token for an (already KYC-enabled) address:
+**Onboarding is self-service — no admin step per user.** The user visits
+**`https://<host>/rpc-access.html`**, connects their wallet, and signs a message
+to prove they control the address. They get their personal RPC URL to paste into
+MetaMask (§3). Access is then re-checked **live on every request**:
 
-```bash
-node scripts/make-rpc-token.js 0xUSERADDRESS "Sokha"
-# prints a URL like https://<your-elestio-host>/rpc/<token>
-```
+1. the URL's signature must be valid (the app minted it for that address),
+2. the address must be **KYC-active on-chain** (revoking KYC auto-revokes RPC), and
+3. the address must not be on the admin **revoke list**.
 
-The user puts that URL in MetaMask (§3). Requires the app to be served over your
-HTTPS proxy (`docs/ssl.md`). This is the "public within the country" door: no SSH,
-but each holder sees only what they're entitled to.
+So any KYC'd citizen activates their own wallet; the authority only ever
+**revokes** (Admin console → *Scoped RPC access* → Revoke, or just revoke their
+KYC). The admin can also look up a URL for someone who can't self-serve (same
+tab), and `scripts/make-rpc-token.js` still issues a manual override token if
+ever needed.
+
+Requires the app served over your HTTPS proxy (`docs/ssl.md`) — MetaMask rejects
+non-localhost `http://` RPC URLs.
 
 > Honest scope: this is practical scoping (no casual or bulk access to others'
 > data), not cryptographic confidentiality — see the header of `app/rpc-filter.js`.
-> The URL token is a bearer secret: give it only to that user; if it leaks, the
-> holder can read that one user's scoped data (never anyone else's), so rotate it
-> by re-running the script and removing the old entry from `app/rpc-tokens.json`.
+> The URL embeds an HMAC keyed by a server secret (`SCOPED_RPC_SECRET`), so it
+> can't be forged for another address; rotating that secret invalidates all
+> issued URLs at once.
 
 ### Option B — SSH tunnel (for a trusted operator/developer who needs raw RPC)
 
