@@ -44,6 +44,7 @@ scripts/deploy.js              Deploys and wires the suite (multisig-aware)
 scripts/seed-accounts.js       Seeds pilot identities, balances, egress policy
 test/                          24 tests: KYC lifecycle, separation of powers,
                                compliance gating, egress policy, ICTT adapter
+docs/deployment-status.md      LIVE Fuji testnet: IDs, contract addresses, ops
 docs/architecture.md           Architecture v0
 docs/chain-config.md           Chain rules reference: genesis, gas/fee settings,
                                precompiles, what Docker does NOT configure
