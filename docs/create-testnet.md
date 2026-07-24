@@ -43,7 +43,7 @@ These are the things that actually bite, learned the hard way:
 3. **`describe` prints your private keys.** The "Initial token allocation" table includes the deployer's private key in plain text. Never paste that table anywhere public (issues, chat, Discord); operators only ever need the Subnet ID / VM ID / Blockchain ID. A testnet key that leaks is testnet-only forever.
 4. **Elestio SSH:** the root password is displayed in the service's dashboard (*Admin/SSH credentials*, reveal icon); the dashboard also has a browser terminal that needs no password. SSH works against the same hostname whose HTTPS times out — different ports.
 5. **Use the wizard — do NOT pass a hand-written `--genesis`.** A custom genesis lacks the pre-deployed Validator Manager bytecode the CLI's V2 PoA flow expects at `0x0FEEDC0DE…`; the deploy then dies at "Initializing Proof of Authority Validator Manager" with *"no new block produced"* / *"no contract code at given address"* (proven by four failed attempts). The wizard genesis embeds the manager contracts, correct timestamps, and warp config — and its prompts can express every CSB precompile (answers in step 3). The only trap inside the wizard: never accept "defaults for a test environment" (it prefunds the public ewoq key, which Fuji rejects with *"can't airdrop to default address"*).
-6. **The live network dictates your versions — check it, don't trust docs.** Fuji upgrades continuously; a node even one protocol version behind connects but never finishes bootstrapping ("context deadline exceeded", with peer log lines advising "you may want to update your client"). Before starting: update avalanche-cli to latest (re-run its install script), and verify the pin: the newest `subnet-evm` release's `compatibility.json` protocol number must appear in the target avalanchego's `version/compatibility.json`. Pin `--vm-version` and the Docker pair to that. If bootstrap still stalls on the stable avalanchego, Fuji may be running a `-fuji` pre-release (e.g. `v1.15.0-fuji` docker tag) — use that tag for testnet validators.
+6. **The live network dictates your versions — check it, don't trust docs.** Fuji upgrades continuously; a node even one protocol version behind connects but never finishes bootstrapping ("context deadline exceeded", with peer log lines advising "you may want to update your client"). Before starting: update avalanche-cli to latest (re-run its install script), and verify the pin: the newest `subnet-evm` release's `compatibility.json` protocol number must appear in the target avalanchego's `version/compatibility.json`. Pin `--vm-version` and the Docker pair to that. As of this writing the ceiling is **AvalancheGo `v1.14.1` + Subnet-EVM `v0.8.0` (protocol 44)** — `v1.14.2`/`v1.15.0` bumped to protocol 45/46 with no matching Subnet-EVM release, so they are *not* usable for a Subnet-EVM L1 even though Fuji's primary network runs them. A protocol-44 L1 validator still peers with the newer primary network (with "you may want to update your client" warnings) and runs its own L1 consensus fine. Do not "upgrade" to `v1.15.0` chasing those warnings — you'll break the VM plugin.
 7. **Warp needs a post-Durango activation time.** `warpConfig.blockTimestamp` must be a recent Unix timestamp (the repo genesis uses 1720000000), never `0` — otherwise the VM rejects the whole genesis with *"warp cannot be activated before Durango"* and the deploy hangs forever at "waiting to be bootstrapped" (the error is only visible in the node's main.log).
 8. **Interrupted deploys are resumable.** Re-running `avalanche blockchain deploy csb --fuji` picks up what already completed on Fuji. Check `avalanche key list` afterwards — an interrupted attempt may have spent some P-Chain AVAX, so the retry can need a faucet top-up.
 
@@ -107,10 +107,19 @@ avalanche blockchain describe csb --genesis | grep -E 'chainId|minBaseFee|txAllo
 
 ## 4. Deploy to Fuji — in tmux
 
+Pin the AvalancheGo version explicitly. **The working pair is AvalancheGo
+`v1.14.1` + Subnet-EVM `v0.8.0` — both RPCChainVM plugin protocol 44.** Do not
+chase newer AvalancheGo: `v1.14.2` is protocol 45 and `v1.15.0` is protocol 46,
+and **no Subnet-EVM release supports 45 or 46 yet** (latest Subnet-EVM `v0.8.0`
+is protocol 44). A version mismatch means the VM plugin won't load or the L1
+won't finalize blocks. Check the current matrix before deploying:
+`subnet-evm` latest release's `compatibility.json` protocol number must equal the
+number your chosen `avalanchego` lists in its `version/compatibility.json`.
+
 ```bash
 sudo apt-get install -y tmux
 tmux new -s csb
-avalanche blockchain deploy csb --fuji
+avalanche blockchain deploy csb --fuji --avalanchego-version v1.14.1
 ```
 
 Prompts: pay with **csb-deployer**; *"use your local machine as a bootstrap validator?"* → **Yes** (the chain needs a validator at birth; the CLI runs one on this VM — your Docker validator joins as #2 later). Then wait: the local node bootstraps against Fuji, which takes from minutes to over an hour. Don't interrupt it; if the connection drops, `tmux attach -t csb`.
