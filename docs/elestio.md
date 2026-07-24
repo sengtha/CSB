@@ -67,6 +67,28 @@ Then expose the app: in Elestio, map the reverse proxy to port **8080** of this 
 
 Alternatively, run the app as a CI/CD pipeline (source: GitHub → build method docker-compose → `docker-compose.app.yml`, expose service `app` port 8080, set `CSB_RPC_URL`/`EXPLORER_PASSCODE` as pipeline env vars) — useful once the chain RPC is reachable from the pipeline's VM over a private network.
 
+## C. Testnet and mainnet validators on one VM
+
+Both can share a single Elestio VM — the compose file parameterizes ports precisely for this. Size up: **8 vCPU / 16 GB RAM / 250+ GB SSD** (two nodes, two databases). Use two separate clones so volumes and `.env` files never collide (Docker namespaces volumes by directory name):
+
+```bash
+git clone <repo-url> csb-fuji && cd csb-fuji
+cp .env.validator.example .env
+# .env: AVAGO_NETWORK_ID=fuji, testnet CSB_SUBNET_ID/CSB_VM_ID,
+#       VALIDATOR_API_PORT=9650, VALIDATOR_P2P_PORT=9651
+docker compose -f docker-compose.validator.yml up -d --build
+
+cd .. && git clone <repo-url> csb-mainnet && cd csb-mainnet
+cp .env.validator.example .env
+# .env: AVAGO_NETWORK_ID=mainnet, mainnet CSB_SUBNET_ID/CSB_VM_ID,
+#       VALIDATOR_API_PORT=9652, VALIDATOR_P2P_PORT=9653
+docker compose -f docker-compose.validator.yml up -d --build
+```
+
+Open **both** P2P ports (9651 and 9653) in the Elestio firewall; both API ports stay localhost-only. The app stack can run twice the same way (two clones, different `PORT`/host port mappings and `CSB_RPC_URL`s), or run one app per chain phase.
+
+Honest caution: co-hosting is fine for the testnet phase and for an early mainnet where you operate the coordinator node. It is **not** the end-state for a production mainnet validator — one machine is one failure domain, and a compromise of the shared VM touches both networks. When mainnet carries real registrations, move its validator to a dedicated machine (the staking-volume backup makes the move a 10-minute job).
+
 ## Sovereignty note
 
 Elestio VMs run on foreign cloud providers. That's fine for the Fuji testnet phase; it is **not** the production posture — the architecture requires ministry validators in Cambodian data centers under sovereign jurisdiction (`docs/architecture.md` §9). Treat Elestio as the rehearsal environment; the migration path is trivial by design: the same compose files run on any Docker host, and the staking-volume backup moves the validator identity.

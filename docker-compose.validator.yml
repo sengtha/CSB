@@ -1,4 +1,4 @@
-# CSB ministry validator node.
+# CSB ministry/partner validator node.
 #
 #   1. Get the IDs from whoever operates the chain (or `avalanche blockchain
 #      describe csb`): the SUBNET ID (to track) and the VM ID (build arg).
@@ -10,9 +10,13 @@
 #      to the council so it can register the validator through the
 #      Validator Manager. The node validates once registered.
 #
+# Ports are parameterized so a Fuji validator and a mainnet validator can share
+# one machine (run each from its own clone directory with its own .env and
+# distinct VALIDATOR_*_PORT values — volumes are namespaced per directory).
+#
 # Volumes hold the database and the node's staking/BLS keys — the validator's
-# identity. Back the staking directory up (ministry key ceremony); losing it
-# means registering a new validator.
+# identity. Back the staking directory up (key ceremony); losing it means
+# registering a new validator.
 services:
   validator:
     build:
@@ -28,12 +32,18 @@ services:
       AVAGO_TRACK_SUBNETS: ${CSB_SUBNET_ID:?set CSB_SUBNET_ID in .env}
       AVAGO_HTTP_HOST: 0.0.0.0
       AVAGO_HTTP_ALLOWED_HOSTS: "*"
+      AVAGO_HTTP_PORT: ${VALIDATOR_API_PORT:-9650}
+      AVAGO_STAKING_PORT: ${VALIDATOR_P2P_PORT:-9651}
+      # L1-only validators track the P-Chain without validating the Primary
+      # Network — keeps disk/CPU needs modest. Set to false only for a node
+      # that must also validate the Primary Network.
+      AVAGO_PARTIAL_SYNC_PRIMARY_NETWORK: ${AVAGO_PARTIAL_SYNC_PRIMARY_NETWORK:-true}
     ports:
       # Staking/consensus port — must be publicly reachable by other validators.
-      - "9651:9651"
-      # Node API/RPC — bound to localhost only; front with the gated demo
+      - "${VALIDATOR_P2P_PORT:-9651}:${VALIDATOR_P2P_PORT:-9651}"
+      # Node API/RPC — bound to localhost only; front with the gated app
       # server or an authenticated reverse proxy, never expose raw.
-      - "127.0.0.1:9650:9650"
+      - "127.0.0.1:${VALIDATOR_API_PORT:-9650}:${VALIDATOR_API_PORT:-9650}"
     volumes:
       - avalanchego-db:/root/.avalanchego/db
       - avalanchego-staking:/root/.avalanchego/staking
