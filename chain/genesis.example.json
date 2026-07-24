@@ -51,7 +51,7 @@
       ]
     },
     "warpConfig": {
-      "blockTimestamp": 0,
+      "blockTimestamp": 1720000000,
       "quorumNumerator": 67
     }
   },
