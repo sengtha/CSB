@@ -1,6 +1,6 @@
 # Docker deployment
 
-Two deployables. For hosting them on Elestio, see [`docs/elestio.md`](elestio.md). Note that Docker configures only the node process — chain rules (gas fees, allowlists, chainId) live in the genesis and on-chain precompiles: see [`docs/chain-config.md`](chain-config.md).
+Two deployables — and one honest caveat up front: **Docker covers running a validator or the app against an *existing* chain.** Creating the chain itself is a one-time, non-Docker task for exactly one person (the coordinator), using avalanche-cli: see [`docs/create-testnet.md`](create-testnet.md). Everyone else really does just use Docker. For hosting on Elestio, see [`docs/elestio.md`](elestio.md). Note that Docker configures only the node process — chain rules (gas fees, allowlists, chainId) live in the genesis and on-chain precompiles: see [`docs/chain-config.md`](chain-config.md).
 
 | File | What it runs | Who runs it |
 |---|---|---|

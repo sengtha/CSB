@@ -60,7 +60,7 @@ docs/testnet-to-mainnet.md     Promotion guide: Fuji testnet -> Avalanche mainne
 
 ## Quickstart
 
-Deployables (Docker, see [`docs/docker.md`](docs/docker.md)):
+Deployables (Docker, see [`docs/docker.md`](docs/docker.md)). Note: joining an existing chain or running the app is Docker-only; **creating** the chain is a one-time avalanche-cli task for the coordinator ([`docs/create-testnet.md`](docs/create-testnet.md)):
 
 ```bash
 # Institution validator node (AvalancheGo + Subnet-EVM):
