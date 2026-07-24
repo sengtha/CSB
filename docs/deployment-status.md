@@ -24,8 +24,9 @@ This is the running record of the CSB testnet: what exists, where, and how to op
 | | |
 |---|---|
 | Host | Elestio VM `csb-u70984.vm.elestio.app` (Ubuntu, Docker) |
-| Bootstrap validator | avalanche-cli local node, `NodeID-M7ag4B7H1C4eFodbi4TwpAoqJh7LEux2s`, ports 9650 (API, localhost) / 9651 (P2P) |
-| Docker validator (node #2) | planned — `docker-compose.validator.yml`, ports 9652/9653, not yet registered |
+| Bootstrap validator | avalanche-cli local node **cluster `csb-local-node-fuji`**, `NodeID-M7ag4B7H1C4eFodbi4TwpAoqJh7LEux2s`, ports 9650 (API, localhost) / 9651 (P2P). **This is the chain's registered L1 validator — always operate this cluster.** |
+| Docker validator (node #2) | running as container `csb-validator-1` (image `csb-validator`), ports 9652/9653, auto-restart — **not yet registered** as an L1 validator, so it only partial-syncs |
+| ⚠ Decoy cluster `csb` | A second avalanche-cli cluster (`NodeID-LSmkHG1…`, port 9654) exists from a mis-step. It is **NOT** the L1 validator and can never bootstrap the chain (0% stake). Do not start/track it; prefer `avalanche node local destroy csb` to remove the confusion. |
 | App server | `app/server.js` on port **8080** (gated wallet/explorer/admin), passcode via `EXPLORER_PASSCODE` env |
 | Deployer / admin key | `csb-deployer` → **`0x8f6aE9fB0993C8691D7FCDFBFC79fbcF5A7BFa8b`** — precompile admin, contract deployer, KHRt issuer, validator-manager owner. **TESTNET ONLY — never reuse on mainnet.** |
 
@@ -95,8 +96,12 @@ EXPLORER_PASSCODE=<your-passcode> CSB_RPC_URL=$RPC nohup node app/server.js > /t
 CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
   npx hardhat run scripts/fund-native.js --network csbRemote
 
-# after a VM reboot, the bootstrap node must be restarted:
-avalanche node local start csb-local-node-fuji   # (name may vary; see `avalanche node local list`)
+# after a VM reboot, the bootstrap node must be restarted.
+# IMPORTANT: the correct cluster is 'csb-local-node-fuji' (NodeID-M7ag4B7…, the
+# registered L1 validator, port 9650). Do NOT start/track the 'csb' cluster —
+# it is a decoy with a different NodeID that can never bootstrap the L1.
+avalanche node local status csb-local-node-fuji
+avalanche node local start csb-local-node-fuji
 ```
 
 Browser access: `https://csb-u70984.vm.elestio.app` (passcode-gated). **Easiest login: visit the page with the passcode in the URL once** — `https://csb-u70984.vm.elestio.app/explorer.html?pw=<passcode>` — it sets the session cookie and redirects (no form field). The passcode box also works. For a shared HTTPS link, front port 8080 with a TLS reverse proxy — see `docs/ssl.md` (Elestio proxy or Caddy), then relaunch the app with `COOKIE_SECURE=1`.
@@ -112,7 +117,8 @@ Browser access: `https://csb-u70984.vm.elestio.app` (passcode-gated). **Easiest 
 
 - `~/.avalanche-cli/key/csb-deployer.pk` — chain root authority.
 - `app/deployments.json` — contract addresses + pilot keys.
-- (validator identity) `csb_avalanchego-staking` Docker volume, once node #2 exists.
+- **Bootstrap validator staking identity** — `~/.avalanche-cli/local/csb-local-node-fuji/NodeID-M7ag4B7…/staking/staker.key` + `staker.crt`. This key **is** the L1's single validator; lose it and the chain cannot reach quorum to bootstrap or to register a replacement. Back it up off the VM. (This is exactly what went wrong once: a stop/start landed on a *different* cluster with a new NodeID, and the L1 sat at "0% stake connected / context deadline exceeded" until the original cluster was restarted.)
+- (validator identity) `csb_avalanchego-staking` Docker volume, once node #2 is registered.
 
 ## Troubleshooting
 
@@ -144,6 +150,28 @@ hangs forever. Both `fund-native.js` and the wallet now price transactions
 explicitly, far above the current base fee (harmless — the node only charges the
 real base fee), and `fund-native.js` times out after 90s instead of hanging. If
 a tx is reported stuck, just re-run the script.
+
+**Chain won't bootstrap after a restart: "context deadline exceeded" / health shows
+`not connected to enough stake: connected to 0.000000%`.** The node that came up is
+not the L1's registered validator (`NodeID-M7ag4B7…`). Almost always this means the
+wrong avalanche-cli cluster was started — the decoy `csb` cluster (`NodeID-LSmkHG1…`,
+port 9654) instead of `csb-local-node-fuji` (port 9650). Check with:
+
+```bash
+curl -s 127.0.0.1:<port>/ext/health | head -c 400   # look for disconnectedValidators / percentConnected
+avalanche node local status csb-local-node-fuji
+```
+
+Fix: stop the decoy and start the real cluster.
+
+```bash
+avalanche node local stop csb                    # stop the wrong node
+avalanche node local start csb-local-node-fuji   # start the real validator (9650)
+```
+
+The Docker validator container `csb-validator-1` (ports 9652/9653, auto-restart) is
+harmless here and unrelated — don't kill its process (Docker just respawns it); use
+`docker compose -f docker-compose.validator.yml down` if you want it stopped.
 
 ## Single-validator caveat
 
