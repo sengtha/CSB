@@ -48,14 +48,21 @@ function authed(req) {
 // wallet (MetaMask etc.) at /rpc/<token> gets a read-filtered view of only that
 // address's data. File format: { "<token>": { "address": "0x..", "label": ".." } }.
 // Read per-request so newly issued tokens work without a restart. Gitignored.
+function tokensFile() {
+  return process.env.CSB_RPC_TOKENS_FILE ?? path.join(__dirname, "rpc-tokens.json");
+}
+function readTokens() {
+  const f = tokensFile();
+  if (!fs.existsSync(f)) return {};
+  try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (_) { return {}; }
+}
+function writeTokens(map) {
+  fs.writeFileSync(tokensFile(), JSON.stringify(map, null, 2));
+}
 function lookupToken(token) {
-  const file = process.env.CSB_RPC_TOKENS_FILE ?? path.join(__dirname, "rpc-tokens.json");
-  if (!token || !fs.existsSync(file)) return null;
-  try {
-    const entry = JSON.parse(fs.readFileSync(file, "utf8"))[token];
-    if (entry && typeof entry.address === "string") return entry;
-  } catch (_) { /* malformed file → treat as no match */ }
-  return null;
+  if (!token) return null;
+  const entry = readTokens()[token];
+  return entry && typeof entry.address === "string" ? entry : null;
 }
 
 function readBody(req) {
@@ -158,6 +165,38 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       send(res, 502, { error: `upstream RPC unreachable: ${e.message}` });
     }
+    return;
+  }
+
+  // Scoped-RPC token management (admin only, cookie-gated). List / issue /
+  // revoke the per-user tokens used by /rpc/<token>. These write app-level state
+  // (rpc-tokens.json), not the chain.
+  if (url.pathname === "/rpc-tokens" || url.pathname.startsWith("/rpc-tokens/")) {
+    if (!authed(req)) { send(res, 401, { error: "not authenticated" }); return; }
+    const map = readTokens();
+    if (req.method === "GET") {
+      const list = Object.entries(map)
+        .filter(([, v]) => v && typeof v === "object" && typeof v.address === "string")
+        .map(([token, v]) => ({ token, address: v.address, label: v.label ?? "" }));
+      send(res, 200, list);
+      return;
+    }
+    if (req.method === "POST") {
+      const b = JSON.parse((await readBody(req)).toString() || "{}");
+      if (!/^0x[0-9a-fA-F]{40}$/.test(b.address ?? "")) { send(res, 400, { error: "a valid 0x address is required" }); return; }
+      const token = crypto.randomBytes(24).toString("hex");
+      map[token] = { address: b.address, label: String(b.label ?? "").slice(0, 64) };
+      writeTokens(map);
+      send(res, 200, { token, address: b.address, label: map[token].label });
+      return;
+    }
+    if (req.method === "DELETE") {
+      const token = decodeURIComponent(url.pathname.slice("/rpc-tokens/".length));
+      if (map[token]) { delete map[token]; writeTokens(map); send(res, 200, { ok: true }); }
+      else { send(res, 404, { error: "token not found" }); }
+      return;
+    }
+    send(res, 405, { error: "method not allowed" });
     return;
   }
 

@@ -35,6 +35,7 @@
         <button data-tab="enf">Enforcement authority</button>
         <button data-tab="cnl">Governing council</button>
         <button data-tab="iss">KHR issuer</button>
+        <button data-tab="rpc">Scoped RPC access</button>
       </div>
 
       <div id="tab-moi" class="tabpane active">
@@ -128,6 +129,24 @@
             <label>Amount (KHRt)</label><input id="iss-r-amt" placeholder="e.g. 1,000,000.00" />
             <button id="iss-r-go" class="ghost">Redeem</button>
             <p class="small" style="margin-top:10px">The issuer is a pluggable role: a central bank, a licensed bank consortium, or a treasury-backed entity (all placeholders) can hold it without changing the rails.</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-rpc" class="tabpane">
+        <div class="grid2">
+          <div>
+            <h2>Issue scoped RPC URL</h2>
+            <p class="small">Give a KYC'd address a MetaMask URL that reads <b>only their own data</b> (balance, their history, chain/fees) and lets them submit their own signed transactions. This is an <b>app-level</b> access grant — not a chain transaction, so no signing key is needed. The address must already be KYC-registered and txAllowList-enabled to actually transact.</p>
+            <label>Address</label><input id="rpc-addr" placeholder="0x…" />
+            <label>Label</label><input id="rpc-label" placeholder="e.g. Sokha" />
+            <button id="rpc-issue">Issue URL</button>
+            <div id="rpc-new" class="small" style="margin-top:12px"></div>
+          </div>
+          <div>
+            <h2>Active RPC tokens</h2>
+            <table id="rpc-list"><tr><th>Label</th><th>Address</th><th></th></tr></table>
+            <p class="small" style="margin-top:8px">Revoking a token immediately cuts that URL's access. The raw node RPC is never exposed — every wallet reads through this filtered door.</p>
           </div>
         </div>
       </div>
@@ -259,6 +278,45 @@ async function refreshStatus() {
     await (await khr.redeem(parseKHR(val("iss-r-amt")))).wait();
     return `Redeemed ${val("iss-r-amt")} KHRt.`;
   });
+
+  // --- Scoped RPC tokens (app-level, not a chain transaction)
+  async function loadRpcTokens() {
+    const r = await fetch("/rpc-tokens");
+    const list = r.ok ? await r.json() : [];
+    const t = document.getElementById("rpc-list");
+    t.innerHTML = "<tr><th>Label</th><th>Address</th><th></th></tr>" +
+      (list.length ? list.map((x) =>
+        `<tr><td>${x.label || "—"}</td><td class="mono">${short(x.address)}</td>` +
+        `<td><button class="danger" data-tok="${x.token}">Revoke</button></td></tr>`).join("")
+      : '<tr><td colspan="3" class="small">No tokens issued.</td></tr>');
+    t.querySelectorAll("button[data-tok]").forEach((b) => {
+      b.onclick = () => run(async () => {
+        const res = await fetch("/rpc-tokens/" + b.dataset.tok, { method: "DELETE" });
+        if (!res.ok) throw new Error("revoke failed");
+        await loadRpcTokens();
+        return "Scoped RPC token revoked.";
+      });
+    });
+  }
+  document.getElementById("rpc-issue").onclick = () => run(async () => {
+    const address = val("rpc-addr");
+    const label = val("rpc-label");
+    const res = await fetch("/rpc-tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address, label }),
+    });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || "issue failed");
+    const url = `${location.origin}/rpc/${j.token}`;
+    document.getElementById("rpc-new").innerHTML =
+      `<b>MetaMask RPC URL for ${label || short(address)}:</b><br/>` +
+      `<span class="mono" style="word-break:break-all">${url}</span><br/>` +
+      `<span class="small">Add network in MetaMask — Chain ID <b>8555</b>, symbol <b>tRIEL</b>. Give this URL only to that user.</span>`;
+    await loadRpcTokens();
+    return "Scoped RPC URL issued.";
+  });
+  loadRpcTokens();
 
   refreshStatus();
   setInterval(refreshStatus, 5000);
