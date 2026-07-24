@@ -19,7 +19,7 @@ A validator is a server that holds a copy of the CSB ledger and participates in 
 | Subnet ID | `2b175hLJ…` |
 | VM ID | `srEXiWa…` |
 | Blockchain ID | `2oYMBNV…` |
-| Version pair (AvalancheGo / Subnet-EVM) | `v1.13.3` / `0.7.6` |
+| Version pair (AvalancheGo / Subnet-EVM) | `v1.13.5` / `0.7.9` |
 | Coordinator contact | email / Telegram |
 
 ## 2. Server requirements
@@ -114,6 +114,7 @@ docker run --rm -v csb_avalanchego-staking:/s -v $(pwd):/backup debian \
 |---|---|
 | `isBootstrapped` stays `false` for many hours | Normal on first start (Fuji sync). If >24 h: check disk space and that the container is running (`docker ps`) |
 | Coordinator says you're unreachable | Port 9651/tcp not open to the internet — fix the provider firewall (and `ufw` if enabled). Test from outside: `nc -vz <your-ip> 9651` |
+| Build fails with `curl: (22) … 404` downloading subnet-evm | The pinned `SUBNET_EVM_VERSION` has no release asset. Pick a real version: check https://github.com/ava-labs/subnet-evm/releases and its `compatibility.json`, match it to the AvalancheGo version via avalanchego's `version/compatibility.json`, set both in `.env`, rebuild |
 | Container restarts in a loop | Almost always a wrong `CSB_VM_ID` (plugin filename mismatch) or a version pair the network doesn't accept — re-check `.env` against the coordinator's values, then `up -d --build` |
 | `health` shows unhealthy after an upgrade | Version mismatch with the network — confirm the announced pair, rebuild |
 | Machine died / provider lost the VM | Provision a new server, do Setup steps 1–2, restore the staking backup into the volume **before** first start, then `up -d --build`, and tell the coordinator |

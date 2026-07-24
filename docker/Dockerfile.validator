@@ -11,10 +11,10 @@
 #
 # Version pins: AvalancheGo and Subnet-EVM move in lockstep — before bumping
 # either, check the compatibility table in the ava-labs/subnet-evm README.
-ARG AVALANCHEGO_VERSION=v1.13.3
+ARG AVALANCHEGO_VERSION=v1.13.5
 
 FROM debian:bookworm-slim AS plugin
-ARG SUBNET_EVM_VERSION=0.7.6
+ARG SUBNET_EVM_VERSION=0.7.9
 ARG TARGETARCH=amd64
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
     curl -fsSL -o /tmp/subnet-evm.tar.gz \
