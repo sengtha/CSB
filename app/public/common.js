@@ -210,7 +210,9 @@ async function ensureSession() {
       }
     };
     document.getElementById("pcgo").onclick = go;
-    document.getElementById("pc").onkeydown = (e) => e.key === "Enter" && go();
+    const pcEl = document.getElementById("pc");
+    pcEl.onkeydown = (e) => e.key === "Enter" && go();
+    setTimeout(() => pcEl.focus(), 50); // ensure keystrokes land in the field
   });
 }
 

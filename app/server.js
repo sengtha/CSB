@@ -60,6 +60,21 @@ function send(res, code, body, headers = {}) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
+  // URL login: visit any page with ?pw=<passcode> to authenticate without the
+  // form field, e.g. https://host/explorer.html?pw=csbfuji2026 — sets the
+  // session cookie and redirects to the same page without the query string.
+  if (req.method === "GET" && url.searchParams.get("pw") !== null) {
+    const ok = url.searchParams.get("pw") === PASSCODE;
+    accessLog.push({ at: new Date().toISOString(), event: ok ? "login-url" : "login-denied", ip: req.socket.remoteAddress });
+    url.searchParams.delete("pw");
+    const dest = url.pathname + (url.searchParams.toString() ? "?" + url.searchParams.toString() : "");
+    const headers = { Location: dest };
+    if (ok) headers["Set-Cookie"] = `csb_session=${TOKEN}; HttpOnly; Path=/; SameSite=Strict${COOKIE_SECURE}`;
+    res.writeHead(302, headers);
+    res.end();
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/login") {
     const body = JSON.parse((await readBody(req)).toString() || "{}");
     if (body.passcode === PASSCODE) {
