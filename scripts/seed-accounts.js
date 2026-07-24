@@ -8,8 +8,9 @@ const path = require("path");
  * mode). Reads addresses from app/deployments.json (written by
  * scripts/deploy.js) and appends the generated account keys to it.
  *
- * On the real CSB L1, these accounts must additionally be enabled in the
- * txAllowList precompile before they can transact.
+ * On the real CSB L1, accounts must also be enabled in the txAllowList
+ * precompile before they can transact — this script now does that for the
+ * funded pilot accounts (Vanna is left disabled on purpose).
  *
  * Pilot cast:
  *   Sokha  — tier 2 citizen (full KYC), funded
@@ -39,6 +40,25 @@ async function main() {
   // already-seeded accounts on the live chain, use scripts/fund-native.js.)
   for (const w of [sokha, dara, vanna]) {
     await (await deployer.sendTransaction({ to: w.address, value: ethers.parseEther("10") })).wait();
+  }
+
+  // Enable the funded pilot accounts in the txAllowList precompile so they can
+  // submit transactions at all. KYC gates KHRt transfers; txAllowList gates
+  // sending ANY transaction on the permissioned chain — both are required.
+  // Vanna is intentionally left disabled to demonstrate the chain-level gate.
+  // No-op on a local Hardhat node where the precompile isn't deployed.
+  const TX_ALLOWLIST = "0x0200000000000000000000000000000000000002";
+  const allowlist = new ethers.Contract(
+    TX_ALLOWLIST,
+    ["function setEnabled(address addr)"],
+    deployer,
+  );
+  try {
+    await (await allowlist.setEnabled(sokha.address)).wait();
+    await (await allowlist.setEnabled(dara.address)).wait();
+    console.log("txAllowList: enabled Sokha and Dara (Vanna left disabled).");
+  } catch (e) {
+    console.log(`txAllowList precompile not present here — skipping (${e.shortMessage ?? e.message}).`);
   }
 
   await (await identity.register(sokha.address, ethers.id("identity-sokha"), 2)).wait();
