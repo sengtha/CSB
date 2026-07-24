@@ -31,7 +31,8 @@ main { max-width: 1100px; margin: 24px auto; padding: 0 20px; display: grid; gap
 label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
 input, select {
   width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
-  font-size: 13.5px; font-family: inherit; background: #fff;
+  font-size: 13.5px; font-family: inherit; background: #fff; color: var(--ink);
+  -webkit-text-fill-color: var(--ink); /* guard against invisible text on some engines */
 }
 input:focus, select:focus { outline: 2px solid #b9c6f2; border-color: var(--blue); }
 button {

@@ -152,7 +152,7 @@ async function run(fn) {
     const { khr } = await getContracts(wallet);
     const to = document.getElementById("pay-to").value.trim();
     const amount = parseKHR(document.getElementById("pay-amount").value);
-    const tx = await khr.transfer(to, amount);
+    const tx = await khr.transfer(to, amount, await feeOverrides());
     await tx.wait();
     return `Paid ${fmtKHR(amount)} KHRt to ${short(to)} — fee: 0. Tx ${shortHash(tx.hash)}`;
   });
@@ -164,8 +164,8 @@ async function run(fn) {
     if (!ethers.isAddress(to)) throw new Error("Recipient must be a valid address on the destination chain.");
     const destChain = document.getElementById("eg-dest").value;
     const allowance = await khr.allowance(wallet.address, gateway.target);
-    if (allowance < amount) await (await khr.approve(gateway.target, amount)).wait();
-    const tx = await gateway.requestEgress(khr.target, amount, destChain, to);
+    if (allowance < amount) await (await khr.approve(gateway.target, amount, await feeOverrides())).wait();
+    const tx = await gateway.requestEgress(khr.target, amount, destChain, to, await feeOverrides());
     await tx.wait();
     return `Egress accepted: ${fmtKHR(amount)} KHRt routed to ${short(to)} via the governed gateway. Tx ${shortHash(tx.hash)}`;
   });
