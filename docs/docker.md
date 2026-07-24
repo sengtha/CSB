@@ -4,12 +4,12 @@ Two deployables. For hosting them on Elestio, see [`docs/elestio.md`](elestio.md
 
 | File | What it runs | Who runs it |
 |---|---|---|
-| `docker-compose.validator.yml` | A validator node of the CSB L1 (AvalancheGo + Subnet-EVM) | One per ministry |
+| `docker-compose.validator.yml` | A validator node of the CSB L1 (AvalancheGo + Subnet-EVM) | One per institution |
 | `docker-compose.app.yml` | The application: contract deployment + gated wallet/explorer/admin UIs against the live chain | The chain operator |
 
-## Validator node (per ministry)
+## Validator node (per institution)
 
-`docker/Dockerfile.validator` builds AvalancheGo with the Subnet-EVM plugin baked in under the chain's VM ID. Each ministry runs this container; validator identity (staking + BLS keys) and the database live on named volumes, so upgrading the container never touches identity.
+`docker/Dockerfile.validator` builds AvalancheGo with the Subnet-EVM plugin baked in under the chain's VM ID. Each institution runs this container; validator identity (staking + BLS keys) and the database live on named volumes, so upgrading the container never touches identity.
 
 ```bash
 cp .env.validator.example .env      # fill in CSB_SUBNET_ID, CSB_VM_ID, network
@@ -26,12 +26,12 @@ curl -s -X POST -H 'content-type:application/json' \
 
 Port model: **9651** (consensus) must be publicly reachable by other validators; **9650** (node API/RPC) binds to localhost only — front it with the gated app server or an authenticated reverse proxy, never expose it raw. This mirrors the access-tier design: chain data is served only through authenticated, auditable channels.
 
-Where the IDs come from: whoever creates the chain (`avalanche blockchain create/deploy`) reads the **Subnet ID** and **VM ID** from `avalanche blockchain describe csb` and distributes them to ministries with this repo. The AvalancheGo/Subnet-EVM version pair is pinned in `.env` — check the compatibility table in the `ava-labs/subnet-evm` README before bumping either.
+Where the IDs come from: whoever creates the chain (`avalanche blockchain create/deploy`) reads the **Subnet ID** and **VM ID** from `avalanche blockchain describe csb` and distributes them to institutions with this repo. The AvalancheGo/Subnet-EVM version pair is pinned in `.env` — check the compatibility table in the `ava-labs/subnet-evm` README before bumping either.
 
-Ministry ops checklist (production):
+Institution ops checklist (production):
 
-1. Key ceremony: generate staking/BLS keys on the ministry's hardware, back them up under the ministry's custody procedure (losing them = registering a new validator; leaking them = impersonation).
-2. Host in a Cambodian data center; only 9651 public.
+1. Key ceremony: generate staking/BLS keys on the institution's hardware, back them up under the institution's custody procedure (losing them = registering a new validator; leaking them = impersonation).
+2. Host in a in-country data center; only 9651 public.
 3. Monitoring: `info.isBootstrapped`, `health.health`, disk headroom; alert to the shared NOC during the phase where operations are centralized.
 4. Upgrades are coordinated by the council (validator versions must stay within the network's compatibility window).
 
@@ -50,7 +50,7 @@ EXPLORER_PASSCODE='<strong passcode>' docker compose -f docker-compose.app.yml u
 Run it on (or next to) a validator host and point `CSB_RPC_URL` at the localhost-bound node API — the chain RPC stays private and only the gated app on :8080 is exposed. Notes:
 
 - The deployer key must be a **txAllowList admin** (genesis admin or enabled since).
-- Institutional role addresses (`COUNCIL_ADDR`, `MOI_ADDR`, `ENFORCER_ADDR`, `ISSUER_ADDR`) should be set to the real multisigs; unset they default to the deployer (pilot mode).
+- Institutional role addresses (`COUNCIL_ADDR`, `IDENTITY_ADDR`, `ENFORCER_ADDR`, `ISSUER_ADDR`) should be set to the real multisigs; unset they default to the deployer (pilot mode).
 - `CSB_SEED_ACCOUNTS=1` also creates pilot/test accounts (Sokha/Dara/Vanna with test riel) — on the real L1 they must additionally be enabled in the txAllowList precompile before they can transact.
 
 ## Local development (no Docker, no Avalanche node)

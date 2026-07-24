@@ -7,10 +7,10 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
  * @title EnforcementRegistry
  * @notice Asset-enforcement powers (freezing), held by the judicial/AML
  *         authority — deliberately a separate contract under a separate
- *         authority from IdentityRegistry (MoI).
+ *         authority from IdentityRegistry (Identity Authority).
  *
  * Separation of powers, in code:
- *  - MoI can revoke an identity (stops new activity) but cannot freeze or
+ *  - Identity Authority can revoke an identity (stops new activity) but cannot freeze or
  *    seize assets.
  *  - The enforcement authority can freeze assets but cannot touch identity.
  *  - Every freeze must carry an order reference (court order / AML case id),

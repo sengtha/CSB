@@ -1,4 +1,4 @@
-# CSB ministry/partner validator node.
+# CSB institution/partner validator node.
 #
 #   1. Get the IDs from whoever operates the chain (or `avalanche blockchain
 #      describe csb`): the SUBNET ID (to track) and the VM ID (build arg).

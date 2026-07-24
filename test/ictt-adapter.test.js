@@ -11,7 +11,7 @@ const GAS_LIMIT = 250_000n;
 
 async function suiteWithIctt() {
   const s = await deploySuite();
-  await s.identity.connect(s.moi).register(s.alice.address, ID_ALICE, 2);
+  await s.identity.connect(s.idAuthority).register(s.alice.address, ID_ALICE, 2);
   await s.khr.connect(s.issuer).issue(s.alice.address, 1_000_000_00);
 
   const tokenHome = await ethers.deployContract("MockTokenTransferrer", [s.khr.target]);

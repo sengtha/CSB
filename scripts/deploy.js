@@ -5,22 +5,22 @@ const path = require("path");
 /**
  * Deploys the CSB v0 contract suite. Role holders default to the deployer for
  * devnet runs; override with env vars for real deployments:
- *   COUNCIL_ADDR  - PM-council multisig (root admin, gateway governor)
- *   MOI_ADDR      - Ministry of Interior issuer multisig (KYC issuance)
+ *   COUNCIL_ADDR  - Governing-Council multisig (root admin, gateway governor)
+ *   IDENTITY_ADDR      - Identity Authority issuer multisig (KYC issuance)
  *   ENFORCER_ADDR - judicial/AML authority multisig (freeze/confiscate)
- *   ISSUER_ADDR   - KHR stablecoin issuer (pluggable; NBC / bank consortium)
+ *   ISSUER_ADDR   - KHR stablecoin issuer (pluggable placeholder)
  */
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
   const council = process.env.COUNCIL_ADDR ?? deployer.address;
-  const moi = process.env.MOI_ADDR ?? deployer.address;
+  const idAuthority = process.env.IDENTITY_ADDR ?? deployer.address;
   const enforcer = process.env.ENFORCER_ADDR ?? deployer.address;
   const issuer = process.env.ISSUER_ADDR ?? deployer.address;
 
   console.log(`Deployer:  ${deployer.address}`);
-  console.log(`Council:   ${council}\nMoI:       ${moi}\nEnforcer:  ${enforcer}\nIssuer:    ${issuer}\n`);
+  console.log(`Council:   ${council}\nIdentity Authority:       ${idAuthority}\nEnforcer:  ${enforcer}\nIssuer:    ${issuer}\n`);
 
-  const identity = await hre.ethers.deployContract("IdentityRegistry", [council, moi]);
+  const identity = await hre.ethers.deployContract("IdentityRegistry", [council, idAuthority]);
   await identity.waitForDeployment();
   console.log(`IdentityRegistry:    ${identity.target}`);
 
@@ -72,7 +72,7 @@ async function main() {
       EgressGateway: gateway.target,
       MockBridgeAdapter: adapter.target,
     },
-    roles: { council, moi, enforcer, issuer },
+    roles: { council, idAuthority, enforcer, issuer },
   };
   const outPath = process.env.CSB_DEPLOYMENTS_FILE ?? path.join(__dirname, "..", "app", "deployments.json");
   fs.mkdirSync(path.dirname(outPath), { recursive: true });

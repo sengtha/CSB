@@ -4,8 +4,8 @@ const { deploySuite, ID_ALICE, ID_BOB, ORDER_REF } = require("./fixtures");
 
 async function suiteWithKyc() {
   const s = await deploySuite();
-  await s.identity.connect(s.moi).register(s.alice.address, ID_ALICE, 2);
-  await s.identity.connect(s.moi).register(s.bob.address, ID_BOB, 1);
+  await s.identity.connect(s.idAuthority).register(s.alice.address, ID_ALICE, 2);
+  await s.identity.connect(s.idAuthority).register(s.bob.address, ID_BOB, 1);
   return s;
 }
 
@@ -33,9 +33,9 @@ describe("KHRStablecoin", function () {
   });
 
   it("KYC suspension immediately blocks an account's transfers", async function () {
-    const { khr, identity, moi, issuer, alice, bob } = await loadFixture(suiteWithKyc);
+    const { khr, identity, idAuthority, issuer, alice, bob } = await loadFixture(suiteWithKyc);
     await khr.connect(issuer).issue(alice.address, 100);
-    await identity.connect(moi).suspend(alice.address);
+    await identity.connect(idAuthority).suspend(alice.address);
 
     await expect(khr.connect(alice).transfer(bob.address, 10)).to.be.revertedWithCustomError(
       khr,
@@ -73,10 +73,10 @@ describe("KHRStablecoin", function () {
     expect(await khr.balanceOf(bob.address)).to.equal(100);
   });
 
-  it("MoI cannot freeze and the enforcer cannot issue (separation of powers)", async function () {
-    const { khr, enforcement, moi, enforcer, alice } = await loadFixture(suiteWithKyc);
+  it("Identity Authority cannot freeze and the enforcer cannot issue (separation of powers)", async function () {
+    const { khr, enforcement, idAuthority, enforcer, alice } = await loadFixture(suiteWithKyc);
     await expect(
-      enforcement.connect(moi).freeze(alice.address, ORDER_REF)
+      enforcement.connect(idAuthority).freeze(alice.address, ORDER_REF)
     ).to.be.revertedWithCustomError(enforcement, "AccessControlUnauthorizedAccount");
     await expect(khr.connect(enforcer).issue(alice.address, 1)).to.be.revertedWithCustomError(
       khr,

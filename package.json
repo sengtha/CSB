@@ -1,7 +1,7 @@
 {
   "name": "cambodia-sovereign-blockchain",
   "version": "0.1.0",
-  "description": "Cambodia Sovereign Blockchain (CSB) — Avalanche L1 prototype: sovereign permissioned EVM chain with MoI-issued on-chain KYC, KHR stablecoin rails, and a governed egress gateway to public blockchains.",
+  "description": "Cambodia Sovereign Blockchain (CSB) — Avalanche L1 prototype: sovereign permissioned EVM chain with Identity Authority-issued on-chain KYC, KHR stablecoin rails, and a governed egress gateway to public blockchains.",
   "private": true,
   "scripts": {
     "compile": "hardhat compile",

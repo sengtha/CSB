@@ -5,14 +5,14 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
 /**
  * @title IdentityRegistry
- * @notice On-chain KYC attestation registry issued by the Ministry of Interior (MoI).
+ * @notice On-chain KYC attestation registry issued by the national Identity Authority.
  *
  * Design rules:
  *  - No PII on chain. An attestation binds an address to a salted commitment hash
- *    (`identity`) referencing a record in MoI's off-chain civil registry. The
- *    identity <-> person mapping never leaves MoI systems.
+ *    (`identity`) referencing a record in the Identity Authority's off-chain civil registry. The
+ *    identity <-> person mapping never leaves Identity Authority systems.
  *  - One identity gets one address by default. Additional address slots are
- *    granted by MoI after an off-chain fee payment (`increaseAddressQuota`
+ *    granted by the Identity Authority after an off-chain fee payment (`increaseAddressQuota`
  *    records the payment reference).
  *  - This contract holds identity powers only. Asset freezing/seizure lives in
  *    EnforcementRegistry under a different authority (separation of powers).
@@ -37,7 +37,7 @@ contract IdentityRegistry is AccessControl {
     }
 
     struct Attestation {
-        bytes32 identity; // salted commitment to the MoI registry record
+        bytes32 identity; // salted commitment to the Identity Authority registry record
         uint8 tier;
         Status status;
         uint64 issuedAt;
@@ -64,14 +64,14 @@ contract IdentityRegistry is AccessControl {
     error QuotaExceeded(bytes32 identity, uint32 quota);
     error WrongStatus(address account, Status actual);
 
-    constructor(address councilAdmin, address moiIssuer) {
+    constructor(address councilAdmin, address identityIssuer) {
         _grantRole(DEFAULT_ADMIN_ROLE, councilAdmin);
-        _grantRole(ISSUER_ROLE, moiIssuer);
+        _grantRole(ISSUER_ROLE, identityIssuer);
     }
 
     // ---------------------------------------------------------------- issuance
 
-    /// @notice Register an address against an MoI identity commitment.
+    /// @notice Register an address against an Identity Authority identity commitment.
     function register(address account, bytes32 identity, uint8 tier) external onlyRole(ISSUER_ROLE) {
         if (tier < MIN_TIER || tier > MAX_TIER) revert InvalidTier(tier);
         if (_attestations[account].status != Status.None) revert AlreadyRegistered(account);
@@ -125,7 +125,7 @@ contract IdentityRegistry is AccessControl {
 
     /**
      * @notice Grant an identity additional address slots after an off-chain fee
-     *         payment to MoI. `paymentRef` is the MoI receipt/ledger reference.
+     *         payment to the Identity Authority. `paymentRef` is the Identity Authority receipt/ledger reference.
      */
     function increaseAddressQuota(bytes32 identity, uint32 newQuota, bytes32 paymentRef)
         external

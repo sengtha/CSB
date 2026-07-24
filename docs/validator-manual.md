@@ -1,6 +1,8 @@
 # CSB Testnet Validator — Operator Manual
 
-A self-contained guide for institutions and partners invited to run a validator on the **Cambodia Sovereign Blockchain testnet** (anchored to Avalanche Fuji). No blockchain experience is assumed; if you can operate a Linux server with Docker, you can run a validator.
+A self-contained guide for anyone invited to run a validator on the **CSB testnet** (anchored to Avalanche Fuji). No blockchain experience is assumed; if you can operate a Linux server with Docker, you can run a validator.
+
+> **Note:** CSB is a personal, independent experiment — not a government project (see [DISCLAIMER.md](../DISCLAIMER.md)). Running a testnet validator means participating in a research prototype, nothing more.
 
 ## 1. What you are running, and what it costs
 
@@ -127,7 +129,7 @@ docker compose -f docker-compose.validator.yml up -d --build
 
 ## 7. Leaving the testnet
 
-Tell the coordinator so your validator is deregistered, then `docker compose -f docker-compose.validator.yml down` (no `-v` unless you truly want to erase the identity). Thank you for helping test Cambodia's sovereign chain.
+Tell the coordinator so your validator is deregistered, then `docker compose -f docker-compose.validator.yml down` (no `-v` unless you truly want to erase the identity). Thank you for helping test this experimental chain.
 
 ---
 *Coordinator contact: __________________ (filled in by the coordinator before distributing this manual).*

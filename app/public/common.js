@@ -84,14 +84,14 @@ const ABI = {
 };
 
 const FRIENDLY = {
-  NotKycActive: (a) => `Blocked: ${short(a[0])} has no active KYC attestation (MoI).`,
+  NotKycActive: (a) => `Blocked: ${short(a[0])} has no active KYC attestation (Identity Authority).`,
   AccountFrozen: (a) => `Blocked: ${short(a[0])} is frozen by the enforcement authority.`,
   TierCapExceeded: (a) => `Blocked: tier-${a[1]} per-transfer cap is ${fmtKHR(a[2])} KHRt (attempted ${fmtKHR(a[3])}).`,
   TokenNotPermitted: () => "Blocked: this token is not on the council's egress allowlist.",
   TierTooLow: (a) => `Blocked: egress of this token requires KYC tier ${a[2]} (account is tier ${a[1]}).`,
   DailyCapExceeded: (a) => `Blocked: daily egress cap ${fmtKHR(a[1])} KHRt would be exceeded (${fmtKHR(a[2])}).`,
   EnforcedPause: () => "Blocked: the egress gateway is paused (council circuit breaker).",
-  QuotaExceeded: (a) => `Blocked: identity already uses all ${a[1]} address slot(s). Additional slots require an MoI fee.`,
+  QuotaExceeded: (a) => `Blocked: identity already uses all ${a[1]} address slot(s). Additional slots require an Identity Authority fee.`,
   AlreadyRegistered: (a) => `Blocked: ${short(a[0])} already holds an attestation.`,
   AccessControlUnauthorizedAccount: (a) => `Blocked: ${short(a[0])} does not hold the required role (separation of powers).`,
   OwnableUnauthorizedAccount: (a) => `Blocked: ${short(a[0])} is not the owner of this contract.`,

@@ -82,4 +82,4 @@ Same UIs, same flows; only the chain-level allowlist/zero-fee behavior needs the
 | RPC exposure | private, proxied by app server | authenticated RPC tier per institution |
 | Keys | env vars / JSON on VM | HSMs + institutional multisigs |
 | TLS | none (add Caddy/nginx for internet access) | mandatory, government PKI |
-| Node topology | all nodes on one VM | one validator per ministry, separate data centers |
+| Node topology | all nodes on one VM | one validator per institution, separate data centers |

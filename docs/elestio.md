@@ -91,4 +91,4 @@ Honest caution: co-hosting is fine for the testnet phase and for an early mainne
 
 ## Sovereignty note
 
-Elestio VMs run on foreign cloud providers. That's fine for the Fuji testnet phase; it is **not** the production posture — the architecture requires ministry validators in Cambodian data centers under sovereign jurisdiction (`docs/architecture.md` §9). Treat Elestio as the rehearsal environment; the migration path is trivial by design: the same compose files run on any Docker host, and the staking-volume backup moves the validator identity.
+Elestio VMs run on foreign cloud providers. That's fine for the Fuji testnet phase; it is **not** the production posture — the architecture requires institution validators in in-country data centers under sovereign jurisdiction (`docs/architecture.md` §9). Treat Elestio as the rehearsal environment; the migration path is trivial by design: the same compose files run on any Docker host, and the staking-volume backup moves the validator identity.

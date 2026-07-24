@@ -10,10 +10,10 @@ import {EnforcementRegistry} from "../enforcement/EnforcementRegistry.sol";
  * @title KHRStablecoin
  * @notice Tokenized Khmer Riel with a pluggable issuer slot.
  *
- *  - The issuer (minter/burner) is a role, not a hardcoded institution: NBC, a
+ *  - The issuer (minter/burner) is a role, not a hardcoded institution: a central bank, a
  *    licensed bank consortium, or a treasury-backed entity can hold ISSUER_ROLE
  *    when the mandate is decided — the rails don't change.
- *  - Every transfer requires both parties to hold an active MoI KYC attestation
+ *  - Every transfer requires both parties to hold an active Identity Authority KYC attestation
  *    and to not be frozen by the enforcement authority.
  *  - Tier-based per-transfer caps (e.g. citizen-basic accounts capped) are
  *    configurable by the chain governor.

@@ -49,10 +49,10 @@
     <div class="card">
       <h2>Access log (gated explorer sessions)</h2>
       <table id="access"><tr><th>Time</th><th>Event</th><th>From</th></tr></table>
-      <p class="small" style="margin-top:8px">In production every explorer query and every de-anonymization request against the MoI registry is logged and audited.</p>
+      <p class="small" style="margin-top:8px">In production every explorer query and every de-anonymization request against the Identity Authority registry is logged and audited.</p>
     </div>
   </main>
-  <div class="footer">CSB v0 prototype — pilot system, not yet production.</div>
+  <div class="footer">CSB v0 prototype — a personal experiment; not affiliated with or endorsed by any government. Test tokens only.</div>
 
 <script>
 "use strict";
@@ -60,12 +60,12 @@
 function describe(name, ev) {
   const a = ev.args;
   switch (ev.fragment.name) {
-    case "AddressRegistered": return `MoI registered ${short(a[0])} (tier ${a[2]}) under identity ${shortHash(a[1])}`;
-    case "AddressRevoked": return `MoI revoked ${short(a[0])}`;
-    case "AddressSuspended": return `MoI suspended ${short(a[0])}`;
-    case "AddressReactivated": return `MoI reactivated ${short(a[0])}`;
+    case "AddressRegistered": return `Identity Authority registered ${short(a[0])} (tier ${a[2]}) under identity ${shortHash(a[1])}`;
+    case "AddressRevoked": return `Identity Authority revoked ${short(a[0])}`;
+    case "AddressSuspended": return `Identity Authority suspended ${short(a[0])}`;
+    case "AddressReactivated": return `Identity Authority reactivated ${short(a[0])}`;
     case "TierChanged": return `${short(a[0])} tier ${a[1]} → ${a[2]}`;
-    case "AddressQuotaIncreased": return `identity ${shortHash(a[0])} quota → ${a[1]} addresses (MoI receipt ${shortHash(a[2])})`;
+    case "AddressQuotaIncreased": return `identity ${shortHash(a[0])} quota → ${a[1]} addresses (Identity Authority receipt ${shortHash(a[2])})`;
     case "Frozen": return `⚠ ${short(a[0])} FROZEN under order ${shortHash(a[1])}`;
     case "Unfrozen": return `${short(a[0])} unfrozen under order ${shortHash(a[1])}`;
     case "Transfer":
@@ -137,7 +137,7 @@ async function refresh() {
     out.innerHTML = `
       <b>Status</b> ${badge} ${s.system ? '<span class="badge info">SYSTEM CONTRACT</span>' : ""}<br/>
       <b>Tier</b> ${TIER_NAMES[s.tier]}<br/>
-      <b>Identity</b> <span class="mono">${s.identity === ethers.ZeroHash ? "—" : shortHash(s.identity) + " (commitment — PII stays in the MoI registry)"}</span><br/>
+      <b>Identity</b> <span class="mono">${s.identity === ethers.ZeroHash ? "—" : shortHash(s.identity) + " (commitment — PII stays in the Identity Authority registry)"}</span><br/>
       <b>Balance</b> ${fmtKHR(s.balance)} KHRt`;
   };
   await refresh();

@@ -59,8 +59,8 @@ Everything below assumes the **entire testnet checklist is complete**, including
 ### Gate (hard blockers)
 
 - [ ] Independent security audit of the contract suite; findings resolved; audited commit tagged and frozen
-- [ ] Council sub-decree in force; the operating entity exists and owns the infrastructure
-- [ ] Institutional multisigs created and **exercised on Fuji**: council, MoI, enforcement, issuer(-or-council)
+- [ ] Council legal instrument in force; the operating entity exists and owns the infrastructure
+- [ ] Institutional multisigs created and **exercised on Fuji**: council, Identity Authority, enforcement, issuer(-or-council)
 - [ ] Genesis finalized: every `0xC0DE…`/test address replaced by the real multisigs; test allocations removed; genesis file hash formally signed off by the council
 - [ ] ≥5 validator institutions ready: hardware, key ceremony done, staking backups in custody, NOC monitoring wired
 - [ ] Mainnet P-Chain wallet funded and custodied; owner + budget line for creation and continuous fees (~1.33 AVAX/month/validator)
@@ -70,7 +70,7 @@ Everything below assumes the **entire testnet checklist is complete**, including
 ### Launch
 
 - [ ] `avalanche blockchain deploy csb --mainnet` from the custodied P-Chain key; Subnet/Blockchain/VM IDs recorded and distributed
-- [ ] Ministry validators up with `AVAGO_NETWORK_ID=mainnet`, bootstrapped, registered, healthy
+- [ ] Institution validators up with `AVAGO_NETWORK_ID=mainnet`, bootstrapped, registered, healthy
 - [ ] Contracts deployed with real multisig role addresses; **no pilot accounts seeded**
 - [ ] Precompile admin rights transferred from the deploy key to the council multisig; deploy key retired (documented destruction/archival)
 - [ ] ICTT redeployed against **mainnet** C-Chain; production relayer redundant + monitored
@@ -80,7 +80,7 @@ Everything below assumes the **entire testnet checklist is complete**, including
 
 - [ ] Fuji egress gateway paused; testnet event history exported to the audit archive
 - [ ] App repointed to mainnet RPC; DNS switched; explorer confirmed serving mainnet data
-- [ ] MoI mainnet onboarding flow live (testnet identities NOT honored — everyone re-registers)
+- [ ] Identity Authority mainnet onboarding flow live (testnet identities NOT honored — everyone re-registers)
 - [ ] Fuji chain retained as permanent staging; policy: every future change rehearses there first
 
 ### First month

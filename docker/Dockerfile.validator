@@ -1,6 +1,6 @@
 # CSB validator node image: AvalancheGo + the Subnet-EVM VM plugin.
 #
-# Each ministry runs one of these containers as its validator. The image bakes
+# Each participating institution runs one of these containers as its validator. The image bakes
 # the VM plugin under the blockchain's VM ID; the subnet to track and all node
 # settings are provided at runtime via AVAGO_* environment variables (see
 # docker-compose.validator.yml).

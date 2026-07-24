@@ -5,7 +5,7 @@ Where every rule of the CSB chain lives, what it's currently set to, and how to 
 | Layer | Lives in | Changed by | Examples |
 |---|---|---|---|
 | 1. Genesis | `chain/genesis.example.json`, fixed at chain creation | Network upgrade only | chainId, initial fee config, which precompiles exist, initial balances |
-| 2. On-chain runtime | Precompile + contract state | Council/MoI/enforcer transactions (multisig) | live gas fees, who may transact/deploy, KYC, egress policy |
+| 2. On-chain runtime | Precompile + contract state | Council/Identity Authority/enforcer transactions (multisig) | live gas fees, who may transact/deploy, KYC, egress policy |
 | 3. Node process | Docker env (`AVAGO_*`), optional per-chain JSON | Node operator | network id, tracked subnet, ports, RPC APIs, pruning |
 
 ## Layer 1 — Genesis
@@ -28,7 +28,7 @@ This is where "free gas" is actually implemented:
 | `minBlockGasCost` / `maxBlockGasCost` | 0 / 10,000,000 | Bounds of the block-production gas cost mechanism |
 | `blockGasCostStep` | 500,000 | How fast block gas cost reacts to faster/slower blocks |
 
-`allowFeeRecipients: false` — validators cannot collect fees for themselves. Ministries validate as an institutional duty, not for revenue; any (currently zero) fees are burned.
+`allowFeeRecipients: false` — validators cannot collect fees for themselves. Validator institutions validate as a duty, not for revenue; any (currently zero) fees are burned.
 
 ### Precompile activations
 
@@ -50,9 +50,9 @@ Genesis switches on four Subnet-EVM precompiles and sets their **admin addresses
 Everything operational is changed by transactions, not by editing files or redeploying Docker:
 
 - **Change gas fees live** — the emergency pressure valve. The council (feeManager admin) calls `setFeeConfig(...)` on `0x…0003` with a new parameter set (e.g. raise `minBaseFee` from 0 during a spam attack, lower it back after). Takes effect next block; no node restarts, no genesis change.
-- **Admit/expel accounts** — MoI's registrar pipeline calls `setEnabled(address)` / `setNone(address)` on the txAllowList (`0x…0002`). Roles: *admin* (can manage roles — council), *manager* (can enable/disable accounts — MoI ops), *enabled* (may transact).
+- **Admit/expel accounts** — the Identity Authority's registrar pipeline calls `setEnabled(address)` / `setNone(address)` on the txAllowList (`0x…0002`). Roles: *admin* (can manage roles — council), *manager* (can enable/disable accounts — Identity Authority ops), *enabled* (may transact).
 - **Vet contract deployers** — same role model on `0x…0000`.
-- **Application policy** — everything else lives in the CSB contracts and is governed as described in `docs/architecture.md` §4: KYC attestations and tiers (`IdentityRegistry`, MoI), freezes (`EnforcementRegistry`, enforcement authority), KHRt issuance and tier caps (`KHRStablecoin`), egress allowlist/caps/pause (`EgressGateway`, council).
+- **Application policy** — everything else lives in the CSB contracts and is governed as described in `docs/architecture.md` §4: KYC attestations and tiers (`IdentityRegistry`, Identity Authority), freezes (`EnforcementRegistry`, enforcement authority), KHRt issuance and tier caps (`KHRStablecoin`), egress allowlist/caps/pause (`EgressGateway`, council).
 
 Inspect the live values at any time:
 

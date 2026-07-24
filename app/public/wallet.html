@@ -64,7 +64,7 @@
       <table id="activity"><tr><th>Block</th><th>Event</th><th>Detail</th></tr></table>
     </div>
   </main>
-  <div class="footer">CSB v0 prototype — pilot system, not yet production.</div>
+  <div class="footer">CSB v0 prototype — a personal experiment; not affiliated with or endorsed by any government. Test tokens only.</div>
 
 <script>
 "use strict";
@@ -81,7 +81,7 @@ async function refreshAccount() {
     <b>Address</b> <span class="mono">${wallet.address}</span><br/>
     <b>KYC</b> ${badge} &nbsp; <span class="badge info">tier ${TIER_NAMES[s.tier]}</span><br/>
     <b>Balance</b> ${fmtKHR(s.balance)} KHRt<br/>
-    <b>Recovery</b> <span class="small">MoI-backed (smart-account rotation) — lost key ≠ lost assets</span>`;
+    <b>Recovery</b> <span class="small">Identity Authority-backed (smart-account rotation) — lost key ≠ lost assets</span>`;
   await refreshActivity();
 }
 

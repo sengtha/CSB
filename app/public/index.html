@@ -22,9 +22,9 @@
       <h2>Walkthrough</h2>
       <table>
         <tr><th>Step</th><th>Where</th><th>What it shows</th></tr>
-        <tr><td>1</td><td><a href="wallet.html">Wallet</a></td><td>A KYC'd citizen (Sokha) holds tokenized riel and pays another citizen — zero fees, instant finality, lost-key recovery backed by MoI.</td></tr>
+        <tr><td>1</td><td><a href="wallet.html">Wallet</a></td><td>A KYC'd citizen (Sokha) holds tokenized riel and pays another citizen — zero fees, instant finality, lost-key recovery backed by the Identity Authority.</td></tr>
         <tr><td>2</td><td><a href="wallet.html">Wallet</a></td><td>Payments to a non-KYC'd address (Vanna) are impossible — compliance is enforced by the chain, not by apps.</td></tr>
-        <tr><td>3</td><td><a href="admin.html">Admin</a></td><td>Separation of powers: MoI issues identity, the enforcement authority freezes with a court-order reference, the council governs the gateway — no institution holds two powers.</td></tr>
+        <tr><td>3</td><td><a href="admin.html">Admin</a></td><td>Separation of powers: Identity Authority issues identity, the enforcement authority freezes with a court-order reference, the council governs the gateway — no institution holds two powers.</td></tr>
         <tr><td>4</td><td><a href="wallet.html">Wallet</a></td><td>Egress: permitted tokens bridge out through the governed gateway (tier + daily cap enforced); everything else is refused.</td></tr>
         <tr><td>5</td><td><a href="explorer.html">Explorer</a></td><td>The whitelisted explorer: full sovereign auditability behind authenticated access.</td></tr>
       </table>
@@ -36,8 +36,8 @@
     <div class="card">
       <h2>Architecture at a glance</h2>
       <p class="small" style="line-height:1.8">
-        Avalanche L1 (Subnet-EVM), permissioned PoA — ministries as validators · MoI-issued on-chain KYC, no PII on chain,
-        default one address per identity (extra slots by MoI fee) · KHRt stablecoin with a pluggable issuer ·
+        Avalanche L1 (Subnet-EVM), permissioned PoA — public institutions as validators (placeholder) · Identity Authority-issued on-chain KYC, no PII on chain,
+        default one address per identity (extra slots by the Identity Authority fee) · KHRt stablecoin with a pluggable issuer ·
         zero gas via feeManager, spam defense at the identity layer · single egress gateway wrapping Avalanche ICTT with a
         council-governed token allowlist, minimum tiers, daily caps and a circuit breaker ·
         crypto-agility: upgradeable smart-account signatures for post-quantum migration.
@@ -45,6 +45,6 @@
       </p>
     </div>
   </main>
-  <div class="footer">CSB v0 prototype — pilot system, not yet production.</div>
+  <div class="footer">CSB v0 prototype — a personal experiment; not affiliated with or endorsed by any government. Test tokens only.</div>
 </body>
 </html>

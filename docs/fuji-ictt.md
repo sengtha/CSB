@@ -20,7 +20,7 @@ Policy lives in the gateway (ours); transport is audited ICTT + ICM infrastructu
 
 ## Steps
 
-1. **Deploy CSB as a Fuji L1** (instead of `--local`): `avalanche blockchain deploy csb --fuji`, with VM-hosted (or later ministry-hosted) validators. avalanche-cli deploys the ICM messenger + registry to the new chain by default and can run a test relayer.
+1. **Deploy CSB as a Fuji L1** (instead of `--local`): `avalanche blockchain deploy csb --fuji`, with VM-hosted (or later institution-hosted) validators. avalanche-cli deploys the ICM messenger + registry to the new chain by default and can run a test relayer.
 
 2. **Deploy the ICTT pair** (contracts from `ava-labs/icm-contracts`):
    - `ERC20TokenHome` on CSB, constructor pointing at the ICM (Teleporter) registry on CSB and the **KHRt** address.

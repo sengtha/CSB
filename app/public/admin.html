@@ -29,7 +29,7 @@
 
     <div class="card">
       <div class="tabs">
-        <button data-tab="moi" class="active">Ministry of Interior</button>
+        <button data-tab="moi" class="active">Identity Authority</button>
         <button data-tab="enf">Enforcement authority</button>
         <button data-tab="cnl">Governing council</button>
         <button data-tab="iss">KHR issuer</button>
@@ -59,7 +59,7 @@
             <h2 style="margin-top:18px">Address quota (paid)</h2>
             <label>Identity reference</label><input id="moi-q-id" placeholder="e.g. national-id-XXXX" />
             <label>New quota</label><input id="moi-q-n" type="number" min="2" value="2" />
-            <label>MoI payment receipt ref</label><input id="moi-q-ref" placeholder="receipt no." />
+            <label>Identity Authority payment receipt ref</label><input id="moi-q-ref" placeholder="receipt no." />
             <button id="moi-q-go">Grant slots</button>
           </div>
         </div>
@@ -125,7 +125,7 @@
             <h2>Redeem (burn own balance)</h2>
             <label>Amount (KHRt)</label><input id="iss-r-amt" placeholder="e.g. 1,000,000.00" />
             <button id="iss-r-go" class="ghost">Redeem</button>
-            <p class="small" style="margin-top:10px">The issuer is a pluggable role: NBC, a licensed bank consortium, or a treasury-backed entity can hold it without changing the rails.</p>
+            <p class="small" style="margin-top:10px">The issuer is a pluggable role: a central bank, a licensed bank consortium, or a treasury-backed entity (all placeholders) can hold it without changing the rails.</p>
           </div>
         </div>
       </div>
@@ -133,7 +133,7 @@
 
     <div id="msg" class="banner"></div>
   </main>
-  <div class="footer">CSB v0 prototype — pilot system, not yet production.</div>
+  <div class="footer">CSB v0 prototype — a personal experiment; not affiliated with or endorsed by any government. Test tokens only.</div>
 
 <script>
 "use strict";
@@ -180,7 +180,7 @@ async function refreshStatus() {
 
   const val = (id) => document.getElementById(id).value.trim();
 
-  // --- MoI
+  // --- Identity Authority
   document.getElementById("moi-reg-go").onclick = () => run(async () => {
     const { identity } = await getContracts(signer());
     const tx = await identity.register(val("moi-reg-addr"), ethers.id(val("moi-reg-id")), Number(val("moi-reg-tier")));

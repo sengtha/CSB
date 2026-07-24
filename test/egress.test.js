@@ -6,8 +6,8 @@ const RECIPIENT = "0x" + "11".repeat(20); // recipient on the destination chain
 
 async function suiteWithFunds() {
   const s = await deploySuite();
-  await s.identity.connect(s.moi).register(s.alice.address, ID_ALICE, 2);
-  await s.identity.connect(s.moi).register(s.bob.address, ID_BOB, 1);
+  await s.identity.connect(s.idAuthority).register(s.alice.address, ID_ALICE, 2);
+  await s.identity.connect(s.idAuthority).register(s.bob.address, ID_BOB, 1);
   await s.khr.connect(s.issuer).issue(s.alice.address, 1_000_000_00);
   await s.khr.connect(s.issuer).issue(s.bob.address, 1_000_000_00);
   return s;

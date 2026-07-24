@@ -39,8 +39,8 @@ async function main() {
     }
   }
 
-  await (await identity.register(sokha.address, ethers.id("moi-identity-sokha"), 2)).wait();
-  await (await identity.register(dara.address, ethers.id("moi-identity-dara"), 1)).wait();
+  await (await identity.register(sokha.address, ethers.id("identity-sokha"), 2)).wait();
+  await (await identity.register(dara.address, ethers.id("identity-dara"), 1)).wait();
 
   await (await khr.issue(sokha.address, 5_000_000_00)).wait(); // 5,000,000.00 KHRt
   await (await khr.issue(dara.address, 1_000_000_00)).wait();
