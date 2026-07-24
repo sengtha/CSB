@@ -8,16 +8,16 @@ const path = require("path");
  * Why this exists: the wallet's "Send payment" button submits a real EVM
  * transaction (`KHRStablecoin.transfer`). Even when the CSB fee floor is set to
  * zero, the node still reserves `maxFeePerGas * gasLimit` from the sender's
- * NATIVE balance up front — and ethers populates a non-zero maxFeePerGas from
- * the node's fee suggestion. A pilot account that holds KHRt but zero tRIEL
- * therefore cannot pass that upfront check, and every transfer reverts with an
- * "insufficient funds for gas" error. Seeding issued KHRt but (on the real
- * chain) skipped native funding, so the pilot accounts had no gas money.
+ * NATIVE balance up front — a pilot account holding KHRt but zero tRIEL cannot
+ * pass that check. This mints a little tRIEL to each pilot account via the
+ * Native Minter precompile (the deployer is its admin).
  *
- * This mints a small amount of tRIEL straight to each pilot account via the
- * Native Minter precompile (the deployer is its admin). Minting — rather than
- * transferring from the deployer's genesis allocation — keeps the deployer's
- * balance intact and is exactly what that precompile is for.
+ * Fee handling: this chain's effective base fee can jump well above the fee
+ * floor (Subnet-EVM block gas cost — ~170 gwei observed), and ethers' automatic
+ * fee estimate can under-price a tx so it gets stuck unmined in the mempool
+ * (wait() then hangs forever). We therefore price every tx EXPLICITLY, far
+ * above the current base fee, and cap wait() with a timeout so a stuck tx
+ * surfaces instead of hanging.
  *
  * Usage (on the VM, with the deployer key):
  *   CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=0x... \
@@ -41,6 +41,22 @@ async function main() {
 
   const target = ethers.parseEther(process.env.CSB_FUND_AMOUNT ?? "10");
 
+  // Explicit, robust fee: well above the current base fee so txs can't get stuck
+  // under-priced in the mempool. Overpaying is harmless — the node only charges
+  // the actual base fee, and the deployer holds ~1,000,000 tRIEL.
+  const block = await ethers.provider.getBlock("latest");
+  const baseFee = block?.baseFeePerGas ?? 0n;
+  const bump = ethers.parseUnits("500", "gwei");
+  const fees = {
+    maxFeePerGas: baseFee * 3n + bump,
+    maxPriorityFeePerGas: ethers.parseUnits("2", "gwei"),
+  };
+  console.log(`Deployer: ${deployer.address}`);
+  console.log(`Deployer native balance: ${ethers.formatEther(await ethers.provider.getBalance(deployer.address))} tRIEL`);
+  console.log(`Current base fee: ${ethers.formatUnits(baseFee, "gwei")} gwei`);
+  console.log(`Pricing txs at maxFeePerGas ${ethers.formatUnits(fees.maxFeePerGas, "gwei")} gwei`);
+  console.log(`Topping each account up to ${ethers.formatEther(target)} tRIEL\n`);
+
   // Collect recipients: every seeded pilot account plus any explicit extras.
   const recipients = [];
   for (const [name, a] of Object.entries(deployments.pilot?.accounts ?? {})) {
@@ -53,19 +69,14 @@ async function main() {
     throw new Error("No recipients — deployments.json has no pilot.accounts and CSB_FUND_EXTRA is empty.");
   }
 
-  console.log(`Deployer: ${deployer.address}`);
-  console.log(`Deployer native balance: ${ethers.formatEther(await ethers.provider.getBalance(deployer.address))} tRIEL`);
-  console.log(`Topping each account up to ${ethers.formatEther(target)} tRIEL\n`);
-
   const minter = new ethers.Contract(NATIVE_MINTER, MINTER_ABI, deployer);
-
-  // Is the deployer allowed to mint? (allowList role: 0 = none, 1 = enabled, 2 = admin)
   let canMint = false;
   try {
     canMint = (await minter.readAllowList(deployer.address)) > 0n;
   } catch (_) {
-    // Native Minter precompile not enabled / not readable — fall back to transfer.
+    // Native Minter not enabled / not readable — fall back to a value transfer.
   }
+  console.log(canMint ? "Funding via Native Minter precompile.\n" : "Native Minter unavailable — funding via value transfer.\n");
 
   for (const r of recipients) {
     const bal = await ethers.provider.getBalance(r.address);
@@ -74,16 +85,27 @@ async function main() {
       continue;
     }
     const need = target - bal;
-    if (canMint) {
-      await (await minter.mintNativeCoin(r.address, need)).wait();
-      console.log(`  ${r.name} ${r.address} — minted ${ethers.formatEther(need)} tRIEL`);
-    } else {
-      await (await deployer.sendTransaction({ to: r.address, value: need })).wait();
-      console.log(`  ${r.name} ${r.address} — sent ${ethers.formatEther(need)} tRIEL from deployer`);
+    const tx = canMint
+      ? await minter.mintNativeCoin(r.address, need, fees)
+      : await deployer.sendTransaction({ to: r.address, value: need, ...fees });
+    console.log(`  ${r.name} ${r.address} — ${canMint ? "minting" : "sending"} ${ethers.formatEther(need)} tRIEL … tx ${tx.hash}`);
+    const receipt = await waitWithTimeout(ethers.provider, tx.hash, 90_000);
+    if (!receipt) {
+      console.log(`    ⏳ not mined within 90s — tx ${tx.hash} is stuck (base fee likely rose above the price). Re-run to retry.`);
+      return;
     }
+    console.log(`    ✓ mined in block ${receipt.blockNumber}`);
   }
 
-  console.log("\nDone. Pilot accounts can now pay gas; the wallet 'Send payment' button will work.");
+  console.log("\nDone. Pilot accounts can now pay gas; reload the wallet and Send payment will work.");
+}
+
+// Resolve when the tx is mined, or null after `ms` so a stuck tx never hangs us.
+function waitWithTimeout(provider, hash, ms) {
+  return Promise.race([
+    provider.waitForTransaction(hash, 1),
+    new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
 }
 
 main().catch((error) => {

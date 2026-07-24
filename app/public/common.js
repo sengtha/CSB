@@ -136,6 +136,20 @@ function allInterfaces() {
   return Object.values(ABI).map((frags) => new ethers.Interface(frags));
 }
 
+// Explicit transaction fees priced well above the current base fee. This chain's
+// effective base fee can jump above the fee floor (Subnet-EVM block gas cost), and
+// ethers' automatic estimate can under-price a tx so it never mines and tx.wait()
+// hangs — which makes a button look "stuck". Overpaying is harmless: the node only
+// charges the real base fee. Pass the result as the last arg to a contract call.
+async function feeOverrides() {
+  const block = await getProvider().getBlock("latest");
+  const baseFee = block?.baseFeePerGas ?? 0n;
+  return {
+    maxFeePerGas: baseFee * 3n + ethers.parseUnits("500", "gwei"),
+    maxPriorityFeePerGas: ethers.parseUnits("2", "gwei"),
+  };
+}
+
 function explainError(e) {
   // Native-gas shortfall: the sender holds KHRt but no tRIEL to pay gas, so the
   // node rejects the tx up front. Give an actionable message instead of the raw

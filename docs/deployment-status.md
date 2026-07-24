@@ -136,6 +136,15 @@ CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
 Then reload the wallet and send again. (`scripts/seed-accounts.js` now funds
 native gas at seed time too, so future deployments won't hit this.)
 
+**A transaction (or `fund-native.js`) hangs and never confirms.** After the fee
+floor is set to 0, this chain's *effective* base fee still jumps well above it
+(Subnet-EVM block gas cost — ~170 gwei observed), and ethers' automatic fee
+estimate can under-price a tx so it sits unmined in the mempool and `wait()`
+hangs forever. Both `fund-native.js` and the wallet now price transactions
+explicitly, far above the current base fee (harmless — the node only charges the
+real base fee), and `fund-native.js` times out after 90s instead of hanging. If
+a tx is reported stuck, just re-run the script.
+
 ## Single-validator caveat
 
 The chain currently has one validator (the CLI bootstrap node). If the VM reboots, the chain pauses until that node is restarted — data persists. Registering the Docker validator (step 1 above) removes this single point of failure.
