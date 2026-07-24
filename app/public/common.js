@@ -184,23 +184,29 @@ async function ensureSession() {
       <p>This explorer and its chain data are accessible to authorized users only.
          Production replaces this passcode with national digital-identity login.</p>
       <label>Access passcode</label>
-      <input id="pc" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      <input id="pc" type="text" inputmode="text" name="csb-passcode-nofill"
+             autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+             style="-webkit-text-security:disc" />
       <div id="pcerr" class="banner"></div>
       <button id="pcgo">Enter</button>
     </div>`;
   document.body.appendChild(overlay);
   return new Promise((resolve) => {
     const go = async () => {
+      const raw = document.getElementById("pc").value;
+      // Normalize away invisible characters some keyboards/managers inject:
+      // trim ends, strip zero-width chars, collapse nothing else.
+      const passcode = raw.replace(/[​-‍﻿]/g, "").trim();
       const res = await fetch("/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ passcode: document.getElementById("pc").value.trim() }),
+        body: JSON.stringify({ passcode }),
       });
       if (res.ok) {
         overlay.remove();
         resolve();
       } else {
-        banner(document.getElementById("pcerr"), "err", "Invalid passcode.");
+        banner(document.getElementById("pcerr"), "err", `Invalid passcode (sent ${passcode.length} chars).`);
       }
     };
     document.getElementById("pcgo").onclick = go;
