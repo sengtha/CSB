@@ -1,6 +1,6 @@
 # CSB deployment status — Fuji testnet
 
-**Status:** LIVE on Avalanche Fuji · first deployed 2026-07-24.
+**Status:** LIVE on Avalanche Fuji · redeployed 2026-07-24 on a fresh VM (the previous chain was retired after a single-validator restart wedged it). **Wallet KHRt transfer verified working end-to-end.**
 
 This is the running record of the CSB testnet: what exists, where, and how to operate it. Public identifiers and contract addresses only — **no private keys or passcodes live in this file** (those are in `~/.avalanche-cli/key/`, `app/deployments.json`, and the operator's env, all off-repo).
 
@@ -10,23 +10,23 @@ This is the running record of the CSB testnet: what exists, where, and how to op
 |---|---|
 | Network | Avalanche **Fuji** (testnet) |
 | EVM Chain ID | **8555** (`0x216b`) |
-| Subnet ID | `xreFEw7ZXFxZT2LbRDAJYYegp5HUA4NQoPJN5DYHT1v9tzsBr` |
-| Blockchain ID | `2s8QnZT5RNuoN4hvZDcmD787kcApP7tH97QtDUVN9atkxh3VSv` |
+| Subnet ID | `FWHGBo9oxEN6HEsFp6Ajm5BMGihoKMfXk81t7zFirhAUybJxw` |
+| Blockchain ID | `mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3` |
 | VM ID | `koLRzStcoE4fZ6V1DtXJCYMVWctdrdfpR6Y5egzFbURXRSvVv` |
 | Validator Manager | V2 PoA, owned by the deployer key (Governing-Council slot in production) |
 | Native token | **tRIEL** (1,000,000 allocated to the deployer at genesis) |
-| Gas | **free** — `minBaseFee` set to 0 post-launch via the feeManager precompile |
-| Version pair | AvalancheGo **v1.14.1** / Subnet-EVM **v0.8.0** |
-| Local RPC | `http://127.0.0.1:9650/ext/bc/2s8QnZT5RNuoN4hvZDcmD787kcApP7tH97QtDUVN9atkxh3VSv/rpc` |
+| Gas | constant, non-zero price; pilot accounts are funded with tRIEL at seed time so they can pay it. Set gas free later via the feeManager precompile (`minBaseFee` → 0) if the free-gas model is wanted. |
+| Version pair | AvalancheGo **v1.14.1** / Subnet-EVM **v0.8.0** (both plugin protocol 44 — the only released working pair; see `docs/create-testnet.md`) |
+| Local RPC | `http://127.0.0.1:9650/ext/bc/mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3/rpc` |
 
 ## Infrastructure
 
 | | |
 |---|---|
-| Host | Elestio VM `csb-u70984.vm.elestio.app` (Ubuntu, Docker) |
-| Bootstrap validator | avalanche-cli local node **cluster `csb-local-node-fuji`**, `NodeID-M7ag4B7H1C4eFodbi4TwpAoqJh7LEux2s`, ports 9650 (API, localhost) / 9651 (P2P). **This is the chain's registered L1 validator — always operate this cluster.** |
-| Docker validator (node #2) | running as container `csb-validator-1` (image `csb-validator`), ports 9652/9653, auto-restart — **not yet registered** as an L1 validator, so it only partial-syncs |
-| ⚠ Decoy cluster `csb` | A second avalanche-cli cluster (`NodeID-LSmkHG1…`, port 9654) exists from a mis-step. It is **NOT** the L1 validator and can never bootstrap the chain (0% stake). Do not start/track it; prefer `avalanche node local destroy csb` to remove the confusion. |
+| Host | Elestio VM (host `cicd-upecy-u70984`; repo at `/opt/csb`, Ubuntu, Docker) |
+| Bootstrap validator | avalanche-cli local node **cluster `csb-local-node-fuji`**, `NodeID-HtEKUn7oq7ArkzRFW9km6j5Fgm4pcMrLU`, ports 9650 (API, localhost) / 9651 (P2P). **This is the chain's only registered L1 validator — always operate this cluster; never create a second one.** |
+| Staking key backup | `~/csb-backup.tgz` (staker.key/crt + BLS signer + deployer key) — pulled off the VM. Losing this key = losing the only validator. |
+| Docker validator (node #2) | not yet deployed on this VM (`docker-compose.validator.yml`, ports 9652/9653) — register it to remove the single-validator risk |
 | App server | `app/server.js` on port **8080** (gated wallet/explorer/admin), passcode via `EXPLORER_PASSCODE` env |
 | Deployer / admin key | `csb-deployer` → **`0x8f6aE9fB0993C8691D7FCDFBFC79fbcF5A7BFa8b`** — precompile admin, contract deployer, KHRt issuer, validator-manager owner. **TESTNET ONLY — never reuse on mainnet.** |
 
@@ -57,7 +57,7 @@ Interop (deployed by avalanche-cli):
 | | Address |
 |---|---|
 | ICM Messenger (Teleporter) | `0x253b2784c75e510dD0fF1da844684a1aC0aa5fcf` |
-| ICM Registry | `0x5553a322AEe46c699d209515888EC46d9d29C520` |
+| ICM Registry | `0xD1760194F90e8265e4F269Ab19725A338484eE80` |
 
 Roles at deploy time all point to the deployer (pilot mode): council, identity authority, enforcer, issuer. In production these become distinct institutional multisigs.
 
@@ -65,9 +65,9 @@ Roles at deploy time all point to the deployer (pilot mode): council, identity a
 
 | Name | Address | Tier | txAllowList |
 |---|---|---|---|
-| Sokha | `0xA6a811005546ca065D2d7e36ce0f1DFC0cc4Ed87` | 2 (full KYC) | enabled |
-| Dara | `0x38db7a65068bC779a7BfAC16E634e8052b910676` | 1 (capped) | enabled |
-| Vanna | `0x4Cd4aC34879BD48f134aa4C59fcdC9076171ed0f` | none | not enabled (rejection cases) |
+| Sokha | `0xF0c9A393d750dB423a2a055944Ea54f692107Ad2` | 2 (full KYC) | enabled |
+| Dara | `0xAF391010ad7c4628ab06C11296efE03350E830b9` | 1 (capped) | enabled |
+| Vanna | `0xa78cB3F68aD3A91A2960688c3cD93e9aD0bE679e` | none | not enabled (rejection cases) |
 
 ## What works today
 
@@ -82,7 +82,7 @@ Roles at deploy time all point to the deployer (pilot mode): council, identity a
 ```bash
 # --- on the VM ---
 export PATH=$PATH:$HOME/bin
-export RPC=http://127.0.0.1:9650/ext/bc/2s8QnZT5RNuoN4hvZDcmD787kcApP7tH97QtDUVN9atkxh3VSv/rpc
+export RPC=http://127.0.0.1:9650/ext/bc/mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3/rpc
 
 # chain alive?
 curl -s -X POST -H 'content-type:application/json' --data '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' $RPC
@@ -97,7 +97,7 @@ CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
   npx hardhat run scripts/fund-native.js --network csbRemote
 
 # after a VM reboot, the bootstrap node must be restarted.
-# IMPORTANT: the correct cluster is 'csb-local-node-fuji' (NodeID-M7ag4B7…, the
+# IMPORTANT: the correct cluster is 'csb-local-node-fuji' (NodeID-HtEKUn7…, the
 # registered L1 validator, port 9650). Do NOT start/track the 'csb' cluster —
 # it is a decoy with a different NodeID that can never bootstrap the L1.
 avalanche node local status csb-local-node-fuji
@@ -117,7 +117,7 @@ Browser access: `https://csb-u70984.vm.elestio.app` (passcode-gated). **Easiest 
 
 - `~/.avalanche-cli/key/csb-deployer.pk` — chain root authority.
 - `app/deployments.json` — contract addresses + pilot keys.
-- **Bootstrap validator staking identity** — `~/.avalanche-cli/local/csb-local-node-fuji/NodeID-M7ag4B7…/staking/staker.key` + `staker.crt`. This key **is** the L1's single validator; lose it and the chain cannot reach quorum to bootstrap or to register a replacement. Back it up off the VM. (This is exactly what went wrong once: a stop/start landed on a *different* cluster with a new NodeID, and the L1 sat at "0% stake connected / context deadline exceeded" until the original cluster was restarted.)
+- **Bootstrap validator staking identity** — `~/.avalanche-cli/local/csb-local-node-fuji/NodeID-HtEKUn7…/staking/staker.key` + `staker.crt`. This key **is** the L1's single validator; lose it and the chain cannot reach quorum to bootstrap or to register a replacement. Back it up off the VM. (This is exactly what went wrong once: a stop/start landed on a *different* cluster with a new NodeID, and the L1 sat at "0% stake connected / context deadline exceeded" until the original cluster was restarted.)
 - (validator identity) `csb_avalanchego-staking` Docker volume, once node #2 is registered.
 
 ## Troubleshooting
@@ -133,7 +133,7 @@ Minter (deployer is admin):
 
 ```bash
 export PATH=$PATH:$HOME/bin
-export RPC=http://127.0.0.1:9650/ext/bc/2s8QnZT5RNuoN4hvZDcmD787kcApP7tH97QtDUVN9atkxh3VSv/rpc
+export RPC=http://127.0.0.1:9650/ext/bc/mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3/rpc
 cd ~/csb
 CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
   npx hardhat run scripts/fund-native.js --network csbRemote
@@ -153,7 +153,7 @@ a tx is reported stuck, just re-run the script.
 
 **Chain won't bootstrap after a restart: "context deadline exceeded" / health shows
 `not connected to enough stake: connected to 0.000000%`.** The node that came up is
-not the L1's registered validator (`NodeID-M7ag4B7…`). Almost always this means the
+not the L1's registered validator (`NodeID-HtEKUn7…`). Almost always this means the
 wrong avalanche-cli cluster was started — the decoy `csb` cluster (`NodeID-LSmkHG1…`,
 port 9654) instead of `csb-local-node-fuji` (port 9650). Check with:
 
