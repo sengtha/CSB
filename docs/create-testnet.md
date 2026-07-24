@@ -44,7 +44,8 @@ These are the things that actually bite, learned the hard way:
 3. **`describe` prints your private keys.** The "Initial token allocation" table includes the deployer's private key in plain text. Never paste that table anywhere public (issues, chat, Discord); operators only ever need the Subnet ID / VM ID / Blockchain ID. A testnet key that leaks is testnet-only forever.
 4. **Elestio SSH:** the root password is displayed in the service's dashboard (*Admin/SSH credentials*, reveal icon); the dashboard also has a browser terminal that needs no password. SSH works against the same hostname whose HTTPS times out — different ports.
 5. **The CLI wizard is a trap for this project.** If `create` asks about chain ID, token airdrops, or "defaults for a test environment", the `--genesis` flag didn't take effect and you're building a generic chain (no zero fees, no allowlists, prefunded with the public "ewoq" test key — Fuji will refuse it with *"can't airdrop to default address on public networks"*). Recreate with `--force` and the full flag set from step 3.
-6. **Interrupted deploys are resumable.** Re-running `avalanche blockchain deploy csb --fuji` picks up what already completed on Fuji. Check `avalanche key list` afterwards — an interrupted attempt may have spent some P-Chain AVAX, so the retry can need a faucet top-up.
+6. **The live network dictates your versions — check it, don't trust docs.** Fuji upgrades continuously; a node even one protocol version behind connects but never finishes bootstrapping ("context deadline exceeded", with peer log lines advising "you may want to update your client"). Before starting: update avalanche-cli to latest (re-run its install script), and verify the pin: the newest `subnet-evm` release's `compatibility.json` protocol number must appear in the target avalanchego's `version/compatibility.json`. Pin `--vm-version` and the Docker pair to that. If bootstrap still stalls on the stable avalanchego, Fuji may be running a `-fuji` pre-release (e.g. `v1.15.0-fuji` docker tag) — use that tag for testnet validators.
+7. **Interrupted deploys are resumable.** Re-running `avalanche blockchain deploy csb --fuji` picks up what already completed on Fuji. Check `avalanche key list` afterwards — an interrupted attempt may have spent some P-Chain AVAX, so the retry can need a faucet top-up.
 
 ## 1. Create the deployer key
 
@@ -84,7 +85,7 @@ Then create — note the **pinned `--vm-version`**: the CLI otherwise picks the 
 ```bash
 avalanche blockchain create csb --force \
   --genesis chain/genesis.example.json \
-  --evm --proof-of-authority --vm-version v0.7.9
+  --evm --proof-of-authority --vm-version v0.8.0
 ```
 
 Expected prompts and answers:

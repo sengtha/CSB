@@ -19,7 +19,7 @@ A validator is a server that holds a copy of the CSB ledger and participates in 
 | Subnet ID | `2b175hLJ…` |
 | VM ID | `srEXiWa…` |
 | Blockchain ID | `2oYMBNV…` |
-| Version pair (AvalancheGo / Subnet-EVM) | `v1.13.5` / `0.7.9` |
+| Version pair (AvalancheGo / Subnet-EVM) | `v1.14.1` / `0.8.0` |
 | Coordinator contact | email / Telegram |
 
 ## 2. Server requirements

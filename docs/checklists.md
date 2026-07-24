@@ -14,7 +14,7 @@ Working checklists for the two launches. Copy each into an issue/tracker and tic
 
 ### Create the chain (full commands: [`docs/create-testnet.md`](create-testnet.md))
 
-- [ ] `avalanche blockchain create csb --genesis … --evm --proof-of-authority --vm-version <pinned, e.g. v0.7.9>` (must match the validator image's Subnet-EVM version)
+- [ ] `avalanche blockchain create csb --genesis … --evm --proof-of-authority --vm-version <pinned, e.g. v0.8.0>` (must match the validator image's Subnet-EVM version)
 - [ ] `avalanche blockchain deploy csb --fuji` — run inside tmux; P-Chain funded first
 - [ ] Recorded: **Subnet ID**, **Blockchain ID**, **VM ID**, RPC URL — stored in the project record and distributed to validator operators with [`docs/validator-manual.md`](validator-manual.md)
 

@@ -23,8 +23,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.validator
       args:
-        AVALANCHEGO_VERSION: ${AVALANCHEGO_VERSION:-v1.13.5}
-        SUBNET_EVM_VERSION: ${SUBNET_EVM_VERSION:-0.7.9}
+        AVALANCHEGO_VERSION: ${AVALANCHEGO_VERSION:-v1.14.1}
+        SUBNET_EVM_VERSION: ${SUBNET_EVM_VERSION:-0.8.0}
         VM_ID: ${CSB_VM_ID:-srEXiWaHuhNyGwPUi444Tu47ZEDwxTWrbQiuD7FmgSAQ6X7Dy}
     environment:
       # fuji for the testnet phase; mainnet when CSB anchors to Avalanche mainnet
