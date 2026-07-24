@@ -71,11 +71,12 @@ Roles at deploy time all point to the deployer (pilot mode): council, identity a
 
 ## What works today
 
-- Chain producing blocks; RPC answers `eth_chainId` = `0x216b`.
-- Free gas (minBaseFee 0) — a governance action through feeManager.
-- Full contract suite live; Sokha/Dara KYC-active and txAllowList-enabled.
-- Gated app UI (explorer/wallet/admin) serving the live chain on :8080.
-- ICM + relayer running (relayer funded ~0.25 AVAX on C-Chain for CSB→C-Chain delivery).
+- Chain producing blocks on demand; RPC answers `eth_chainId` = `0x216b`.
+- Full contract suite live; Sokha/Dara KYC-active, txAllowList-enabled, and funded with tRIEL.
+- **Wallet KHRt transfer (Sokha → Dara) verified end-to-end through the gated app.**
+- Gated app UI (explorer/wallet/admin) serving the live chain on :8080; passcode login works.
+- Gas is constant/non-zero (not yet set free); pilot accounts hold tRIEL to pay it.
+- ICM Messenger/Registry deployed, but the **relayer is not funded** (chose "Not now" at deploy) — cross-chain egress delivery needs it funded first.
 
 ## Operate it
 
@@ -104,7 +105,7 @@ avalanche node local status csb-local-node-fuji
 avalanche node local start csb-local-node-fuji
 ```
 
-Browser access: `https://csb-u70984.vm.elestio.app` (passcode-gated). **Easiest login: visit the page with the passcode in the URL once** — `https://csb-u70984.vm.elestio.app/explorer.html?pw=<passcode>` — it sets the session cookie and redirects (no form field). The passcode box also works. For a shared HTTPS link, front port 8080 with a TLS reverse proxy — see `docs/ssl.md` (Elestio proxy or Caddy), then relaunch the app with `COOKIE_SECURE=1`.
+Browser access: your Elestio host over HTTPS (passcode-gated). **Easiest login: visit any page with the passcode in the URL once** — `https://<your-elestio-host>/explorer.html?pw=<passcode>` — it sets the session cookie and redirects (no form field). The passcode box also works. For a shared HTTPS link, front port 8080 with a TLS reverse proxy — see `docs/ssl.md` (Elestio proxy or Caddy), then relaunch the app with `COOKIE_SECURE=1`.
 
 ## Next steps (testnet checklist continues)
 
