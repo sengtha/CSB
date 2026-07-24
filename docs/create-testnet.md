@@ -19,8 +19,7 @@ If someone told you "just use Docker": that's true unless you are the coordinato
 1. avalanche key create csb-deployer           → your key (0 AVAX at first)
 2. faucet → C-Chain 0x address, then
    avalanche key transfer                      → AVAX onto the P-Chain
-3. edit genesis (0xC0DE… → your 0x address), then
-   avalanche blockchain create csb …           → mints the VM ID
+3. avalanche blockchain create csb (wizard)    → mints the VM ID; answers below
 4. avalanche blockchain deploy csb --fuji      → mints Subnet ID + Blockchain ID  (RUN IN TMUX)
 5. avalanche blockchain describe csb           → READ the three IDs
 6. fill .env with those IDs                    → only NOW build the validator:
@@ -43,7 +42,7 @@ These are the things that actually bite, learned the hard way:
    ```
 3. **`describe` prints your private keys.** The "Initial token allocation" table includes the deployer's private key in plain text. Never paste that table anywhere public (issues, chat, Discord); operators only ever need the Subnet ID / VM ID / Blockchain ID. A testnet key that leaks is testnet-only forever.
 4. **Elestio SSH:** the root password is displayed in the service's dashboard (*Admin/SSH credentials*, reveal icon); the dashboard also has a browser terminal that needs no password. SSH works against the same hostname whose HTTPS times out — different ports.
-5. **The CLI wizard is a trap for this project.** If `create` asks about chain ID, token airdrops, or "defaults for a test environment", the `--genesis` flag didn't take effect and you're building a generic chain (no zero fees, no allowlists, prefunded with the public "ewoq" test key — Fuji will refuse it with *"can't airdrop to default address on public networks"*). Recreate with `--force` and the full flag set from step 3.
+5. **Use the wizard — do NOT pass a hand-written `--genesis`.** A custom genesis lacks the pre-deployed Validator Manager bytecode the CLI's V2 PoA flow expects at `0x0FEEDC0DE…`; the deploy then dies at "Initializing Proof of Authority Validator Manager" with *"no new block produced"* / *"no contract code at given address"* (proven by four failed attempts). The wizard genesis embeds the manager contracts, correct timestamps, and warp config — and its prompts can express every CSB precompile (answers in step 3). The only trap inside the wizard: never accept "defaults for a test environment" (it prefunds the public ewoq key, which Fuji rejects with *"can't airdrop to default address"*).
 6. **The live network dictates your versions — check it, don't trust docs.** Fuji upgrades continuously; a node even one protocol version behind connects but never finishes bootstrapping ("context deadline exceeded", with peer log lines advising "you may want to update your client"). Before starting: update avalanche-cli to latest (re-run its install script), and verify the pin: the newest `subnet-evm` release's `compatibility.json` protocol number must appear in the target avalanchego's `version/compatibility.json`. Pin `--vm-version` and the Docker pair to that. If bootstrap still stalls on the stable avalanchego, Fuji may be running a `-fuji` pre-release (e.g. `v1.15.0-fuji` docker tag) — use that tag for testnet validators.
 7. **Warp needs a post-Durango activation time.** `warpConfig.blockTimestamp` must be a recent Unix timestamp (the repo genesis uses 1720000000), never `0` — otherwise the VM rejects the whole genesis with *"warp cannot be activated before Durango"* and the deploy hangs forever at "waiting to be bootstrapped" (the error is only visible in the node's main.log).
 8. **Interrupted deploys are resumable.** Re-running `avalanche blockchain deploy csb --fuji` picks up what already completed on Fuji. Check `avalanche key list` afterwards — an interrupted attempt may have spent some P-Chain AVAX, so the retry can need a faucet top-up.
@@ -71,30 +70,33 @@ avalanche key list --fuji --keys csb-deployer   # P-Chain row must now show a ba
 
 The deploy locks ~0.1 AVAX as the bootstrap validator's continuous-fee balance (drained at ~1.33 AVAX/month) plus small transaction fees — top the P-Chain up periodically during the testnet.
 
-## 3. Put your address into the genesis, then create the blockchain
-
-Replace every `0xC0DE…` placeholder in `chain/genesis.example.json` (four precompile `adminAddresses` + the `alloc` funding key) with your deployer's 0x address in one command, and verify:
+## 3. Create the blockchain through the wizard (field-proven answer sheet)
 
 ```bash
-cd ~/csb
-sed -i "s/C0DE000000000000000000000000000000000001/<YOUR-0X-ADDRESS-WITHOUT-0x>/g" chain/genesis.example.json
-grep -c "<YOUR-0X-ADDRESS-WITHOUT-0x>" chain/genesis.example.json   # must print 5
+avalanche blockchain create csb --force --evm --proof-of-authority --vm-version v0.8.0
 ```
 
-Then create — note the **pinned `--vm-version`**: the CLI otherwise picks the newest Subnet-EVM, which may only be compatible with a release-candidate AvalancheGo, mismatching the stable version the Docker validator uses:
+(The pinned `--vm-version` must match the validator image's Subnet-EVM version — the CLI otherwise picks the newest, which may need a release-candidate AvalancheGo.)
 
-```bash
-avalanche blockchain create csb --force \
-  --genesis chain/genesis.example.json \
-  --evm --proof-of-authority --vm-version v0.8.0
-```
+Wizard answers, in the order the prompts appear — `<ADMIN>` is your deployer's 0x address:
 
-Expected prompts and answers:
+| Prompt | Answer |
+|---|---|
+| ValidatorManager controller | Stored key → `csb-deployer` (the slot a Governing Council multisig takes in production) |
+| Connect with other blockchains / C-Chain? | **Yes** — the egress gateway rides on ICM/ICTT |
+| Use default values? | **"I don't want to use default values"** (never "test environment defaults" — ewoq trap) |
+| Chain ID | `8555` |
+| Token symbol | `tRIEL` |
+| Initial token allocation | **Define a custom allocation** → `<ADMIN>` → e.g. `1000000` |
+| Allow minting new native tokens? | **Yes** (Native Minter ON) → allow list: Add → **Admin** → `<ADMIN>` → Confirm |
+| Fee configuration | **Low block size / Low throughput** (proven default; go zero-fee later via feeManager) |
+| Dynamic fees? | **No, constant gas prices** (anti-spam lives in the identity layer) |
+| Fees adjustable without upgrade? | **Yes** (Fee Manager ON) → Admin → `<ADMIN>` → Confirm |
+| Anyone can issue txs & deploy contracts? | **No** |
+| Anyone can issue transactions? | **No** (Transaction Allow List ON) → Admin → `<ADMIN>` → Confirm |
+| Anyone can deploy contracts? | **No** (Deployer Allow List ON) → Admin → `<ADMIN>` → Confirm |
 
-- *"Which address … controller of ValidatorManager contract?"* → **Get address from an existing stored key** → `csb-deployer`. (This is the validator add/remove authority — the slot a Governing Council multisig takes in a production deployment.)
-- *"Do you want to connect your blockchain with other blockchains or the C-Chain?"* → **Yes** — the egress gateway runs on ICM/ICTT; "isolated" would mean redoing this manually later. Enabling interop installs plumbing only; nothing leaves except through the gateway's policy.
-- Token name/symbol → cosmetic metadata, e.g. `tRIEL`.
-- It must **not** ask about chain ID or airdrops (see reality #5).
+This expresses all four CSB precompiles inside the CLI's known-good genesis (pre-deployed Validator Manager, correct warp/timestamps). Fees start non-zero: after launch, the feeManager admin sets `minBaseFee` to 0 for the free-gas model — deliberately a runtime change, not a genesis experiment. `chain/genesis.example.json` remains in the repo as a **reference for what the resulting config should contain**, not as a deploy input.
 
 Sanity-check before spending AVAX:
 
