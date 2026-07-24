@@ -26,21 +26,33 @@
     "allowFeeRecipients": false,
     "txAllowListConfig": {
       "blockTimestamp": 0,
-      "adminAddresses": ["0xC0DE000000000000000000000000000000000001"],
+      "adminAddresses": [
+        "0xC0DE000000000000000000000000000000000001"
+      ],
       "enabledAddresses": []
     },
     "contractDeployerAllowListConfig": {
       "blockTimestamp": 0,
-      "adminAddresses": ["0xC0DE000000000000000000000000000000000001"],
+      "adminAddresses": [
+        "0xC0DE000000000000000000000000000000000001"
+      ],
       "enabledAddresses": []
     },
     "feeManagerConfig": {
       "blockTimestamp": 0,
-      "adminAddresses": ["0xC0DE000000000000000000000000000000000001"]
+      "adminAddresses": [
+        "0xC0DE000000000000000000000000000000000001"
+      ]
     },
     "contractNativeMinterConfig": {
       "blockTimestamp": 0,
-      "adminAddresses": ["0xC0DE000000000000000000000000000000000001"]
+      "adminAddresses": [
+        "0xC0DE000000000000000000000000000000000001"
+      ]
+    },
+    "warpConfig": {
+      "blockTimestamp": 0,
+      "quorumNumerator": 67
     }
   },
   "alloc": {
