@@ -100,12 +100,16 @@ async function main() {
   console.log("\nDone. Pilot accounts can now pay gas; reload the wallet and Send payment will work.");
 }
 
-// Resolve when the tx is mined, or null after `ms` so a stuck tx never hangs us.
-function waitWithTimeout(provider, hash, ms) {
-  return Promise.race([
-    provider.waitForTransaction(hash, 1),
-    new Promise((resolve) => setTimeout(() => resolve(null), ms)),
-  ]);
+// Poll for the receipt (the Hardhat provider implements getTransactionReceipt
+// but not waitForTransaction). Return null after `ms` so a stuck tx never hangs.
+async function waitWithTimeout(provider, hash, ms) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    const receipt = await provider.getTransactionReceipt(hash);
+    if (receipt) return receipt;
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return null;
 }
 
 main().catch((error) => {
