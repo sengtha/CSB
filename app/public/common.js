@@ -184,7 +184,7 @@ async function ensureSession() {
       <p>This explorer and its chain data are accessible to authorized users only.
          Production replaces this passcode with national digital-identity login.</p>
       <label>Access passcode</label>
-      <input id="pc" type="password" autocomplete="off" />
+      <input id="pc" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
       <div id="pcerr" class="banner"></div>
       <button id="pcgo">Enter</button>
     </div>`;
@@ -194,7 +194,7 @@ async function ensureSession() {
       const res = await fetch("/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ passcode: document.getElementById("pc").value }),
+        body: JSON.stringify({ passcode: document.getElementById("pc").value.trim() }),
       });
       if (res.ok) {
         overlay.remove();
