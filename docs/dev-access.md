@@ -11,7 +11,7 @@ An operator with the deployer key runs, on the VM:
 
 ```bash
 export PATH=$PATH:$HOME/bin
-export RPC=http://127.0.0.1:9654/ext/bc/2s8QnZT5RNuoN4hvZDcmD787kcApP7tH97QtDUVN9atkxh3VSv/rpc
+export RPC=http://127.0.0.1:9650/ext/bc/mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3/rpc
 
 CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
 CSB_DEV_ADDR=0xDEVADDRESS \
@@ -34,7 +34,7 @@ To enable several at once: `CSB_DEV_ADDR=0xdev1,0xdev2`. Change the gas grant wi
 
 ## 2. Reach the RPC from the developer's machine
 
-The node's RPC listens on `127.0.0.1:9654` on the VM and is **not** public (that's
+The node's RPC listens on `127.0.0.1:9650` on the VM and is **not** public (that's
 the "private to the world" boundary). The gated app proxy (`/rpc`) is
 passcode+cookie protected and can't be used by MetaMask directly. Two ways to
 give a developer RPC access:
@@ -46,11 +46,11 @@ localhost:
 
 ```bash
 # on the developer's machine
-ssh -L 9654:127.0.0.1:9654 root@csb-u70984.vm.elestio.app -N
+ssh -L 9650:127.0.0.1:9650 root@cicd-upecy-u70984.vm.elestio.app -N
 ```
 
 Their MetaMask RPC URL is then
-`http://127.0.0.1:9654/ext/bc/2s8QnZT5RNuoN4hvZDcmD787kcApP7tH97QtDUVN9atkxh3VSv/rpc`.
+`http://127.0.0.1:9650/ext/bc/mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3/rpc`.
 Nothing is exposed publicly; access is controlled by who has SSH.
 
 ### Option B — dedicated public dev RPC (only for a controlled pilot)
@@ -58,8 +58,8 @@ Nothing is exposed publicly; access is controlled by who has SSH.
 If you must hand out a URL, put a reverse-proxy route in front of the RPC on a
 **hard-to-guess path** and treat it as semi-public — the allowlists still stop
 anyone unapproved from transacting, but anyone with the URL can *read* all chain
-data. Do **not** expose port 9654 directly; proxy it (see `docs/ssl.md`) at e.g.
-`https://csb-u70984.vm.elestio.app/dev-rpc/…`. Prefer Option A unless a browser
+data. Do **not** expose port 9650 directly; proxy it (see `docs/ssl.md`) at e.g.
+`https://cicd-upecy-u70984.vm.elestio.app/dev-rpc/…`. Prefer Option A unless a browser
 dapp needs it.
 
 ## 3. Add the network to MetaMask
@@ -69,10 +69,15 @@ MetaMask → Networks → **Add network manually**:
 | Field | Value |
 |---|---|
 | Network name | `CSB Testnet` |
-| New RPC URL | `http://127.0.0.1:9654/ext/bc/2s8QnZT5RNuoN4hvZDcmD787kcApP7tH97QtDUVN9atkxh3VSv/rpc` (via the tunnel), or your dev-RPC URL |
+| New RPC URL | `http://127.0.0.1:9650/ext/bc/mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3/rpc` (via the tunnel), or your dev-RPC URL |
 | Chain ID | `8555` |
 | Currency symbol | `tRIEL` |
-| Block explorer | *(optional)* the gated explorer URL |
+| Block explorer | *(leave blank — the app's gated `explorer.html` is not an Etherscan-style API)* |
+
+> The blockchain ID in the RPC URL (`mHu6H4FQ…`) is specific to this deployment.
+> If the chain is ever redeployed it changes — read the current one from
+> `docs/deployment-status.md` or `avalanche blockchain describe csb`. The port is
+> **9650** (the bootstrap node); `9651` is P2P.
 
 Then import the enabled account: MetaMask → account menu → **Import account** →
 paste its private key. To see KHRt, **Import tokens** with the KHRStablecoin
