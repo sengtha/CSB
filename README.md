@@ -47,6 +47,8 @@ test/                          24 tests: KYC lifecycle, separation of powers,
 docs/architecture.md           Architecture v0
 docs/chain-config.md           Chain rules reference: genesis, gas/fee settings,
                                precompiles, what Docker does NOT configure
+docs/create-testnet.md         Coordinator guide: create the Fuji testnet chain
+                               (mints the Subnet/VM/Blockchain IDs)
 docs/checklists.md             Launch checklists: testnet (Fuji) and mainnet
 docs/validator-manual.md       Operator manual for external testnet validators
 docs/cloud-deployment.md       Full-stack deployment on a cloud VM

@@ -12,7 +12,7 @@ Working checklists for the two launches. Copy each into an issue/tracker and tic
 - [ ] Coordinator VM provisioned (Elestio or other): 4+ vCPU / 8+ GB / 100+ GB, Docker
 - [ ] Firewall: 22 (restricted), 8080 (app), 9651 (validator P2P) — 9650 **not** public
 
-### Create the chain
+### Create the chain (full commands: [`docs/create-testnet.md`](create-testnet.md))
 
 - [ ] `avalanche blockchain create csb --genesis … --evm --proof-of-authority`
 - [ ] `avalanche blockchain deploy csb --fuji`

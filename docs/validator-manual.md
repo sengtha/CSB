@@ -12,7 +12,7 @@ A validator is a server that holds a copy of the CSB ledger and participates in 
 - **It carries no financial risk.** Everything on the testnet is test data and test riel.
 - **What's expected of you:** keep the node running (aim for 24/7, but testnet downtime is not a crisis), apply upgrades when the coordinator announces them, and tell the coordinator if you stop.
 
-You will receive from the coordinator (do not guess these):
+**If you are the coordinator** (the person creating the chain), these IDs don't exist until you create it — follow [`docs/create-testnet.md`](create-testnet.md) first. Everyone else receives them from the coordinator (do not guess these):
 
 | Item | Example shape |
 |---|---|
