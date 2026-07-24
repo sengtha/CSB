@@ -199,25 +199,29 @@ async function ensureSession() {
   if (authed) return;
   const overlay = document.createElement("div");
   overlay.id = "login-overlay";
+  // A plain <form> with a standard, visible text input. No -webkit-text-security
+  // masking (which rendered blank on some browsers) and no password-manager
+  // triggers. The passcode is a shared demo gate that also travels in the ?pw=
+  // URL, so masking bought nothing — reliability matters more here.
   overlay.innerHTML = `
-    <div class="box">
+    <form class="box" id="pcform" autocomplete="off">
       <h2>🇰🇭 CSB — Restricted Access</h2>
       <p>This explorer and its chain data are accessible to authorized users only.
          Production replaces this passcode with national digital-identity login.</p>
-      <label>Access passcode</label>
-      <input id="pc" type="text" inputmode="text" name="csb-passcode-nofill"
-             autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
-             style="-webkit-text-security:disc" />
+      <label for="pc">Access passcode</label>
+      <input id="pc" type="text" autocomplete="off" autocapitalize="off"
+             autocorrect="off" spellcheck="false" />
       <div id="pcerr" class="banner"></div>
-      <button id="pcgo">Enter</button>
-    </div>`;
+      <button id="pcgo" type="submit">Enter</button>
+    </form>`;
   document.body.appendChild(overlay);
+  const pcEl = overlay.querySelector("#pc");
+  const form = overlay.querySelector("#pcform");
   return new Promise((resolve) => {
-    const go = async () => {
-      const raw = document.getElementById("pc").value;
-      // Normalize away invisible characters some keyboards/managers inject:
-      // trim ends, strip zero-width chars, collapse nothing else.
-      const passcode = raw.replace(/[​-‍﻿]/g, "").trim();
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault(); // never navigate — submit is our trigger
+      // Strip zero-width chars some keyboards inject, then trim ends.
+      const passcode = pcEl.value.replace(/[​-‍﻿]/g, "").trim();
       const res = await fetch("/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -227,12 +231,11 @@ async function ensureSession() {
         overlay.remove();
         resolve();
       } else {
-        banner(document.getElementById("pcerr"), "err", `Invalid passcode (sent ${passcode.length} chars).`);
+        banner(overlay.querySelector("#pcerr"), "err", `Invalid passcode (sent ${passcode.length} chars).`);
+        pcEl.focus();
+        pcEl.select();
       }
-    };
-    document.getElementById("pcgo").onclick = go;
-    const pcEl = document.getElementById("pc");
-    pcEl.onkeydown = (e) => e.key === "Enter" && go();
+    });
     setTimeout(() => pcEl.focus(), 50); // ensure keystrokes land in the field
   });
 }
