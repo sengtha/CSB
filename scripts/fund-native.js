@@ -6,18 +6,19 @@ const path = require("path");
  * Fund the existing pilot accounts with native gas token (tRIEL).
  *
  * Why this exists: the wallet's "Send payment" button submits a real EVM
- * transaction (`KHRStablecoin.transfer`). Even when the CSB fee floor is set to
- * zero, the node still reserves `maxFeePerGas * gasLimit` from the sender's
- * NATIVE balance up front — a pilot account holding KHRt but zero tRIEL cannot
- * pass that check. This mints a little tRIEL to each pilot account via the
- * Native Minter precompile (the deployer is its admin).
+ * transaction (`KHRStablecoin.transfer`). The node reserves
+ * `maxFeePerGas * gasLimit` from the sender's NATIVE balance up front — a pilot
+ * account holding KHRt but zero tRIEL cannot pass that check. This mints a
+ * little tRIEL to each pilot account via the Native Minter precompile (the
+ * deployer is its admin).
  *
- * Fee handling: this chain's effective base fee can jump well above the fee
- * floor (Subnet-EVM block gas cost — ~170 gwei observed), and ethers' automatic
- * fee estimate can under-price a tx so it gets stuck unmined in the mempool
- * (wait() then hangs forever). We therefore price every tx EXPLICITLY, far
- * above the current base fee, and cap wait() with a timeout so a stuck tx
- * surfaces instead of hanging.
+ * Nonce & fee handling: earlier runs could leave under-priced deployer
+ * transactions stuck pending in the mempool. Because ethers otherwise grabs the
+ * next "pending" nonce, every new tx just queues BEHIND the stuck one and never
+ * mines. So we drive nonces EXPLICITLY starting from the latest *mined* nonce
+ * and price each tx far above the current base fee — that REPLACES any stuck tx
+ * at those nonces and unblocks the queue. Receipts are polled with a timeout so
+ * nothing hangs.
  *
  * Usage (on the VM, with the deployer key):
  *   CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=0x... \
@@ -35,26 +36,49 @@ const MINTER_ABI = [
 
 async function main() {
   const { ethers } = hre;
+  const provider = ethers.provider;
   const file = process.env.CSB_DEPLOYMENTS_FILE ?? path.join(__dirname, "..", "app", "deployments.json");
   const deployments = JSON.parse(fs.readFileSync(file, "utf8"));
   const [deployer] = await ethers.getSigners();
 
   const target = ethers.parseEther(process.env.CSB_FUND_AMOUNT ?? "10");
 
-  // Explicit, robust fee: well above the current base fee so txs can't get stuck
-  // under-priced in the mempool. Overpaying is harmless — the node only charges
-  // the actual base fee, and the deployer holds ~1,000,000 tRIEL.
-  const block = await ethers.provider.getBlock("latest");
+  // --- chain / mempool diagnostics ---------------------------------------
+  const block = await provider.getBlock("latest");
   const baseFee = block?.baseFeePerGas ?? 0n;
-  const bump = ethers.parseUnits("500", "gwei");
-  const fees = {
-    maxFeePerGas: baseFee * 3n + bump,
-    maxPriorityFeePerGas: ethers.parseUnits("2", "gwei"),
-  };
+  const minedNonce = await provider.getTransactionCount(deployer.address, "latest");
+  const pendingNonce = await provider.getTransactionCount(deployer.address, "pending");
+
   console.log(`Deployer: ${deployer.address}`);
-  console.log(`Deployer native balance: ${ethers.formatEther(await ethers.provider.getBalance(deployer.address))} tRIEL`);
+  console.log(`Deployer native balance: ${ethers.formatEther(await provider.getBalance(deployer.address))} tRIEL`);
   console.log(`Current base fee: ${ethers.formatUnits(baseFee, "gwei")} gwei`);
-  console.log(`Pricing txs at maxFeePerGas ${ethers.formatUnits(fees.maxFeePerGas, "gwei")} gwei`);
+  console.log(`Nonce: mined=${minedNonce} pending=${pendingNonce}` +
+    (pendingNonce > minedNonce ? `  → ${pendingNonce - minedNonce} stuck tx(s) will be replaced` : ""));
+
+  // Liveness: is the chain actually producing blocks? If not, no fee helps —
+  // the validator needs restarting (see docs/deployment-status.md).
+  const n1 = await provider.getBlockNumber();
+  await sleep(4000);
+  const n2 = await provider.getBlockNumber();
+  console.log(`Block height: ${n1} → ${n2} (${n2 > n1 ? "advancing" : "NOT advancing"})`);
+  if (n2 === n1) {
+    console.log("\n⚠ The chain is not producing new blocks. No transaction can mine until the");
+    console.log("  validator is producing again. On the VM:");
+    console.log("    avalanche node local list        # find the node name");
+    console.log("    avalanche node local start <name>");
+    console.log("  Then re-run this script.");
+    // We still submit below in case block production resumes shortly, but warn first.
+  }
+
+  // Price high enough to REPLACE any earlier stuck attempt (those used up to
+  // ~575 gwei). Overpaying is harmless — the node charges only the real base
+  // fee, and the deployer holds ~1,000,000 tRIEL.
+  const fees = {
+    maxFeePerGas: baseFee * 20n + ethers.parseUnits("3000", "gwei"),
+    maxPriorityFeePerGas: ethers.parseUnits("500", "gwei"),
+  };
+  console.log(`Pricing txs at maxFeePerGas ${ethers.formatUnits(fees.maxFeePerGas, "gwei")} gwei, ` +
+    `priority ${ethers.formatUnits(fees.maxPriorityFeePerGas, "gwei")} gwei`);
   console.log(`Topping each account up to ${ethers.formatEther(target)} tRIEL\n`);
 
   // Collect recipients: every seeded pilot account plus any explicit extras.
@@ -78,26 +102,53 @@ async function main() {
   }
   console.log(canMint ? "Funding via Native Minter precompile.\n" : "Native Minter unavailable — funding via value transfer.\n");
 
+  // Submit all funding txs first, driving nonces explicitly from the latest
+  // MINED nonce so we overwrite anything stuck. Then poll for receipts.
+  let nonce = minedNonce;
+  const submitted = [];
   for (const r of recipients) {
-    const bal = await ethers.provider.getBalance(r.address);
+    const bal = await provider.getBalance(r.address);
     if (bal >= target) {
       console.log(`  ${r.name} ${r.address} — already ${ethers.formatEther(bal)} tRIEL, skipping`);
       continue;
     }
     const need = target - bal;
+    const opts = { ...fees, nonce: nonce++ };
     const tx = canMint
-      ? await minter.mintNativeCoin(r.address, need, fees)
-      : await deployer.sendTransaction({ to: r.address, value: need, ...fees });
-    console.log(`  ${r.name} ${r.address} — ${canMint ? "minting" : "sending"} ${ethers.formatEther(need)} tRIEL … tx ${tx.hash}`);
-    const receipt = await waitWithTimeout(ethers.provider, tx.hash, 90_000);
-    if (!receipt) {
-      console.log(`    ⏳ not mined within 90s — tx ${tx.hash} is stuck (base fee likely rose above the price). Re-run to retry.`);
-      return;
-    }
-    console.log(`    ✓ mined in block ${receipt.blockNumber}`);
+      ? await minter.mintNativeCoin(r.address, need, opts)
+      : await deployer.sendTransaction({ to: r.address, value: need, ...opts });
+    console.log(`  ${r.name} ${r.address} — ${canMint ? "mint" : "send"} ${ethers.formatEther(need)} tRIEL @ nonce ${opts.nonce} … tx ${tx.hash}`);
+    submitted.push({ r, hash: tx.hash });
   }
 
-  console.log("\nDone. Pilot accounts can now pay gas; reload the wallet and Send payment will work.");
+  if (submitted.length === 0) {
+    console.log("\nAll accounts already funded. Nothing to do.");
+    return;
+  }
+
+  console.log("\nWaiting for confirmations…");
+  let allMined = true;
+  for (const s of submitted) {
+    const receipt = await waitWithTimeout(provider, s.hash, 120_000);
+    if (receipt) {
+      console.log(`  ✓ ${s.r.name} mined in block ${receipt.blockNumber}`);
+    } else {
+      allMined = false;
+      console.log(`  ⏳ ${s.r.name} not mined within 120s — tx ${s.hash}`);
+    }
+  }
+
+  if (allMined) {
+    console.log("\nDone. Pilot accounts can now pay gas; reload the wallet and Send payment will work.");
+  } else {
+    console.log("\nSome txs did not confirm. If block height was NOT advancing above, restart the");
+    console.log("validator node, then re-run. Otherwise re-run to bump the fee and replace them.");
+    process.exitCode = 1;
+  }
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 // Poll for the receipt (the Hardhat provider implements getTransactionReceipt
@@ -107,7 +158,7 @@ async function waitWithTimeout(provider, hash, ms) {
   while (Date.now() < deadline) {
     const receipt = await provider.getTransactionReceipt(hash);
     if (receipt) return receipt;
-    await new Promise((r) => setTimeout(r, 2000));
+    await sleep(2000);
   }
   return null;
 }
