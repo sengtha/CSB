@@ -87,6 +87,27 @@ Their RPC URL is then
 (full, unfiltered). Nothing is exposed publicly; access is controlled by who has
 SSH. Use this only for trusted operators — it is the whole ledger.
 
+### Multi-node note (portability + global revoke)
+
+A scoped URL is signed with **one app server's** `SCOPED_RPC_SECRET`, so by default
+it only works against that server. Only *one* of the three access gates is
+node-local:
+
+| Gate | Scope |
+|---|---|
+| URL signature (HMAC of `SCOPED_RPC_SECRET`) | per app server |
+| KYC-active (`IdentityRegistry.isActive`) | **on-chain — global** |
+| Revoke list (`rpc-revoked.json`) | per app server |
+
+- **Portability across nodes:** if several operators each run a public app server,
+  set the **same `SCOPED_RPC_SECRET` on all of them** (a coordinated signing key).
+  Then one activation works against any of them. Safe within the vetted-operator
+  set; per-request read-filtering still applies everywhere.
+- **Global revoke:** revoke or suspend the address's **KYC on-chain** (Identity
+  Authority) — `isActive` flips false and access is cut on *every* node instantly.
+  The local `rpc-revoked.json` denylist only affects the node it lives on, so treat
+  on-chain KYC as the source of truth for a global block.
+
 ## 3. Add the network to MetaMask
 
 MetaMask → Networks → **Add network manually**:
