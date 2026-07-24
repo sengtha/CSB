@@ -94,7 +94,7 @@ EXPLORER_PASSCODE=<your-passcode> CSB_RPC_URL=$RPC nohup node app/server.js > /t
 avalanche node local start csb-local-node-fuji   # (name may vary; see `avalanche node local list`)
 ```
 
-Browser access: `http://csb-u70984.vm.elestio.app:8080` (HTTP; passcode-gated). For a shared HTTPS link, front port 8080 with Elestio's reverse proxy (`docs/elestio.md` §B).
+Browser access: `http://csb-u70984.vm.elestio.app:8080` (HTTP; passcode-gated). For a shared HTTPS link, front port 8080 with a TLS reverse proxy — see `docs/ssl.md` (Elestio proxy or Caddy), then relaunch the app with `COOKIE_SECURE=1`.
 
 ## Next steps (testnet checklist continues)
 

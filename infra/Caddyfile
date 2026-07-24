@@ -1,0 +1,9 @@
+# CSB app — Caddy reverse proxy with automatic Let's Encrypt TLS.
+# Replace csb.example.gov with your real domain (A record → this VM's IP),
+# open ports 80 and 443 in the firewall, keep 8080 closed to the world.
+# See docs/ssl.md.
+
+csb.example.gov {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+}

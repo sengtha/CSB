@@ -22,6 +22,10 @@ const RPC_URL = process.env.CSB_RPC_URL ?? "http://127.0.0.1:8545";
 const PORT = Number(process.env.PORT ?? process.env.DEMO_PORT ?? 8080);
 const PASSCODE = process.env.EXPLORER_PASSCODE ?? "csb-demo";
 const TOKEN = crypto.createHash("sha256").update(`csb:${PASSCODE}`).digest("hex");
+// Set COOKIE_SECURE=1 once the app is always served over HTTPS (behind a TLS
+// reverse proxy — see docs/ssl.md). Left off by default so plain-HTTP / SSH
+// tunnel access still works during setup.
+const COOKIE_SECURE = process.env.COOKIE_SECURE === "1" ? "; Secure" : "";
 
 const PUBLIC_DIR = path.join(__dirname, "public");
 const MIME = {
@@ -60,7 +64,7 @@ const server = http.createServer(async (req, res) => {
     const body = JSON.parse((await readBody(req)).toString() || "{}");
     if (body.passcode === PASSCODE) {
       accessLog.push({ at: new Date().toISOString(), event: "login", ip: req.socket.remoteAddress });
-      send(res, 200, { ok: true }, { "Set-Cookie": `csb_session=${TOKEN}; HttpOnly; Path=/; SameSite=Strict` });
+      send(res, 200, { ok: true }, { "Set-Cookie": `csb_session=${TOKEN}; HttpOnly; Path=/; SameSite=Strict${COOKIE_SECURE}` });
     } else {
       accessLog.push({ at: new Date().toISOString(), event: "login-denied", ip: req.socket.remoteAddress });
       send(res, 401, { ok: false, error: "invalid passcode" });

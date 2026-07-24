@@ -40,6 +40,7 @@ docker/Dockerfile.validator    Institution validator: AvalancheGo + Subnet-EVM p
 docker-compose.validator.yml   Validator node service (identity on volumes)
 infra/setup-vm.sh              Cloud VM bootstrap (Ubuntu, any provider)
 infra/deploy-l1.sh             Create + deploy the Avalanche L1 on the VM
+infra/Caddyfile                Caddy reverse proxy for HTTPS (custom domain)
 scripts/deploy.js              Deploys and wires the suite (multisig-aware)
 scripts/seed-accounts.js       Seeds pilot identities, balances, egress policy
 test/                          24 tests: KYC lifecycle, separation of powers,
@@ -55,6 +56,7 @@ docs/validator-manual.md       Operator manual for external testnet validators
 docs/cloud-deployment.md       Full-stack deployment on a cloud VM
 docs/docker.md                 Validator + app stacks with Docker
 docs/elestio.md                Hosting both stacks on Elestio
+docs/ssl.md                    Enabling HTTPS (Elestio proxy or Caddy)
 docs/fuji-ictt.md              Real egress to Fuji C-Chain via ICTT
 docs/testnet-to-mainnet.md     Promotion guide: Fuji testnet -> Avalanche mainnet
 ```
