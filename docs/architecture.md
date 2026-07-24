@@ -14,7 +14,7 @@ A sovereign hybrid blockchain for Cambodia: **public within the country, private
 - Free gas for users; the state absorbs infrastructure cost.
 - Designed for a future in which AI-driven attacks and quantum computing stress the traditional banking system: multisig-everywhere, tamper-evident audit trails, identity-bound recoverable accounts, and **crypto-agility** as a first-class pillar.
 
-This is not a CBDC. The monetary instrument is a **tokenized riel stablecoin** with a pluggable issuer, and the chain itself is a registry-and-asset layer for the country.
+This is not a single CBDC. Money is **two-tier**: a native, riel-pegged base coin (**tRIEL**) that also pays gas, and **many tokenized-riel stablecoins** (KHRt is one reference issuer) that all convert to tRIEL 1:1 — like USDT/USDC redeeming to the dollar. The chain itself is a neutral registry-and-asset layer; see §6.
 
 ## 2. Platform decision: Avalanche L1
 
@@ -43,7 +43,7 @@ Containment: the chain runs even if the P-Chain is unreachable; validator change
   - `txAllowList` — only KYC-provisioned addresses may transact (chain-wide KYC enforcement below the contract layer);
   - `contractDeployerAllowList` — contract deployment restricted to vetted deployers (tier 3+ process);
   - `feeManager` — fees are zero in normal operation but can be raised under attack (pressure valve);
-  - `contractNativeMinter` — administrative control of the native gas token (no speculative token).
+  - `contractNativeMinter` — administrative issuance of the native coin **tRIEL**, which is riel-pegged base money (not a speculative token); minted only under reserve discipline (§6), never freely.
 - **Multisig clarification:** validators sign blocks automatically with node keys (HSM-protected — no per-block human approval). Multisig lives at the *governance layer*: the Validator Manager, precompile admin addresses, and every administrative contract role are held by institutional multisigs, so **no official below the council can act unilaterally**.
 - **Trust model honesty:** with all validators under one government, BFT does not defend against the state itself. What it buys: tamper-evidence *between* institutions, auditability, and no single point of technical failure. Credibility can be strengthened later by seating a minority of validators outside the executive (audit bodies, universities, regional partners).
 
@@ -57,7 +57,8 @@ Powers are deliberately split across institutions and enforced in code:
 |---|---|---|
 | Identity issuance, suspension, revocation, address quotas | Identity Authority (placeholder) | `IdentityRegistry` |
 | Asset freezing / confiscation (with mandatory order reference) | Judicial / AML authority | `EnforcementRegistry`, `KHRStablecoin.confiscate` |
-| KHR issuance (mint/redeem) | Pluggable issuer (central bank / bank consortium / treasury entity — placeholders) | `KHRStablecoin` ISSUER_ROLE |
+| tRIEL base issuance (reserve-backed) | Sovereign / treasury reserve (placeholder — the anchor of the whole system) | Native Minter, under reserve discipline |
+| Tokenized-riel issuance (mint/redeem) + issuer approval | Pluggable issuers (central bank / bank consortium / treasury — placeholders); council approves reserve-backed issuers | `ITokenizedRiel` ISSUER_ROLE; `RielConverter` |
 | Egress token allowlist, caps, circuit breaker | Governing Council | `EgressGateway` |
 | Validator set, protocol upgrades, precompile admin | Governing Council | Validator Manager + genesis admin keys |
 
@@ -74,14 +75,35 @@ A single national Identity Authority (placeholder: the body holding a civil regi
 - **Recovery:** accounts are smart accounts (account abstraction) with the Identity Authority as recovery agent — lost phone ≠ lost assets; re-verify at any Identity Authority office and rotate the key.
 - **Open question (explicitly deferred):** non-citizen tiers via the Identity Authority's immigration arm (passport KYC) — economically attractive, AML-sensitive, in or out of v1 by policy decision.
 
-## 6. KHR stablecoin
+## 6. Money model: base tRIEL + tokenized riel (two tiers)
 
-`KHRStablecoin` (KHRt, 2 decimals) is the settlement asset. Design constraints:
+CSB uses a **two-tier monetary model**, mirroring how real money works — base money plus private stablecoins — with everything denominated in riel.
 
-- **Pluggable issuer.** ISSUER_ROLE is a slot, not an institution. The political question of *who* issues (a central bank, a licensed bank consortium, a treasury-backed entity — all placeholders) can resolve later without changing the rails. Until a mandate exists, the token circulates only as **test riel in a sandbox** — a KHR-pegged instrument is not launched publicly without the required license.
+| Tier | Instrument | Analogue |
+|---|---|---|
+| **Base / settlement** | **tRIEL** — the native coin. Pays gas *and* is the common unit every riel token converts through. 1 tRIEL = 1 riel. | Central-bank reserves / CBDC |
+| **Tokenized riel** | **KHRt and others** — many issuers, each a KYC-gated riel stablecoin, all convertible to tRIEL 1:1. `KHRStablecoin` is the *reference* implementation, not "the" riel. | USDT / USDC / PYUSD → all redeem to USD |
+
+So KHRt is **one issuer's product**, not a monopoly: multiple institutions can each issue their own tokenized riel (competing on trust and features), and **tRIEL is the neutral denominator** they all convert into — which makes every riel token mutually fungible through the base (KHRt → tRIEL → OtherRiel).
+
+**tRIEL is backed money, not a free utility token.** Because 1 tRIEL = 1 riel, it must be reserve-backed exactly like a stablecoin, and minted **only** via conversion or reserve-backed issuance — never freely. Two consequences:
+- The genesis allocation and any Native-Minter use represent **issuing real money**, under the same reserve discipline as KHRt.
+- **"Free gas" is really *subsidized* gas** — a deliberate fiscal choice where the state absorbs the (small, real) cost so citizens transact feeless. It is a budget line, not a costless default.
+
+**Convertibility — both backing tiers supported** (`RielConverter`, planned):
+- **A. Trustless (tRIEL-collateralized).** To mint the token, the issuer locks tRIEL 1:1 in the contract; redemption is contract-enforced and instant. No issuer-solvency risk. All backing concentrates in tRIEL (which is the system anchor).
+- **B. Reserve-backed issuer.** A **council-approved** issuer holds its own fiat riel reserves (like USDT) and commits to 1:1 convertibility, subject to reserve attestation/audit. Backing is diversified across issuers; convertibility depends on issuer solvency, so issuer admission is governed (allowlist + audits).
+
+Both coexist: trustless wrappers are the safe default; vetted reserve-backed issuers are permitted where real reserves and licenses exist. The Governing Council governs *which* issuers and tokens are approved (the same allowlist muscle used elsewhere).
+
+**Whoever anchors tRIEL anchors everything.** Since all riel tokens redeem to tRIEL, the foundational trust question is *who guarantees 1 tRIEL = 1 riel* — most plausibly a sovereign/treasury reserve (the CBDC-like base). Every tokenized riel inherits its credibility from that answer.
+
+**Compliance carries across every riel token** (an `ITokenizedRiel` standard; `KHRStablecoin` implements it):
 - **Compliance-gated transfers:** both parties must hold an active KYC attestation and not be frozen. Tier-based per-transfer caps for basic accounts.
-- **System contracts:** council-vetted contracts (bridge adapters, DEX pools, escrows) may hold KHRt without personal KYC — still freezable. This is what lets standard DeFi protocols deploy unmodified while every *human* counterparty remains KYC'd.
+- **System contracts:** council-vetted contracts (bridge adapters, DEX pools, escrows) may hold the token without personal KYC — still freezable — so standard DeFi deploys unmodified while every *human* counterparty stays KYC'd.
 - **Enforcement:** confiscation requires ENFORCER_ROLE plus an order reference and works on frozen accounts.
+
+Until a monetary mandate exists, all of this circulates only as **test riel in a sandbox** — no riel-pegged instrument is launched publicly without the required license.
 
 ## 7. Egress gateway — the sovereign boundary
 
@@ -93,9 +115,11 @@ The **single authorized exit** to public blockchains, and the load-bearing requi
 - **Explicit boundary:** everything crossing the gateway becomes permanently world-public on external chains. Wallet UX must surface this to users at the moment of egress.
 - **Staged rollout:** caps start small and widen with operational confidence.
 
-## 8. Free gas and anti-spam
+## 8. Gas: subsidized, not free — and anti-spam
 
-Zero base fee via `feeConfig`/`feeManager`. Spam defense is the identity layer, not the fee market: every account is KYC-bound, so abuse is rate-limited and revocable at the identity level. Under active attack, `feeManager` can temporarily raise fees. State infrastructure cost is a budget line owned by the council's operating entity.
+Gas is paid in **tRIEL**, which is real riel-pegged money (§6), so gas is never truly costless — the base fee is set to zero and **the state subsidizes the cost** so citizens transact feeless. Spam defense is the **identity layer**, not the fee market: every account is KYC-bound, so abuse is rate-limited and revocable at the identity level — which is why gas *can* be subsidized to zero without inviting spam. Under active attack, `feeManager` can temporarily raise fees.
+
+**Optional public-good fee routing.** Because gas fees are real value, the chain can (if policy chooses) direct fees to a **council-governed public-fund address** (via `allowFeeRecipients`) rather than the citizen paying nothing — e.g. exempt citizen P2P but levy a small fee on merchant/egress flows, accumulating transparently on-chain for public services. This is a deliberate fiscal decision, kept separate from the anti-spam design.
 
 ## 9. Data sovereignty and privacy posture
 
