@@ -20,6 +20,7 @@ const crypto = require("crypto");
 const { filterBody } = require("./rpc-filter");
 const { deriveToken, addressFromToken, verifySignature } = require("./rpc-access");
 const { fundReport } = require("./fund");
+const { nodeInfo } = require("./node-info");
 
 const RPC_URL = process.env.CSB_RPC_URL ?? "http://127.0.0.1:8545";
 const PORT = Number(process.env.PORT ?? process.env.DEMO_PORT ?? 8080);
@@ -167,6 +168,19 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === "/session") {
     send(res, 200, { authed: authed(req) });
+    return;
+  }
+
+  // Node info — public chain facts. Same reasoning as /fund: these are public
+  // identifiers already published in the repo's deployment notes, and a live
+  // page beats a document that goes stale on every redeploy. It exposes nothing
+  // actionable and is not an RPC passthrough.
+  if (url.pathname === "/node-info") {
+    try {
+      send(res, 200, await nodeInfo(RPC_URL, loadDeployments()), { "Cache-Control": "public, max-age=10" });
+    } catch (e) {
+      send(res, 502, { error: e.message });
+    }
     return;
   }
 

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Node info — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .kv { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .kv th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
+             width: 40%; padding: 8px 10px 8px 0; vertical-align: top; }
+    .kv td { padding: 8px 0; border-bottom: 1px solid var(--line); word-break: break-all; }
+    .kv tr:last-child td, .kv tr:last-child th { border-bottom: 0; }
+    .mono2 { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+    .big { font-size: 22px; font-weight: 700; color: var(--blue); }
+    .note { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+    pre.cmd { background: #f7f9fc; border: 1px solid var(--line); border-radius: 8px;
+              padding: 12px; overflow-x: auto; font-size: 12px; margin-top: 8px; }
+    .ok { color: var(--ok); font-weight: 700; }
+    .warn2 { color: var(--warn); font-weight: 700; }
+    .foot { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0 24px; }
+  </style>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB Node info</h1>
+    <span class="sub">chain and node facts — no login required</span>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="wallet.html">Wallet</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="fund.html">Fund</a>
+      <a href="node.html" class="active">Node info</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main>
+    <div id="err" class="banner"></div>
+
+    <div class="card">
+      <div class="statrow">
+        <div class="stat"><div class="v" id="st-height">–</div><div class="k">block height</div></div>
+        <div class="stat"><div class="v" id="st-chainid">–</div><div class="k">EVM chain ID</div></div>
+        <div class="stat"><div class="v" id="st-fee">–</div><div class="k">cost of a payment</div></div>
+        <div class="stat"><div class="v" id="st-boot">–</div><div class="k">node bootstrapped</div></div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>Chain</h2>
+        <table class="kv">
+          <tr><th>Network</th><td id="n-network">–</td></tr>
+          <tr><th>EVM chain ID</th><td id="n-chainid">–</td></tr>
+          <tr><th>Blockchain ID</th><td class="mono2" id="n-bcid">–</td></tr>
+          <tr><th>Latest block</th><td id="n-height">–</td></tr>
+          <tr><th>Block time</th><td id="n-blocktime">–</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Node</h2>
+        <table class="kv">
+          <tr><th>Node ID</th><td class="mono2" id="n-nodeid">–</td></tr>
+          <tr><th>AvalancheGo</th><td id="n-version">–</td></tr>
+          <tr><th>VM</th><td id="n-vm">–</td></tr>
+          <tr><th>Bootstrapped</th><td id="n-boot">–</td></tr>
+        </table>
+        <p class="note" style="margin-top:10px">
+          One node of the validating set. The others are peers of this one and do
+          not serve this page.
+        </p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Gas and fees</h2>
+      <table class="kv">
+        <tr><th>Fee floor</th><td id="n-floor">–</td></tr>
+        <tr><th>Current base fee</th><td id="n-basefee">–</td></tr>
+        <tr><th>An ordinary payment costs</th><td><span class="big" id="n-cost">–</span> tRIEL</td></tr>
+        <tr><th>Where fees go</th><td id="n-reward">–</td></tr>
+      </table>
+      <p class="note" style="margin-top:10px">
+        Gas is priced per unit of work, not per transaction, so a plain transfer
+        costs about 1 riel and heavier operations cost proportionally more. Fees
+        are not burned — they are routed to the public-good fund, which anyone can
+        audit on the <a href="fund.html">Fund</a> page.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Deployed contracts</h2>
+      <table class="kv" id="n-contracts"><tr><td class="note">Loading…</td></tr></table>
+    </div>
+
+    <div class="card">
+      <h2>Connecting a wallet</h2>
+      <p class="note">
+        CSB is permissioned: an address must hold a KYC attestation and be enabled
+        on the chain's transaction allow list before it can transact at all. A
+        wallet also needs a <strong>scoped RPC URL</strong>, which returns only
+        your own data — the node's own RPC port is not open to the internet, by
+        design.
+      </p>
+      <p class="note" style="margin-top:8px">
+        Get one from <a href="rpc-access.html">Developer access</a>: connect a
+        wallet, sign a challenge, receive a URL scoped to that address.
+      </p>
+      <pre class="cmd"><code>Network name     Cambodia Sovereign Blockchain
+New RPC URL      https://&lt;this-host&gt;/rpc/&lt;your-token&gt;
+Chain ID         <span id="n-mm-chainid">8555</span>
+Currency symbol  tRIEL</code></pre>
+    </div>
+
+    <div class="card">
+      <h2>Check any of this yourself</h2>
+      <p class="note">
+        Everything above is read live from the chain. The raw JSON is at
+        <a href="/node-info">/node-info</a>, and the same values come back from a
+        node directly:
+      </p>
+      <pre class="cmd"><code>curl -s -X POST -H 'content-type:application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
+  $CSB_RPC_URL</code></pre>
+    </div>
+
+    <p class="foot" id="updated"></p>
+  </main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const gwei = (wei) => wei == null ? "–" : (Number(wei) / 1e9).toLocaleString(undefined, { maximumFractionDigits: 3 }) + " gwei";
+
+function ago(ts) {
+  if (!ts) return "–";
+  const secs = Math.floor(Date.now() / 1000 - ts);
+  if (secs < 60) return `${secs}s ago`;
+  if (secs < 3600) return `${Math.floor(secs / 60)} min ago`;
+  return `${Math.floor(secs / 3600)} h ago`;
+}
+
+async function load() {
+  let d;
+  try {
+    const r = await fetch("/node-info");
+    d = await r.json();
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+  } catch (e) {
+    $("err").className = "banner err";
+    $("err").textContent = "Could not load node info: " + e.message;
+    return;
+  }
+  $("err").className = "banner";
+
+  $("st-height").textContent = d.height?.toLocaleString() ?? "–";
+  $("st-chainid").textContent = d.chainId ?? "–";
+  $("st-fee").textContent = d.gas?.transferCostTriel
+    ? Number(d.gas.transferCostTriel).toFixed(2) : "–";
+  $("st-boot").textContent = d.node?.bootstrapped === true ? "yes"
+    : d.node?.bootstrapped === false ? "no" : "–";
+
+  $("n-network").textContent = d.network ?? "–";
+  $("n-chainid").textContent = d.chainId != null ? `${d.chainId}  (${d.chainIdHex})` : "–";
+  $("n-bcid").textContent = d.blockchainId ?? "–";
+  $("n-height").textContent = d.height?.toLocaleString() ?? "–";
+  $("n-blocktime").textContent = d.blockTime
+    ? `${new Date(d.blockTime * 1000).toLocaleString()} (${ago(d.blockTime)})` : "–";
+  $("n-mm-chainid").textContent = d.chainId ?? "8555";
+
+  $("n-nodeid").textContent = d.node?.nodeId ?? "not available";
+  $("n-version").textContent = d.node?.version ?? "–";
+  const vms = d.node?.vmVersions;
+  $("n-vm").textContent = vms ? Object.entries(vms).map(([k, v]) => `${k} ${v}`).join(", ") : "–";
+  $("n-boot").innerHTML = d.node?.bootstrapped === true
+    ? '<span class="ok">yes</span>'
+    : d.node?.bootstrapped === false ? '<span class="warn2">still bootstrapping</span>' : "–";
+
+  $("n-floor").textContent = gwei(d.gas?.minBaseFeeWei);
+  $("n-basefee").textContent = gwei(d.gas?.baseFeeWei);
+  $("n-cost").textContent = d.gas?.transferCostTriel
+    ? Number(d.gas.transferCostTriel).toFixed(4) : "–";
+  $("n-reward").innerHTML = d.fees?.burned
+    ? '<span class="warn2">burned</span> — fees are destroyed, not funding anything'
+    : d.fees?.rewardAddress
+      ? `<span class="ok">public-good fund</span><br><span class="mono2">${d.fees.rewardAddress}</span>`
+      : "–";
+
+  const rows = Object.entries(d.contracts ?? {});
+  $("n-contracts").innerHTML = rows.length
+    ? rows.map(([k, v]) => `<tr><th>${k}</th><td class="mono2">${v}</td></tr>`).join("")
+    : '<tr><td class="note">No contracts recorded yet.</td></tr>';
+
+  $("updated").textContent = `Read live from the chain · updated ${new Date(d.updatedAt).toLocaleTimeString()}`;
+}
+
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>
