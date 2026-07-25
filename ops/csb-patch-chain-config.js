@@ -38,6 +38,7 @@ const os = require("os");
 const CLUSTER = process.env.CSB_CLUSTER ?? "csb-local-node-fuji";
 const ROOT = process.env.CSB_CLUSTER_ROOT ?? path.join(os.homedir(), ".avalanche-cli", "local", CLUSTER);
 const WRITE = process.argv.includes("--write");
+const SHOW = process.argv.includes("--show");
 
 const b64d = (s) => Buffer.from(s, "base64").toString("utf8");
 const b64e = (s) => Buffer.from(s, "utf8").toString("base64");
@@ -104,6 +105,46 @@ function processNode(nodeDir) {
   return { node: path.basename(nodeDir), changes: allChanges };
 }
 
+/**
+ * Print the chain config as it stands ON DISK right now, decoded.
+ *
+ * The question this answers: did a patch survive a restart? avalanche-cli may
+ * regenerate a node's config.json from the cluster-level config when it starts,
+ * which would silently discard any per-node edit — and that looks identical to
+ * the node ignoring the setting.
+ */
+function show(nodes) {
+  const clusterCfg = path.join(ROOT, "config.json");
+  if (fs.existsSync(clusterCfg)) {
+    console.log("=== CLUSTER-level config.json (likely the source of truth) ===");
+    console.log(fs.readFileSync(clusterCfg, "utf8"));
+    console.log();
+  }
+  for (const n of nodes) {
+    const file = path.join(n, "config.json");
+    console.log(`=== ${path.basename(n)} — decoded chain config ===`);
+    if (!fs.existsSync(file)) { console.log("  no config.json\n"); continue; }
+    let node;
+    try { node = JSON.parse(fs.readFileSync(file, "utf8")); }
+    catch (e) { console.log(`  unparsable: ${e.message}\n`); continue; }
+    const content = node?.flags?.["chain-config-content"];
+    if (!content) { console.log("  no flags.chain-config-content\n"); continue; }
+    try {
+      const outer = JSON.parse(b64d(content));
+      for (const [chainId, entry] of Object.entries(outer)) {
+        if (typeof entry?.Config !== "string") continue;
+        const cfg = JSON.parse(b64d(entry.Config));
+        console.log(`  chain ${chainId.slice(0, 16)}…`);
+        console.log(`    rpc-tx-fee-cap : ${cfg["rpc-tx-fee-cap"] ?? "(unset → 100)"}`);
+        console.log(`    internal-txpool: ${(cfg["eth-apis"] ?? []).includes("internal-txpool") ? "PRESENT" : "ABSENT"}`);
+        console.log(`    eth-apis       : ${(cfg["eth-apis"] ?? []).join(", ")}`);
+      }
+    } catch (e) { console.log(`  decode failed: ${e.message}`); }
+    console.log(`  backup present : ${fs.existsSync(file + ".orig")}`);
+    console.log();
+  }
+}
+
 function main() {
   if (!fs.existsSync(ROOT)) {
     console.error(`No cluster at ${ROOT}`);
@@ -116,6 +157,8 @@ function main() {
     .filter((d) => fs.statSync(d).isDirectory());
 
   if (nodes.length === 0) { console.error(`No NodeID-* directories under ${ROOT}`); process.exit(1); }
+
+  if (SHOW) { show(nodes); return; }
 
   console.log(`Cluster ${CLUSTER} — ${nodes.length} node(s)`);
   console.log(WRITE ? "Mode: WRITE\n" : "Mode: dry run (pass --write to apply)\n");
