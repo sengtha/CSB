@@ -98,18 +98,30 @@ Applying 1 and 3 on the live chain:
 cd /opt/csb && source ops/csb-env.sh   # RPC, chain id, gas price, deployer key
                                        # prints "deployer 0x8f6aE9fB…b ✓"
 
-# 3. route gas fees to the fund FIRST, so nothing is burned in between
+# the fund has to EXIST before fees can be routed to it — this creates the
+# charity account and records it in deployments.json
+npx hardhat run scripts/enable-charity-levy.js --network csbRemote
+
+# 3. then route gas fees to it, BEFORE raising the fee, or the fees charged in
+#    between go to Subnet-EVM's blackhole and are destroyed
 npx hardhat run scripts/set-reward-address.js --network csbRemote
 
-# 1. then price gas at ~1 tRIEL per transfer
+# 1. finally price gas at ~1 tRIEL per transfer
 npx hardhat run scripts/set-gas-price.js --network csbRemote
 
 # top pilot accounts up — 10 tRIEL only buys ~2 payments once gas is priced
 npx hardhat run scripts/fund-native.js --network csbRemote
 ```
 
-**Order matters:** set the reward address *before* raising the fee, or the fees
-charged in between are burned instead of funding anything.
+**Order matters, in two places.** The charity must exist before the reward
+address can point at it, and the reward address must be set before the fee is
+raised — otherwise the fees charged in between are destroyed.
+
+**"Not burned" is not the same as "not the zero address."** When rewards are
+disabled, `currentRewardAddress()` returns Subnet-EVM's blackhole
+(`0x0100…0000`), not `0x0`. A check testing only for zero reports burned fees as
+a pass — which is exactly what happened here, with over 1,000 tRIEL destroyed
+before it was noticed. `verify-policy.js` now recognises the blackhole.
 
 Check it is actually in force on the chain (read-only, sends nothing):
 

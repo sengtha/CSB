@@ -20,6 +20,10 @@ const path = require("path");
 const FEE_MANAGER = "0x0200000000000000000000000000000000000003";
 const REWARD_MANAGER = "0x0200000000000000000000000000000000000004";
 const REF_GAS = 21000n;
+// Subnet-EVM's blackhole. When rewards are disabled, currentRewardAddress()
+// reports THIS rather than the zero address — so "not zero" is not the same as
+// "funding something", and checking only for zero reports burned fees as a pass.
+const BLACKHOLE = "0x0100000000000000000000000000000000000000";
 
 async function main() {
   const { ethers } = hre;
@@ -94,11 +98,16 @@ async function main() {
     fail("RewardManager precompile unavailable — it can only be enabled at genesis");
   }
   if (reward !== null) {
-    if (reward === ethers.ZeroAddress) {
+    if (reward === ethers.ZeroAddress || reward.toLowerCase() === BLACKHOLE) {
       let allowed = false;
       try { allowed = await rm.areFeeRecipientsAllowed(); } catch (_) {}
-      if (allowed) fail("fees go to whichever validator produced the block, not the fund");
-      else fail("fees are BURNED — run set-reward-address.js");
+      if (allowed) {
+        fail("fees go to whichever validator produced the block, not the fund");
+      } else {
+        const burned = await provider.getBalance(BLACKHOLE);
+        fail(`fees are BURNED — ${ethers.formatEther(burned)} tRIEL destroyed at the blackhole so far`);
+        console.log("     fix: npx hardhat run scripts/set-reward-address.js --network csbRemote");
+      }
     } else {
       const bal = await provider.getBalance(reward);
       ok(`fees route to ${reward}`);
