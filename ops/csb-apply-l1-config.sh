@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Apply the CSB L1 chain config through avalanche-cli, so it SURVIVES a restart.
+#
+#     bash ops/csb-apply-l1-config.sh
+#
+# Why not edit the node's config.json directly (ops/csb-patch-chain-config.js):
+# avalanche-cli regenerates the L1's chain config from the blockchain's stored
+# settings every time the cluster starts. A per-node edit to the L1 entry is
+# silently discarded on the next restart — verified on this cluster, where the
+# patch survived for the C-Chain and vanished for the L1, and the regenerated
+# eth-apis list came back longer than the one that was written. So the setting
+# has to be stored where avalanche-cli regenerates it FROM.
+#
+# What it sets (ops/csb-l1-chain-config.json):
+#   rpc-tx-fee-cap: 0  — lifts the 100-native-unit cap on a single transaction's
+#       fee. With gas at 1 riel per transfer a contract deployment costs 100.35
+#       tRIEL (about 2.5 US cents) and is refused by a rail meant for tokens
+#       worth real money.
+#   eth-apis        — the list avalanche-cli already generates, plus
+#       internal-txpool so the watchdog can tell an idle chain from a wedged one.
+#
+# SECURITY: that list includes admin, debug, and internal-personal — enabled by
+# avalanche-cli's own defaults, kept here so this change does not quietly remove
+# them. They make port 9650 dangerous to expose. It must stay on localhost; see
+# the RPC-privacy section of docs/validator-manual.md.
+set -euo pipefail
+
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PATH="$PATH:$HOME/bin"
+
+BLOCKCHAIN="${CSB_BLOCKCHAIN_NAME:-csb}"
+CLUSTER="${CSB_CLUSTER:-csb-local-node-fuji}"
+CFG="$PWD/ops/csb-l1-chain-config.json"
+
+if ! command -v avalanche >/dev/null 2>&1; then
+  echo "avalanche CLI not on PATH. Try: export PATH=\$PATH:\$HOME/bin" >&2
+  exit 1
+fi
+
+echo "Blockchain: $BLOCKCHAIN"
+echo "Config:     $CFG"
+cat "$CFG"
+echo
+
+# The flag name has moved between avalanche-cli versions, so show what this
+# build actually accepts rather than assuming.
+echo "=== avalanche blockchain configure --help ==="
+avalanche blockchain configure --help 2>&1 | sed -n '1,40p' || true
+echo
+
+echo "=== applying ==="
+if avalanche blockchain configure "$BLOCKCHAIN" --chain-config "$CFG"; then
+  echo "Applied via --chain-config."
+else
+  echo
+  echo "That flag was not accepted. Run it interactively and choose"
+  echo "\"Chain config\" when prompted, pointing at:"
+  echo "    $CFG"
+  echo
+  echo "    avalanche blockchain configure $BLOCKCHAIN"
+  exit 1
+fi
+
+echo
+echo "Restart for it to take effect:"
+echo "    avalanche node local stop $CLUSTER && avalanche node local start $CLUSTER"
+echo
+echo "Then confirm it SURVIVED the restart (this is the part that failed before):"
+echo "    node ops/csb-patch-chain-config.js --show    # L1 must show rpc-tx-fee-cap 0"
+echo "    source ops/csb-env.sh"
+echo "    curl -s -X POST -H 'content-type:application/json' \\"
+echo "      --data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"txpool_status\",\"params\":[]}' \$CSB_RPC_URL; echo"
