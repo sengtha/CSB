@@ -158,9 +158,47 @@ journalctl -u csb-watchdog -n 50
 ```
 
 If the L1 is ever redeployed, update `CSB_RPC_URL` in
-`/etc/systemd/system/csb-watchdog.service`. The mempool signal needs the txpool
-API — without `internal-txpool` in the node's `eth-apis`, the watchdog says so
-in its log and falls back to treating a flat height as idle.
+`/etc/systemd/system/csb-watchdog.service`.
+
+### Enabling the mempool signal (recommended)
+
+The watchdog needs to see whether transactions are waiting, or it cannot tell an
+idle chain from a wedged one — the exact failure this chain has had before. It
+tries `txpool_status` first, then falls back to counting transactions in the
+`pending` block. **Subnet-EVM exposes neither by default**, so out of the box the
+watchdog covers RPC-down and unhealthy-node but *not* a wedged chain, and says so
+in its log.
+
+To close the gap, add `internal-txpool` to the node's `eth-apis`. Chain config
+for an avalanche-cli local cluster lives per node:
+
+```bash
+BC=299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW
+for n in ~/.avalanche-cli/local/csb-local-node-fuji/NodeID-*; do
+  d="$n/configs/chains/$BC"; mkdir -p "$d"
+  cat > "$d/config.json" <<'JSON'
+{
+  "eth-apis": [
+    "eth", "eth-filter", "net", "web3",
+    "internal-eth", "internal-blockchain", "internal-transaction",
+    "internal-txpool"
+  ]
+}
+JSON
+done
+avalanche node local stop csb-local-node-fuji
+avalanche node local start csb-local-node-fuji
+curl -s -X POST -H 'content-type:application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"txpool_status","params":[]}' $RPC; echo
+```
+
+This requires a cluster restart to take effect. Weigh that against this chain's
+history: a restart is itself the operation that has surfaced trouble before, so
+do it deliberately while nothing depends on the chain — not before a demo. It
+also doubles as the reboot-recovery rehearsal that has to pass eventually
+anyway. **Do not expose the txpool API on any public-facing RPC** — mempool
+contents leak pending transactions; see the RPC-privacy section of
+`docs/validator-manual.md`.
 
 ## Backups (keep off the VM)
 

@@ -57,11 +57,37 @@ pending_txs() {
   body=$(rpc txpool_status)
   p=$(printf '%s' "$body" | grep -o '"pending":"0x[0-9a-fA-F]*"' | grep -o '0x[0-9a-fA-F]*')
   q=$(printf '%s' "$body" | grep -o '"queued":"0x[0-9a-fA-F]*"'  | grep -o '0x[0-9a-fA-F]*')
-  if [ -z "$p" ] && [ -z "$q" ]; then
-    echo unknown
+  if [ -n "$p" ] || [ -n "$q" ]; then
+    echo $(( $(printf '%d' "${p:-0x0}") + $(printf '%d' "${q:-0x0}") ))
     return
   fi
-  echo $(( $(printf '%d' "${p:-0x0}") + $(printf '%d' "${q:-0x0}") ))
+  pending_txs_via_block   # txpool API not exposed — fall back
+}
+
+# Fallback when txpool_status is unavailable: count transactions in the "pending"
+# block, which the default eth-apis set does expose.
+#
+# The catch: on some builds the "pending" tag simply aliases the latest block. If
+# it did and we trusted it, a chain that had just mined a busy block would look
+# like it had a backlog, and the watchdog would restart a perfectly healthy
+# cluster. So we only trust the answer when the pending block's number is
+# actually ahead of the latest block; otherwise we report unknown and stay put.
+pending_txs_via_block() {
+  local body num pend_h latest_h count
+  body=$(rpc eth_getBlockByNumber '["pending",false]')
+  num=$(printf '%s' "$body" | grep -o '"number":"0x[0-9a-fA-F]*"' | head -1 | grep -o '0x[0-9a-fA-F]*')
+  if [ -z "$num" ]; then echo unknown; return; fi
+  pend_h=$(printf '%d' "$num")
+  latest_h=$(height)
+  if [ -z "$latest_h" ] || [ "$pend_h" -le "$latest_h" ]; then
+    echo unknown   # "pending" is aliasing latest — tells us nothing about the mempool
+    return
+  fi
+  # Count tx hashes in the pending block's transactions array.
+  count=$(printf '%s' "$body" \
+    | sed 's/.*"transactions":\[//; s/\].*//' \
+    | grep -o '0x[0-9a-fA-F]\{64\}' | wc -l)
+  echo "$count"
 }
 
 # Is every node in the cluster reporting healthy? The health endpoint catches
@@ -115,9 +141,11 @@ if node_unhealthy "$HEALTH_PORT"; then unhealthy=1; fi
 if [ "$unhealthy" -eq 0 ]; then
   case "$waiting" in
     unknown)
-      log "height flat at $last across $frozen probes; node healthy but the txpool API is"
-      log "not exposed, so idle-vs-stuck cannot be told apart. Treating as idle."
-      log "To make this check meaningful, add 'internal-txpool' to eth-apis on the node."
+      log "height flat at $last across $frozen probes; node healthy, but neither the txpool"
+      log "API nor a usable 'pending' block is available, so idle cannot be told from stuck."
+      log "Treating as idle — the watchdog still covers RPC-down and unhealthy-node, but NOT"
+      log "a wedged chain. To close that gap, add 'internal-txpool' to the node's eth-apis:"
+      log "  docs/deployment-status.md → Watchdog."
       exit 0
       ;;
     0)
