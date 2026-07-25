@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --blue: #032ea1; --blue2: #0b47d6; --red: #e00025;
+    --ink: #14213d; --muted: #5b6885; --line: #dce3f2; --bg: #f5f7fc;
+    --ok: #0a7d33; --warn: #b45309;
+  }
+  body {
+    width: 1920px; height: 1080px; background: #fff; color: var(--ink);
+    font-family: "Segoe UI", -apple-system, Roboto, "Noto Sans", sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* ---------------------------------------------------------------- header */
+  header {
+    background: linear-gradient(100deg, var(--blue) 0%, #0a3fbe 55%, #0b47d6 100%);
+    color: #fff; padding: 22px 46px 20px; display: flex; align-items: center; gap: 26px;
+    border-bottom: 5px solid var(--red);
+  }
+  header .flag { font-size: 44px; line-height: 1; }
+  header h1 { font-size: 40px; font-weight: 700; letter-spacing: -.4px; }
+  header .tag { font-size: 19px; opacity: .92; margin-top: 3px; font-style: italic; }
+  header .badge {
+    margin-left: auto; text-align: right; font-size: 13.5px; line-height: 1.5;
+    background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.34);
+    border-radius: 10px; padding: 9px 15px; max-width: 330px;
+  }
+  header .badge b { display: block; font-size: 14.5px; margin-bottom: 2px; }
+
+  main { flex: 1; padding: 20px 46px 0; display: flex; flex-direction: column; gap: 16px; }
+  .sec-title {
+    font-size: 17px; font-weight: 800; letter-spacing: 1.6px; text-transform: uppercase;
+    color: var(--blue); display: flex; align-items: center; gap: 11px; margin-bottom: 10px;
+  }
+  .sec-title::after { content: ""; flex: 1; height: 2px; background: var(--line); }
+
+  /* ------------------------------------------------------------ flow band */
+  .flow { display: flex; align-items: stretch; gap: 0; }
+  .node {
+    flex: 0 0 auto; border: 2px solid var(--line); border-radius: 13px; background: #fbfcff;
+    padding: 12px 16px; text-align: center; display: flex; flex-direction: column;
+    justify-content: center; min-height: 150px;
+  }
+  .node .ic { font-size: 33px; line-height: 1; margin-bottom: 5px; }
+  .node .t { font-size: 20px; font-weight: 700; }
+  .node .s { font-size: 15px; color: var(--muted); line-height: 1.42; margin-top: 4px; }
+  .arrow { flex: 0 0 44px; display: grid; place-items: center; color: #9fb0d6; font-size: 32px; }
+
+  .chain {
+    flex: 1; border: 2.5px solid var(--blue); border-radius: 15px; background: #f2f6ff;
+    padding: 11px 15px 13px; position: relative;
+  }
+  .chain .hd {
+    font-size: 18.5px; font-weight: 800; color: var(--blue); text-align: center;
+    margin-bottom: 9px; letter-spacing: .3px;
+  }
+  .layers { display: flex; gap: 9px; }
+  .layer {
+    flex: 1; background: #fff; border: 1.5px solid #c7d6f5; border-radius: 10px;
+    padding: 9px 11px; text-align: center;
+  }
+  .layer .lt { font-size: 17.5px; font-weight: 700; color: var(--blue); }
+  .layer .ls { font-size: 14.6px; color: var(--muted); line-height: 1.4; margin-top: 3px; }
+  .layer .pill {
+    display: inline-block; margin-top: 6px; font-size: 13px; font-weight: 700;
+    background: #e6f6ec; color: var(--ok); border-radius: 999px; padding: 2px 8px;
+  }
+  .layer .pill.b { background: #e8ecf7; color: var(--blue); }
+
+  .validators {
+    margin-top: 9px; background: #fff; border: 1.5px dashed #b9c9ee; border-radius: 10px;
+    padding: 7px 12px; display: flex; align-items: center; gap: 12px; justify-content: center;
+  }
+  .validators .vt { font-size: 16px; font-weight: 700; color: var(--blue); }
+  .validators .vs { font-size: 14.4px; color: var(--muted); }
+
+  /* --------------------------------------------------------- bottom panels */
+  .cols { flex: 1; display: grid; grid-template-columns: 1fr 1.32fr; gap: 22px; }
+  .panel { border: 2px solid var(--line); border-radius: 14px; padding: 18px 24px 16px; background: #fbfcff; }
+  .panel.threat { background: #fffbfa; border-color: #f0d3d3; }
+  .panel h2 { font-size: 27px; color: var(--blue); margin-bottom: 3px; }
+  .panel .sub { font-size: 15.6px; color: var(--muted); margin-bottom: 9px; line-height: 1.45; }
+
+  ul { list-style: none; }
+  li { font-size: 18px; line-height: 1.5; margin-bottom: 13px; padding-left: 26px; position: relative; }
+  li::before {
+    content: "▸"; position: absolute; left: 3px; top: 0; font-size: 19px; color: var(--red); font-weight: 700;
+  }
+  li b { color: var(--blue); }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .two h3 { font-size: 19.5px; margin-bottom: 2px; display: flex; align-items: center; gap: 7px; }
+  .two .lead {
+    font-size: 14.6px; color: #8f1d1d; background: #fdeeee; border: 1px solid #f3cccc;
+    border-radius: 8px; padding: 9px 11px; line-height: 1.45; margin: 7px 0 11px;
+  }
+  .two li { font-size: 16px; margin-bottom: 11px; }
+  .honest {
+    font-size: 14.2px; line-height: 1.45; color: var(--ink); background: #fffaf2;
+    border-left: 3px solid var(--warn); border-radius: 0 6px 6px 0; padding: 9px 12px; margin-top: 11px;
+  }
+
+  footer {
+    margin-top: 14px; background: var(--bg); border-top: 2px solid var(--line);
+    padding: 11px 46px 13px; display: flex; align-items: center; gap: 22px;
+  }
+  footer .d { font-size: 13.6px; color: var(--muted); line-height: 1.5; flex: 1; }
+  footer .d b { color: var(--ink); }
+  footer .url { font-size: 15px; font-weight: 700; color: var(--blue); white-space: nowrap; }
+  footer .url span { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="flag">🇰🇭</div>
+  <div>
+    <h1>Cambodia Sovereign Blockchain</h1>
+    <div class="tag">“public within the country, private to the world”</div>
+  </div>
+  <div class="badge">
+    <b>An independent prototype</b>
+    Not a government project. Every institution shown is a placeholder. Runs on a
+    test network with valueless tokens.
+  </div>
+</header>
+
+<main>
+  <!-- ============================== ARCHITECTURE ============================== -->
+  <section>
+    <div class="sec-title">How it works</div>
+    <div class="flow">
+      <div class="node" style="flex-basis:172px">
+        <div class="ic">👤</div>
+        <div class="t">Citizen<br>or business</div>
+        <div class="s">Uses an ordinary wallet</div>
+      </div>
+      <div class="arrow">→</div>
+
+      <div class="node" style="flex-basis:196px">
+        <div class="ic">🚪</div>
+        <div class="t">Own private door</div>
+        <div class="s">A personal RPC link that returns <b>only your own data</b>. The node itself is never public.</div>
+      </div>
+      <div class="arrow">→</div>
+
+      <div class="chain">
+        <div class="hd">THE CHAIN — every rule is enforced here, not by an app that could be bypassed</div>
+        <div class="layers">
+          <div class="layer">
+            <div class="lt">🆔 Identity</div>
+            <div class="ls">KYC issued by the identity authority</div>
+            <div class="pill">no personal data on chain</div>
+          </div>
+          <div class="layer">
+            <div class="lt">💵 Money</div>
+            <div class="ls">tRIEL (native) ⇄ KHRt<br>fixed 1 : 1, both ways</div>
+            <div class="pill b">riel, not a crypto coin</div>
+          </div>
+          <div class="layer">
+            <div class="lt">📜 Rules</div>
+            <div class="ls">Aid that can only buy food · land titles · escrow</div>
+            <div class="pill b">programmable money</div>
+          </div>
+          <div class="layer">
+            <div class="lt">⛽ Fees</div>
+            <div class="ls">About <b>1 riel</b> per payment</div>
+            <div class="pill">goes to a public-good fund</div>
+          </div>
+        </div>
+        <div class="validators">
+          <div class="vt">🏛 Validators = separate institutions</div>
+          <div class="vs">No single body runs the ledger · identity, enforcement and money issuance are three different authorities</div>
+        </div>
+      </div>
+
+      <div class="arrow">→</div>
+      <div class="node" style="flex-basis:186px; border-color:#f0c9c9; background:#fffafa">
+        <div class="ic">🛃</div>
+        <div class="t">One governed gate</div>
+        <div class="s">The only way value leaves the country — council-controlled, with caps and a stop switch</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== WHY / THREATS ============================== -->
+  <div class="cols">
+    <div class="panel">
+      <h2>Why this shape may suit Cambodia</h2>
+      <div class="sub">Not because blockchain is fashionable — because these are ordinary national problems.</div>
+      <ul>
+        <li><b>The unit is the riel.</b> No exposure to a foreign coin's price, and nothing to speculate on.</li>
+        <li><b>Privacy for people, transparency for public money.</b> Your balance is not world-readable; the public fund's every riel is open to anyone with no login.</li>
+        <li><b>Losing your phone is not losing your money.</b> Identity-backed recovery reissues to a new address under the same registered person.</li>
+        <li><b>Assistance that reaches its purpose.</b> A food grant can be spent at licensed food merchants and refused elsewhere — by the chain, not by a report written months later.</li>
+        <li><b>Land titles that other builders can use.</b> Only a regulated registrar can issue one; any lender can then verify it without asking permission.</li>
+        <li><b>Cheap by design.</b> About 1 riel per payment, and that riel funds a public good rather than being burned.</li>
+        <li><b>Value cannot quietly leave.</b> One governed gate out, with minimum tiers, daily caps and a stop switch — capital rules written as code instead of paperwork.</li>
+      </ul>
+    </div>
+
+    <div class="panel threat">
+      <h2>Built for the threats that are coming</h2>
+      <div class="sub">Two failure modes will define the next decade of financial infrastructure. A sovereign, permissioned chain can answer both in ways a public chain and a traditional bank structurally cannot.</div>
+      <div class="two">
+        <div>
+          <h3>🛡 AI-driven attack</h3>
+          <div class="lead">The realistic AI attack is not breaking cryptography. It is convincingly impersonating an official, at scale, until someone approves something.</div>
+          <ul>
+            <li><b>Nobody can act alone.</b> Every administrative power is held by institutional multisigs.</li>
+            <li><b>Powers are split.</b> Compromise one authority and you get one power, not the chain.</li>
+            <li><b>Every freeze carries a court-order reference</b> — an action without one is impossible, not merely wrong.</li>
+            <li><b>A stolen key is not a lost account.</b> The attacker's advantage expires.</li>
+          </ul>
+          <div class="honest"><b>Honestly:</b> resilience, not immunity. One successful deception is not enough to move money, and the attempt is visible to parties the attacker does not control.</div>
+        </div>
+        <div>
+          <h3>🔐 Quantum computers</h3>
+          <div class="lead">Every blockchain today relies on ECDSA signatures. A quantum computer breaks them — and on a public ledger, the keys it will break are already published, waiting.</div>
+          <ul>
+            <li><b>Accounts can change their cryptography</b> — same address, no need to move anyone's money.</li>
+            <li><b>A governed validator set can actually execute the upgrade.</b> On a public chain it is a years-long negotiation that may simply fail.</li>
+            <li><b>“Private to the world” means far less to harvest today</b> and decrypt later.</li>
+          </ul>
+          <div class="honest"><b>Honestly:</b> post-quantum signatures are <i>not deployed anywhere yet</i> — the tooling is not ready. This is quantum <b>readiness</b>, not quantum proof. Anyone claiming the latter today should be read carefully.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="d">
+    <b>A personal experiment and thought experiment</b> — not affiliated with, endorsed by, or developed for
+    any government, ministry or institution. Roles such as “identity authority”, “council” and “registrar”
+    are hypothetical placeholders. Nothing here promises or predicts adoption. Test network, valueless tokens.
+  </div>
+  <div class="url">github.com/sengtha/CSB<span>Open source · contracts, docs and demos</span></div>
+</footer>
+
+</body>
+</html>
