@@ -11,6 +11,18 @@
 Three worked examples of things a permissioned chain with a national identity
 layer can do that a public chain structurally cannot.
 
+**Try them.** The `use-cases.html` page carries a *Try it* panel per case, open
+to anyone with no login and no wallet. Each one calls the contract's own
+`canSpend` / `canTransfer` / `canRelease` view — the same check a wallet makes
+before it lets you sign — against a real address you choose, including your own.
+Nothing moves and nothing is spent. The **refusals** are the demonstration:
+"this assistance cannot be paid to a moneylender, and here is the reason the
+chain gives" is more convincing than any description of it, and it is the answer
+the chain itself returns rather than a claim this page makes.
+
+Run `scripts/demo-idpoor.js`, `demo-land.js` and `demo-escrow.js` to set them up
+on a chain; the page says which are missing when they are not there.
+
 ---
 
 ## 1. Targeted social assistance — "money that can only buy food"

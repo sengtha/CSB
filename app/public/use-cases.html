@@ -26,6 +26,21 @@
     .caveat { border-left: 3px solid var(--warn); background: #fffaf2; padding: 10px 14px;
               border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.65; margin-top: 12px; }
     .foot { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0 24px; line-height: 1.6; }
+    .try { border: 1px solid #c9d6f5; background: #f7f9ff; border-radius: 10px;
+           padding: 14px 16px; margin-top: 14px; }
+    .try h3 { font-size: 13.5px; color: var(--blue); margin-bottom: 4px; }
+    .try .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+    .try .row select, .try .row input { flex: 1 1 190px; min-width: 0; margin: 0; }
+    .try .row button { margin: 0; flex: 0 0 auto; }
+    .try .live { font-size: 12.5px; line-height: 1.7; margin-top: 8px; }
+    .try .live b { color: var(--muted); font-weight: 600; }
+    .try .live .mono { font-size: 11.5px; }
+    .try .out { margin-top: 10px; }
+    .try .why { display: block; margin-top: 4px; font-size: 12px; opacity: .9; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px;
+            font-weight: 700; background: #e8ecf7; color: var(--blue); margin-left: 4px; }
+    .pill.ok { background: #e2f5e9; color: var(--ok); }
+    .pill.no { background: #fde8e8; color: var(--red); }
   </style>
   <script src="shell.js" defer></script>
   <script src="connect.js" defer></script>
@@ -81,6 +96,22 @@
       <div class="out no">✗ <strong>Paying a moneylender is refused by the chain.</strong> Not flagged for review afterwards — it cannot settle.</div>
       <div class="out yes">✓ <strong>Their own wages stay their own.</strong> Money the household earns can go anywhere, including to that same lender. Only the assistance carries the condition.</div>
 
+      <!-- Try it. canSpend() is the same view a wallet calls before it lets
+           anyone sign, so this is the chain's own answer, not a mock-up. -->
+      <div class="try" id="idpoor-try">
+        <h3>Try it — ask the chain whether a payment would settle</h3>
+        <p class="note">This runs against the live testnet and moves nothing. Pick who the
+          household pays, or paste any address, including your own.</p>
+        <div class="live" id="idpoor-live"></div>
+        <div class="row">
+          <select id="idpoor-to"></select>
+          <input id="idpoor-to-custom" placeholder="or paste an address 0x…" spellcheck="false" />
+          <input id="idpoor-amt" value="5000" style="max-width:130px" />
+          <button id="idpoor-go">Check</button>
+        </div>
+        <div id="idpoor-out"></div>
+      </div>
+
       <table class="kv" id="idpoor-contracts"></table>
 
       <div class="caveat">
@@ -127,6 +158,20 @@
         builds and maintains that themselves, badly. Here it already exists and is
         authoritative, so a security token gets compliance for free.
       </p>
+
+      <div class="try" id="land-try">
+        <h3>Try it — ask whether a share transfer would settle</h3>
+        <p class="note">The compliance rule lives in the token itself, so it answers the
+          same way whoever asks. Try the verified co-investor, then any other address.</p>
+        <div class="live" id="land-live"></div>
+        <div class="row">
+          <select id="land-to"></select>
+          <input id="land-to-custom" placeholder="or paste an address 0x…" spellcheck="false" />
+          <input id="land-amt" value="100" style="max-width:130px" />
+          <button id="land-go">Check</button>
+        </div>
+        <div id="land-out"></div>
+      </div>
 
       <table class="kv" id="land-contracts"></table>
 
@@ -180,6 +225,18 @@ Customer pays           20,000.00 KHRt   ← agreed before paying</code></pre>
         neither settled nor refundable. An enforcement freeze outranks the
         commercial obligation; the arbiter's remaining move is to refund the buyer.
       </p>
+
+      <div class="try" id="escrow-try">
+        <h3>Try it — the real orders on this chain</h3>
+        <p class="note">Each order's split is recorded before any money moves, so the
+          customer can see the rider's share before paying. These are live.</p>
+        <div class="live" id="escrow-live"></div>
+        <div class="row">
+          <select id="escrow-id"></select>
+          <button id="escrow-go">Can it be released?</button>
+        </div>
+        <div id="escrow-out"></div>
+      </div>
 
       <table class="kv" id="escrow-contracts"></table>
 
@@ -275,6 +332,129 @@ fetch("/node-info").then((r) => r.json()).then((d) => {
         + `Not deployed on this chain yet — run the demo scripts in the repository.</th></tr>`;
   }
 }).catch(() => { /* the page still reads fine without live addresses */ });
+
+// ------------------------------------------------------------------- try it
+// Every "Check" below calls a canX() view on the contract — the same one a
+// wallet calls to explain a refusal before the user signs. Read-only: nothing
+// moves, nothing is spent, and no login or wallet is required. The REFUSALS
+// are the demonstration, so they are shown as prominently as the successes.
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const short = (a) => (String(a).length > 14 ? `${String(a).slice(0, 8)}…${String(a).slice(-6)}` : String(a));
+const money = (v) => Number(v).toLocaleString("en-US", { minimumFractionDigits: 2 });
+
+// The escrow check asks about an order's STATE, not about a party's compliance,
+// so it must not be dressed up as a refusal — "already settled" is not the
+// chain forbidding anything, and saying so would overstate the demonstration.
+const REFUSAL = {
+  idpoor: "this is not a warning an app could override — the transfer cannot settle.",
+  land: "this is not a warning an app could override — the transfer cannot settle.",
+  escrow: "this is the order's current state, not a compliance refusal.",
+};
+function verdict(el, kase, r) {
+  if (r.error) { el.innerHTML = `<div class="out no">Could not reach the chain: ${esc(r.error)}</div>`; return; }
+  el.innerHTML = r.ok
+    ? `<div class="out yes">✓ <strong>${kase === "escrow" ? "This order can be released now." : "The chain would allow this."}</strong>`
+      + `<span class="why">Read live from the contract — the same check a wallet makes before you sign.</span></div>`
+    : `<div class="out no">✗ <strong>${kase === "escrow" ? "Not right now." : "Refused by the chain."}</strong>`
+      + `<span class="why">${esc(r.reason || "no reason given")} — ${REFUSAL[kase] ?? ""}</span></div>`;
+}
+
+async function check(kase, params, outEl) {
+  const el = $(outEl);
+  el.innerHTML = `<div class="out">Asking the chain…</div>`;
+  try {
+    const q = new URLSearchParams({ case: kase, ...params });
+    const r = await fetch(`/use-cases/check?${q}`);
+    verdict(el, kase, await r.json());
+  } catch (e) {
+    verdict(el, kase, { error: e.message });
+  }
+}
+
+/** A <select> of known parties, plus whatever the visitor pastes. */
+function fillParties(sel, list) {
+  sel.innerHTML = list.map((p) =>
+    `<option value="${esc(p.address)}">${esc(p.label)} — ${esc(short(p.address))}</option>`).join("")
+    + `<option value="">— use the pasted address —</option>`;
+}
+const chosen = (selId, customId) => {
+  const custom = $(customId).value.trim();
+  return custom || $(selId).value;
+};
+
+fetch("/use-cases").then((r) => (r.ok ? r.json() : null)).then((d) => {
+  if (!d) throw new Error("no data");
+
+  // --- 1. assistance
+  if (d.idpoor) {
+    const h = d.idpoor.household;
+    $("idpoor-live").innerHTML = `
+      <b>Household</b> <span class="mono">${esc(h.address)}</span>
+      <span class="pill ${h.kyc ? "ok" : "no"}">${h.kyc ? `KYC tier ${h.tier}` : "no KYC"}</span><br>
+      <b>Holds</b> ${money(h.balance)} KHRt — of which
+      <strong>${money(h.restricted)} is earmarked assistance</strong>
+      and ${money(h.spendable)} is their own money to spend anywhere<br>
+      ${d.idpoor.program ? `<b>Programme</b> #${d.idpoor.program.id} “${esc(d.idpoor.program.label)}” —
+        may only pay <strong>${esc(d.idpoor.program.categories.join(", ") || "nothing")}</strong> merchants` : ""}`;
+    fillParties($("idpoor-to"), d.idpoor.payees.map((p) => ({
+      ...p,
+      label: p.licence?.registered ? `${p.label} · licensed ${p.licence.categories.join("+")}` : `${p.label} · unlicensed`,
+    })));
+    $("idpoor-go").onclick = () => check("idpoor", {
+      to: chosen("idpoor-to", "idpoor-to-custom"), amount: $("idpoor-amt").value,
+    }, "idpoor-out");
+  } else {
+    $("idpoor-try").innerHTML = `<p class="note">This demonstration has not been run on this chain yet
+      — <span class="mono">scripts/demo-idpoor.js</span> sets it up.</p>`;
+  }
+
+  // --- 2. land
+  if (d.land) {
+    $("land-live").innerHTML = `
+      <b>Title</b> ${esc(d.land.name)} (${esc(d.land.symbol)}) — ${esc(d.land.location)},
+      ${d.land.areaSqm} m², ${d.land.totalShares.toLocaleString("en-US")} shares<br>
+      <b>Token</b> <span class="mono">${esc(d.land.token)}</span><br>
+      ${d.land.holders.map((p) =>
+        `<b>${esc(p.label)}</b> ${p.shares.toLocaleString("en-US")} shares
+         <span class="pill ${p.kyc ? "ok" : "no"}">${p.kyc ? `KYC tier ${p.tier}` : "no KYC"}</span>`).join("<br>")}`;
+    fillParties($("land-to"), d.land.holders.slice(1).concat([
+      { label: "An unverified address", address: "0x1111111111111111111111111111111111111111" },
+    ]));
+    $("land-go").onclick = () => check("land", {
+      to: chosen("land-to", "land-to-custom"), amount: $("land-amt").value,
+    }, "land-out");
+  } else {
+    $("land-try").innerHTML = `<p class="note">This demonstration has not been run on this chain yet
+      — <span class="mono">scripts/demo-land.js</span> sets it up.</p>`;
+  }
+
+  // --- 3. escrow
+  if (d.escrow?.orders?.length) {
+    const STATUS_NOTE = {
+      released: "settled — every payee was paid in one transaction",
+      refunded: "returned to the customer; compliance refused the settlement",
+      funded: "the customer's money is held by the contract, awaiting confirmation",
+      created: "the split is agreed; nothing has moved yet",
+      disputed: "contested — only the arbiter can end it",
+    };
+    $("escrow-live").innerHTML = d.escrow.orders.map((o) => `
+      <b>Order #${o.orderId}</b> ${money(o.total)} KHRt
+      <span class="pill">${esc(o.status)}</span>
+      <span class="why" style="color:var(--muted)">${esc(STATUS_NOTE[o.status] ?? "")}</span><br>
+      ${o.split.map((s) => `&nbsp;&nbsp;→ ${esc(s.label)} ${money(s.amount)} KHRt`).join("<br>")}`
+    ).join("<br><br>");
+    $("escrow-id").innerHTML = d.escrow.orders.map((o) =>
+      `<option value="${o.orderId}"${o.orderId === d.escrow.latest ? " selected" : ""}>Order #${o.orderId} (${esc(o.status)})</option>`).join("");
+    $("escrow-go").onclick = () => check("escrow", { amount: $("escrow-id").value }, "escrow-out");
+  } else {
+    $("escrow-try").innerHTML = `<p class="note">This demonstration has not been run on this chain yet
+      — <span class="mono">scripts/demo-escrow.js</span> sets it up.</p>`;
+  }
+}).catch(() => {
+  for (const id of ["idpoor-try", "land-try", "escrow-try"]) {
+    $(id).innerHTML = `<p class="note">Live data is not available on this chain — the write-up below still applies.</p>`;
+  }
+});
 </script>
 </body>
 </html>

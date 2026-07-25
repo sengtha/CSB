@@ -22,6 +22,7 @@ const { deriveToken, addressFromToken, verifySignature } = require("./rpc-access
 const { fundReport } = require("./fund");
 const { nodeInfo } = require("./node-info");
 const { assets } = require("./assets");
+const { useCases, useCaseCheck } = require("./use-cases");
 
 const RPC_URL = process.env.CSB_RPC_URL ?? "http://127.0.0.1:8545";
 const PORT = Number(process.env.PORT ?? process.env.DEMO_PORT ?? 8080);
@@ -194,6 +195,32 @@ const server = http.createServer(async (req, res) => {
       send(res, 200, await assets(RPC_URL, loadDeployments(), {
         address: url.searchParams.get("address"),
       }), { "Cache-Control": "public, max-age=8" });
+    } catch (e) {
+      send(res, 502, { error: e.message });
+    }
+    return;
+  }
+
+  // Use-case demonstrations: live state, and rule checks anyone can run.
+  // Read-only — every check is a canX() view the contracts already expose so a
+  // wallet can explain a refusal before anyone signs. Nothing moves, and the
+  // response is assembled field by field so the demo casts' private keys (which
+  // sit beside them in deployments.json) cannot leak through it.
+  if (url.pathname === "/use-cases") {
+    try {
+      send(res, 200, await useCases(RPC_URL, loadDeployments()), { "Cache-Control": "public, max-age=6" });
+    } catch (e) {
+      send(res, e.code === "NO_DEPLOYMENT" ? 404 : 502, { error: e.message });
+    }
+    return;
+  }
+  if (url.pathname === "/use-cases/check") {
+    try {
+      send(res, 200, await useCaseCheck(RPC_URL, loadDeployments(), {
+        kase: url.searchParams.get("case"),
+        to: url.searchParams.get("to"),
+        amount: url.searchParams.get("amount"),
+      }));
     } catch (e) {
       send(res, 502, { error: e.message });
     }
