@@ -134,6 +134,26 @@ Verified live on the current chain: fee floor 47,619 gwei (a transfer costs
 1.0000 tRIEL), KHRt approved in the RielConverter, and `currentRewardAddress` =
 the charity `0xE77566de0F9B7c21Ae33228ea9329Cc9931e6863`.
 
+### The 100 tRIEL node fee cap (must be raised for the 1-riel policy)
+
+Subnet-EVM refuses any transaction whose total fee exceeds `rpc-tx-fee-cap`,
+default **100**. That rail assumes a native token worth real money; here 100
+tRIEL is about 2.5 US cents. Combined with the 1-riel-per-transfer price, an
+ordinary contract deployment (~2.1M gas) costs slightly *more* than the cap and
+fails with `tx fee exceeds the configured cap` — a trivial amount blocked by a
+safety limit meant for a different scale of token.
+
+```bash
+bash ops/csb-chain-config.sh --restart
+```
+
+That writes the chain config to all three validators and restarts the cluster.
+It sets `rpc-tx-fee-cap: 0` and, in the same restart, adds `internal-txpool` so
+the watchdog can finally distinguish an idle chain from a wedged one.
+
+**Do not expose the txpool API publicly** — mempool contents leak pending
+transactions. Port 9650 stays on localhost.
+
 **Keep `CSB_GAS_PRICE_WEI` above the floor.** `hardhat.config.js` prices script
 transactions at a fixed 55,000 gwei, chosen to sit ~15% above the 47,619 gwei
 floor. If the fee policy changes, this must change too — a script submitting

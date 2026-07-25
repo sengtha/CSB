@@ -65,8 +65,16 @@ async function main() {
     console.log(`txAllowList precompile not present here — skipping (${e.shortMessage ?? e.message}).`);
   }
 
-  await (await identity.register(sokha.address, ethers.id("identity-sokha"), 2)).wait();
-  await (await identity.register(dara.address, ethers.id("identity-dara"), 1)).wait();
+  // Register only if the registry hasn't seen them. Re-registering reverts with
+  // AlreadyRegistered, which estimateGas reports as a bare "execution reverted"
+  // — so a re-run after a partly-failed deploy would look like a new failure
+  // rather than work already done.
+  // The identity commitment is salted with the address: each seeded run mints
+  // NEW wallets, and reusing a fixed commitment would try to attach a second
+  // address to an identity whose quota is one — QuotaExceeded, surfacing as a
+  // bare "execution reverted" on the re-run.
+  await registerIfNeeded(identity, sokha.address, `identity-sokha-${sokha.address}`, 2);
+  await registerIfNeeded(identity, dara.address, `identity-dara-${dara.address}`, 1);
 
   await (await khr.issue(sokha.address, 5_000_000_00)).wait(); // 5,000,000.00 KHRt
   await (await khr.issue(dara.address, 1_000_000_00)).wait();
@@ -95,6 +103,20 @@ async function main() {
   console.log(`  Dara  (tier 1): ${dara.address}`);
   console.log(`  Vanna (no KYC): ${vanna.address}`);
   console.log(`\nKeys written to ${file} — PILOT/DEV ONLY, never reuse these keys.`);
+}
+
+/**
+ * Register an address only if it is not already known to the registry, so the
+ * script can be re-run safely after a partial failure.
+ */
+async function registerIfNeeded(identity, address, idLabel, tier) {
+  const { ethers } = require("hardhat");
+  const a = await identity.attestationOf(address);
+  if (a.identity !== ethers.ZeroHash) {
+    console.log(`  ${address} already registered (tier ${a.tier}) — skipping`);
+    return;
+  }
+  await (await identity.register(address, ethers.id(idLabel), tier)).wait();
 }
 
 main().catch((error) => {
