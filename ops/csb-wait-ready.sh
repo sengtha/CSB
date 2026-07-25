@@ -26,6 +26,20 @@ rpc() {
     --data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":[]}" "$RPC" 2>/dev/null
 }
 
+# Is anything even running? A stopped cluster answers exactly like one that is
+# still bootstrapping — HTTP 404 on the chain's path — so waiting on it is
+# waiting forever. Check first and say so.
+if ! pgrep -f avalanchego >/dev/null 2>&1; then
+  echo "No avalanchego process is running — the cluster is stopped, not starting."
+  echo
+  echo "    export PATH=\$PATH:\$HOME/bin"
+  echo "    avalanche node local start ${CSB_CLUSTER:-csb-local-node-fuji}"
+  echo
+  echo "then re-run this. (A 'stop' whose matching 'start' never ran looks"
+  echo "identical to a chain still bootstrapping.)"
+  exit 1
+fi
+
 echo "Waiting for $RPC"
 for i in $(seq 1 "$TRIES"); do
   resp=$(rpc eth_chainId)
