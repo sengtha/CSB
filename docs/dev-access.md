@@ -18,6 +18,11 @@ CSB_DEV_ADDR=0xDEVADDRESS \
   npx hardhat run scripts/allow-dev.js --network csbRemote
 ```
 
+Or do it from the browser: **Admin console → Chain access**. Same three grants,
+with a status readout for an address, and a *Do all three* button. The script is
+for onboarding several addresses at once or from CI; the tab is for one address
+in front of you.
+
 That enables the address on both allowlist precompiles and funds it with gas:
 
 | Grant | Precompile | Why |

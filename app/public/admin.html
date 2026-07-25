@@ -40,7 +40,59 @@
         <button data-tab="enf">Enforcement authority</button>
         <button data-tab="cnl">Governing council</button>
         <button data-tab="iss">KHR issuer</button>
+        <button data-tab="chain">Chain access</button>
         <button data-tab="rpc">Scoped RPC access</button>
+      </div>
+
+      <!-- The gate BELOW the contract layer. An address refused here never
+           reaches a contract at all, so "cannot issue transaction from
+           non-allow listed address" is the node talking, not KYC. -->
+      <div id="tab-chain" class="tabpane">
+        <div class="grid2">
+          <div>
+            <h2>Allow lists (chain-level permission)</h2>
+            <label>Address</label><input id="al-addr" placeholder="0x…" />
+            <button id="al-check" class="ghost">Check status</button>
+            <div id="al-status" class="kv" style="margin-top:10px"><span class="small">Enter an address and check its status.</span></div>
+
+            <h2 style="margin-top:18px">Grant</h2>
+            <button id="al-tx">Enable transactions</button>
+            <button id="al-dep" class="ghost">Enable contract deploy</button>
+            <label style="margin-top:12px">Gas to send (tRIEL)</label>
+            <input id="al-gas" value="1000" />
+            <button id="al-fund" class="ghost">Fund gas</button>
+            <button id="al-all" style="margin-left:6px">Do all three</button>
+
+            <h2 style="margin-top:18px">Revoke</h2>
+            <button id="al-none-tx" class="danger">Remove transaction access</button>
+            <button id="al-none-dep" class="danger">Remove deploy access</button>
+          </div>
+          <div>
+            <h2>What this is</h2>
+            <p class="small" style="line-height:1.75">
+              CSB is permissioned <b>below</b> the contract layer. An address that is not on
+              the <span class="mono">txAllowList</span> is refused by the node itself —
+              <span class="mono">cannot issue transaction from non-allow listed address</span> —
+              however well KYC'd it is. This is the tab that fixes that error.
+            </p>
+            <p class="small" style="line-height:1.75;margin-top:10px">
+              <b>These are not KYC.</b> The allow list answers "may you transact at all";
+              KYC answers "may you hold regulated money". A developer testing contracts needs
+              only the list. Anyone holding or sending KHRt needs an attestation from the
+              Identity Authority tab as well.
+            </p>
+            <p class="small" style="line-height:1.75;margin-top:10px">
+              Gas is about <b>1 tRIEL per ordinary transaction</b> and roughly <b>100 for a
+              contract deployment</b>, so the 1000 default covers real use. An enabled address
+              with no tRIEL still cannot move.
+            </p>
+            <p class="small" style="line-height:1.75;margin-top:10px">
+              Signed by the <b>precompile admin</b> — the key in <i>Acting authority</i> above.
+              These lists are chain configuration, not a contract role, so no other institution
+              can change them.
+            </p>
+          </div>
+        </div>
       </div>
 
       <div id="tab-moi" class="tabpane active">
@@ -310,6 +362,95 @@ async function refreshStatus() {
     await (await khr.redeem(parseKHR(val("iss-r-amt")))).wait();
     return `Redeemed ${val("iss-r-amt")} KHRt.`;
   });
+
+  // --- Chain-level allow lists
+  // readAllowList reverts on a chain without the precompiles (a local Hardhat
+  // node), so say that plainly rather than showing a decode failure.
+  async function alRead(addr) {
+    const out = {};
+    for (const which of ["tx", "deployer"]) {
+      try { out[which] = Number(await allowList(which).readAllowList(addr)); }
+      catch (_) { out[which] = null; }
+    }
+    out.balance = await getProvider().getBalance(addr);
+    return out;
+  }
+  async function refreshAllow() {
+    const addr = val("al-addr");
+    const box = document.getElementById("al-status");
+    if (!ethers.isAddress(addr)) { box.innerHTML = '<span class="small">Enter a valid 0x address.</span>'; return; }
+    const s = await alRead(addr);
+    const badge = (role) =>
+      role === null ? '<span class="badge warn">PRECOMPILE ABSENT</span>'
+      : role > 0 ? `<span class="badge ok">${ALLOWLIST_ROLE[role].toUpperCase()}</span>`
+      : '<span class="badge bad">NOT ALLOWED</span>';
+    const gas = Number(ethers.formatEther(s.balance));
+    box.innerHTML = `
+      <b>Transactions</b> ${badge(s.tx)}<br/>
+      <b>Contract deploy</b> ${badge(s.deployer)}<br/>
+      <b>Gas</b> ${gas.toLocaleString("en-US", { maximumFractionDigits: 3 })} tRIEL
+      ${gas < 100 ? '<span class="badge warn">TOO LOW TO DEPLOY</span>' : ""}`;
+  }
+  document.getElementById("al-check").onclick = () => run(async () => { await refreshAllow(); return "Status read from the chain."; });
+
+  // setEnabled on an address that already holds a role is a wasted transaction
+  // (and on an admin address, a downgrade), so check before writing.
+  async function alGrant(which, addr) {
+    let current;
+    try { current = Number(await allowList(which).readAllowList(addr)); }
+    catch (_) {
+      // Writing anyway would send a transaction to an address with no code —
+      // it would "succeed" and grant nothing, which is worse than refusing.
+      throw new Error("This chain has no allow-list precompiles (a local dev node has none), so there is nothing to enable here.");
+    }
+    if (current > 0) return `already ${ALLOWLIST_ROLE[current]}`;
+    await (await allowList(which, signer()).setEnabled(addr, await feeOverrides())).wait();
+    return "enabled";
+  }
+  async function alFund(addr, amount) {
+    const have = await getProvider().getBalance(addr);
+    if (have >= amount) return `already holds ${ethers.formatEther(have)} tRIEL`;
+    await (await signer().sendTransaction({ to: addr, value: amount - have, ...(await feeOverrides()) })).wait();
+    return `funded to ${ethers.formatEther(amount)} tRIEL`;
+  }
+  const alAddr = () => {
+    const a = val("al-addr");
+    if (!ethers.isAddress(a)) throw new Error("Enter a valid 0x address.");
+    return a;
+  };
+
+  document.getElementById("al-tx").onclick = () => run(async () => {
+    const a = alAddr(); const r = await alGrant("tx", a); await refreshAllow();
+    return `Transaction access for ${short(a)}: ${r}.`;
+  });
+  document.getElementById("al-dep").onclick = () => run(async () => {
+    const a = alAddr(); const r = await alGrant("deployer", a); await refreshAllow();
+    return `Contract-deploy access for ${short(a)}: ${r}.`;
+  });
+  document.getElementById("al-fund").onclick = () => run(async () => {
+    const a = alAddr(); const r = await alFund(a, ethers.parseEther(val("al-gas").replaceAll(",", "") || "0"));
+    await refreshAllow();
+    return `Gas for ${short(a)}: ${r}.`;
+  });
+  document.getElementById("al-all").onclick = () => run(async () => {
+    const a = alAddr();
+    const tx = await alGrant("tx", a);
+    const dep = await alGrant("deployer", a);
+    const gas = await alFund(a, ethers.parseEther(val("al-gas").replaceAll(",", "") || "0"));
+    await refreshAllow();
+    return `${short(a)} — transactions: ${tx}; deploy: ${dep}; gas: ${gas}. `
+      + `This is technical access only; KHRt still needs a KYC attestation.`;
+  });
+  for (const [id, which, label] of [["al-none-tx", "tx", "Transaction"], ["al-none-dep", "deployer", "Contract-deploy"]]) {
+    document.getElementById(id).onclick = () => run(async () => {
+      const a = alAddr();
+      try { await allowList(which).readAllowList(a); }
+      catch (_) { throw new Error("This chain has no allow-list precompiles — nothing to remove."); }
+      await (await allowList(which, signer()).setNone(a, await feeOverrides())).wait();
+      await refreshAllow();
+      return `${label} access removed for ${short(a)}.`;
+    });
+  }
 
   // --- Scoped RPC: self-service model — admin only revokes / looks up URLs
   async function loadRevoked() {

@@ -108,6 +108,13 @@ const ABI = {
     "error ZeroAmount()",
     "error EnforcedPause()",
   ],
+  // Subnet-EVM allow-list precompiles. Same interface at both addresses; the
+  // one difference is what being on the list permits.
+  AllowList: [
+    "function setEnabled(address addr)",
+    "function setNone(address addr)",
+    "function readAllowList(address addr) view returns (uint256)",
+  ],
   Common: [
     "error AccessControlUnauthorizedAccount(address account, bytes32 neededRole)",
     "error OwnableUnauthorizedAccount(address account)",
@@ -135,6 +142,29 @@ const FRIENDLY = {
   ERC20InsufficientBalance: (a) => `Blocked: insufficient balance (${fmtKHR(a[1])} KHRt available).`,
   ERC20InsufficientAllowance: () => "Blocked: gateway allowance too low — approve first.",
 };
+
+/**
+ * CSB is permissioned BELOW the contract layer. Two Subnet-EVM precompiles decide
+ * what an address may do at all, before any contract's rules apply:
+ *
+ *   txAllowList  — may this address submit ANY transaction? An address that is
+ *                  not on it is refused by the node itself, with
+ *                  "cannot issue transaction from non-allow listed address" —
+ *                  no matter how well KYC'd it is in the IdentityRegistry.
+ *   deployer     — may this address CREATE contracts?
+ *
+ * KYC and these lists answer different questions and are granted separately:
+ * the list is "may you transact", KYC is "may you hold regulated money".
+ */
+const ALLOWLIST = {
+  tx: "0x0200000000000000000000000000000000000002",
+  deployer: "0x0200000000000000000000000000000000000000",
+};
+const ALLOWLIST_ROLE = { 0: "none", 1: "enabled", 2: "admin", 3: "manager" };
+
+function allowList(which, runner) {
+  return new ethers.Contract(ALLOWLIST[which], ABI.AllowList, runner ?? getProvider());
+}
 
 const STATUS_NAMES = ["none", "active", "suspended", "revoked"];
 const TIER_NAMES = { 0: "—", 1: "1 · citizen basic", 2: "2 · full KYC", 3: "3 · business", 4: "4 · institutional" };
