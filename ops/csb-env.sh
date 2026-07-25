@@ -22,6 +22,11 @@ fi
 
 export PATH="$PATH:$HOME/bin"
 
+# Repo root, derived from this file's own location rather than assumed — the
+# checkout lives at /opt/csb on the Elestio VM but ~/csb elsewhere.
+CSB_HOME="${CSB_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export CSB_HOME
+
 # --- chain -----------------------------------------------------------------
 CSB_BLOCKCHAIN_ID="${CSB_BLOCKCHAIN_ID:-299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW}"
 export CSB_RPC_URL="${CSB_RPC_URL:-http://127.0.0.1:9650/ext/bc/$CSB_BLOCKCHAIN_ID/rpc}"
@@ -52,8 +57,8 @@ fi
 # --- confirm we loaded the key we think we did -----------------------------
 # Deriving the address catches a wrong or stale keystore file BEFORE it is used
 # to send an admin transaction, which is the cheap moment to catch it.
-if [ -n "${CSB_DEPLOYER_KEY:-}" ] && [ -d "${CSB_HOME:-$HOME/csb}/node_modules/ethers" ]; then
-  _csb_addr=$(cd "${CSB_HOME:-$HOME/csb}" && node -e '
+if [ -n "${CSB_DEPLOYER_KEY:-}" ] && [ -d "$CSB_HOME/node_modules/ethers" ]; then
+  _csb_addr=$(cd "$CSB_HOME" && node -e '
     const { Wallet } = require("ethers");
     process.stdout.write(new Wallet(process.env.CSB_DEPLOYER_KEY).address);
   ' 2>/dev/null)

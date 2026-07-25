@@ -28,7 +28,7 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --d
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
 sudo apt-get update && sudo apt-get install -y caddy
 
-sudo cp ~/csb/infra/Caddyfile /etc/caddy/Caddyfile
+sudo cp /opt/csb/infra/Caddyfile /etc/caddy/Caddyfile
 sudo sed -i 's/csb.example.gov/YOUR-REAL-DOMAIN/' /etc/caddy/Caddyfile
 sudo systemctl restart caddy
 ```
