@@ -21,6 +21,12 @@ TRIES="${CSB_WAIT_TRIES:-40}"
 GAP="${CSB_WAIT_GAP:-10}"
 HEALTH_PORT="${CSB_HEALTH_PORT:-9650}"
 
+hexnum() {
+  local raw
+  raw=$(printf '%s' "$1" | grep -o '"result":"0x[0-9a-fA-F]*"' | grep -o '0x[0-9a-fA-F]*')
+  [ -n "$raw" ] && printf '%d' "$raw"
+}
+
 rpc() {
   curl -s --max-time 10 -X POST -H 'content-type:application/json' \
     --data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":[]}" "$RPC" 2>/dev/null
@@ -52,13 +58,30 @@ for i in $(seq 1 "$TRIES"); do
       pool=$(rpc txpool_status)
       if printf '%s' "$pool" | grep -q '"result"'; then
         echo "txpool API:   live  →  $pool"
-        echo
-        echo "Ready. The watchdog can now tell an idle chain from a wedged one."
       else
-        echo "txpool API:   NOT available  →  $pool"
-        echo
-        echo "The chain is up, but the txpool setting did not take. Check with:"
-        echo "    node ops/csb-patch-chain-config.js --show"
+        # Expected. The API is deliberately NOT enabled: the name tried for it
+        # was invalid for this Subnet-EVM build and took the chain's whole HTTP
+        # surface offline. See ops/csb-apply-l1-config.sh.
+        echo "txpool API:   not enabled (deliberate — watchdog runs without the mempool signal)"
+      fi
+      echo
+
+      # A chain that has just started can report height 0 while it replays state.
+      # Height that STAYS at 0 on a chain which had blocks is a different matter,
+      # so confirm it is moving rather than reporting the first number seen.
+      h1=$(hexnum "$(rpc eth_blockNumber)")
+      sleep 5
+      h2=$(hexnum "$(rpc eth_blockNumber)")
+      if [ "${h2:-0}" -gt 0 ]; then
+        echo "Ready — height $h2."
+      elif [ "${h1:-0}" = "0" ] && [ "${h2:-0}" = "0" ]; then
+        echo "Chain serving but height is still 0 after a few seconds."
+        echo "If this chain previously had blocks, give it a minute to replay and re-check:"
+        echo "    curl -s -X POST -H 'content-type:application/json' \\"
+        echo "      --data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_blockNumber\",\"params\":[]}' \$CSB_RPC_URL"
+        echo "Height staying at 0 would mean the chain came up without its state."
+      else
+        echo "Ready — height $h2."
       fi
       exit 0
       ;;
