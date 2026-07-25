@@ -46,8 +46,36 @@ echo "Blockchain: $BC"
 echo "Nodes:      ${#nodes[@]}"
 echo
 
+# Where does this node actually read chain config from? Guessing the layout is
+# how a config gets written to a path nothing reads, which looks exactly like the
+# setting not working. Ask the running process first, fall back to the
+# conventional location, and print what was chosen so it can be checked.
+detect_chain_config_dir() {
+  local node_dir="$1" found=""
+  # 1. the running avalanchego process for this node
+  found=$(ps -eo args= 2>/dev/null \
+    | grep -F "$(basename "$node_dir")" \
+    | grep -o -- '--chain-config-dir[= ][^ ]*' \
+    | head -1 | sed 's/--chain-config-dir[= ]//')
+  if [ -n "$found" ]; then echo "$found"; return; fi
+  # 2. any avalanchego process (single-cluster VM)
+  found=$(ps -eo args= 2>/dev/null \
+    | grep -o -- '--chain-config-dir[= ][^ ]*' \
+    | head -1 | sed 's/--chain-config-dir[= ]//')
+  if [ -n "$found" ] && [ "${#nodes[@]}" -eq 1 ]; then echo "$found"; return; fi
+  # 3. the node's own config file
+  if [ -f "$node_dir/config.json" ]; then
+    found=$(grep -o '"chain-config-dir"[^,}]*' "$node_dir/config.json" 2>/dev/null \
+      | head -1 | sed 's/.*:[[:space:]]*"//; s/"$//')
+    if [ -n "$found" ]; then echo "$found"; return; fi
+  fi
+  # 4. conventional layout
+  echo "$node_dir/configs/chains"
+}
+
 for n in "${nodes[@]}"; do
-  dir="$n/configs/chains/$BC"
+  ccd="$(detect_chain_config_dir "$n")"
+  dir="$ccd/$BC"
   mkdir -p "$dir"
   cat > "$dir/config.json" <<'JSON'
 {
@@ -90,3 +118,26 @@ cat <<VERIFY
     # and a contract deployment should no longer hit the fee cap:
     npx hardhat run scripts/deploy.js --network csbRemote
 VERIFY
+
+# --- did it actually take? ---------------------------------------------------
+# Both settings live in the SAME file, so txpool_status is a canary for the whole
+# config: if it answers, the node read this file and rpc-tx-fee-cap is live too.
+# If it still errors, the config was written somewhere the node does not read.
+RPC="${CSB_RPC_URL:-http://127.0.0.1:9650/ext/bc/$BC/rpc}"
+echo
+echo "Checking whether the node picked the config up…"
+resp=$(curl -s --max-time 10 -X POST -H 'content-type:application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"txpool_status","params":[]}' "$RPC" 2>/dev/null || true)
+if printf '%s' "$resp" | grep -q '"result"'; then
+  echo "  ✓ txpool API is live — the node read this config, so the fee cap is lifted too."
+elif printf '%s' "$resp" | grep -q 'method not found\|does not exist'; then
+  echo "  ✗ txpool API still absent — the node did NOT read the file just written."
+  echo "    Find where it actually looks:"
+  echo "      ps -eo args= | grep -o -- '--chain-config-dir[= ][^ ]*'"
+  echo "    then re-run with CSB_CLUSTER_ROOT / the correct path, or use the"
+  echo "    no-restart workaround in ops/csb-redeploy.sh."
+elif [ -z "$resp" ]; then
+  echo "  ? no response from $RPC — is the cluster finished restarting?"
+else
+  echo "  ? unexpected response: $(printf '%s' "$resp" | head -c 200)"
+fi

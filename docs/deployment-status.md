@@ -143,11 +143,31 @@ ordinary contract deployment (~2.1M gas) costs slightly *more* than the cap and
 fails with `tx fee exceeds the configured cap` — a trivial amount blocked by a
 safety limit meant for a different scale of token.
 
+It is close-run rather than wildly over: a 2,107,273-gas deployment costs
+**100.35 tRIEL** against a 100 tRIEL cap — 0.35% too much.
+
+**Durable fix** (needs a restart):
+
 ```bash
 bash ops/csb-chain-config.sh --restart
 ```
 
 That writes the chain config to all three validators and restarts the cluster.
+It auto-detects where the node actually reads chain config from, and afterwards
+checks `txpool_status` as a canary: both settings live in the same file, so if
+the txpool API answers, the fee cap was lifted too.
+
+**No-restart alternative** — drop the gas price for the duration of the
+deployment and put it back afterwards:
+
+```bash
+bash ops/csb-redeploy.sh
+```
+
+Nothing about the fee *policy* changes; only what the chain charges for those
+few minutes, restored on exit even if a step fails. Order is handled inside the
+script because it is easy to get wrong — the floor has to come down before the
+submitted gas price does, and go back up after it.
 It sets `rpc-tx-fee-cap: 0` and, in the same restart, adds `internal-txpool` so
 the watchdog can finally distinguish an idle chain from a wedged one.
 
