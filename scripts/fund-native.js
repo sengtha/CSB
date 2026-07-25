@@ -57,20 +57,16 @@ async function main() {
   console.log(`Nonce: mined=${minedNonce} pending=${pendingNonce}` +
     (pendingNonce > minedNonce ? `  → ${pendingNonce - minedNonce} stuck tx(s) will be replaced` : ""));
 
-  // Liveness: is the chain actually producing blocks? If not, no fee helps —
-  // the validator needs restarting (see docs/deployment-status.md).
+  // Report the height, but do NOT read a flat height as a stall: Subnet-EVM only
+  // builds a block when there is something to include, so an idle chain sits
+  // still by design and almost every run of this script starts on an idle chain.
+  // Warning here produced a scary false alarm on a perfectly healthy chain. The
+  // signal that actually means something is whether the transactions submitted
+  // below get mined — handled at the end.
   const n1 = await provider.getBlockNumber();
   await sleep(4000);
   const n2 = await provider.getBlockNumber();
-  console.log(`Block height: ${n1} → ${n2} (${n2 > n1 ? "advancing" : "NOT advancing"})`);
-  if (n2 === n1) {
-    console.log("\n⚠ The chain is not producing new blocks. No transaction can mine until the");
-    console.log("  validator is producing again. On the VM:");
-    console.log("    avalanche node local list        # find the node name");
-    console.log("    avalanche node local start <name>");
-    console.log("  Then re-run this script.");
-    // We still submit below in case block production resumes shortly, but warn first.
-  }
+  console.log(`Block height: ${n1}${n2 > n1 ? ` → ${n2}` : " (idle — normal when nothing is pending)"}`);
 
   // Gas price comes from the csbRemote network config (fixed legacy gasPrice),
   // which is high enough to mine reliably and to replace an earlier stuck attempt.
@@ -137,8 +133,19 @@ async function main() {
   if (allMined) {
     console.log("\nDone. Pilot accounts can now pay gas; reload the wallet and Send payment will work.");
   } else {
-    console.log("\nSome txs did not confirm. If block height was NOT advancing above, restart the");
-    console.log("validator node, then re-run. Otherwise re-run to bump the fee and replace them.");
+    // Now a flat height DOES mean something: transactions were pending and the
+    // chain still produced nothing.
+    const nEnd = await provider.getBlockNumber();
+    console.log(`\nSome txs did not confirm (height ${n2} → ${nEnd}).`);
+    if (nEnd === n2) {
+      console.log("Height did not move while transactions were waiting — that is a real stall.");
+      console.log("  avalanche node local list");
+      console.log("  avalanche node local stop csb-local-node-fuji && avalanche node local start csb-local-node-fuji");
+      console.log("See 'Block height frozen' in docs/deployment-status.md.");
+    } else {
+      console.log("The chain is producing blocks, so these were most likely under-priced.");
+      console.log("Check CSB_GAS_PRICE_WEI is above the fee floor, then re-run to replace them.");
+    }
     process.exitCode = 1;
   }
 }
