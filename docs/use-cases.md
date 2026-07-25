@@ -8,7 +8,7 @@
 > promises or predicts adoption. Everything runs on a test network with
 > valueless tokens.
 
-Two worked examples of things a permissioned chain with a national identity
+Three worked examples of things a permissioned chain with a national identity
 layer can do that a public chain structurally cannot.
 
 ---
@@ -158,12 +158,87 @@ pretending otherwise would be the dishonest part.
 
 ---
 
-## Running both
+## 3. Delivery escrow — one payment, many payees
+
+**The problem.** A customer pays 20,000 riel for a food delivery. That single
+payment is really three: the restaurant, the rider, and the platform's
+commission. Today the platform collects everything and pays the others later, so
+the rider is an unsecured creditor of the platform, and the customer has no idea
+what share reaches whom.
+
+**What CSB does instead.** The split is declared *when the order is created*,
+before the buyer parts with any money, and settles atomically on release.
+
+| | |
+|---|---|
+| Contracts | `PaymentEscrow` |
+| Demo | `npx hardhat run scripts/demo-escrow.js --network csbRemote` |
+| Tests | `test/escrow.test.js` (17) |
+
+```
+Restaurant              15,000.00 KHRt
+Delivery rider           3,500.00 KHRt
+Platform commission      1,500.00 KHRt
+                        ──────────
+Customer pays           20,000.00 KHRt      ← agreed before paying
+```
+
+Two consequences worth naming:
+
+- **The buyer sees the rider's fare before paying.** That is a different
+  relationship from "the platform will sort it out afterwards".
+- **Nobody is trusted to forward anything.** Either every payee is paid in the
+  same transaction or none is, so a platform that fails mid-delivery cannot take
+  the rider's fare with it. The money is held by the contract, not the platform.
+
+### Who can end an order
+
+| Route | Who | When |
+|---|---|---|
+| `confirmAndRelease` | the buyer | the job is done |
+| `releaseByArbiter` | arbiter, with a recorded reason | delivered, buyer unresponsive |
+| `refundByArbiter` | arbiter, with a recorded reason | order failed, or a payee can no longer be paid |
+| `reclaimAfterDeadline` | the buyer | the deadline passed and nothing happened |
+
+A dispute — raised by the buyer *or any payee* — blocks the deadline reclaim, so
+a buyer cannot receive the goods, stall, and take the money back. It leaves both
+of the arbiter's routes open.
+
+### Compliance is not suspended inside the escrow
+
+This is the part that only works on a chain like this one. If a payee is frozen
+by an enforcement order, or their KYC is revoked, **the entire release reverts** —
+not just their share:
+
+```
+─── And if a payee is frozen by an enforcement order ───
+  ✓ the whole settlement is refused — not even the restaurant is paid.
+  ✓ arbiter refunded the customer
+```
+
+That ordering is deliberate. Paying the other two and stranding the rider's share
+would leave money in escrow with no owner and an order that is neither settled
+nor refundable. An enforcement freeze should outrank a commercial obligation
+rather than be routed around, and the arbiter's remaining move is to return the
+buyer's money.
+
+### Known interaction, stated rather than hidden
+
+The escrow must be a **council-vetted system contract** to custody KHRt without a
+personal KYC attestation — the same treatment the bridge adapter and collateral
+vault get. System contracts are exempt from the public-good transfer levy, so an
+escrowed payment does not contribute the 1 KHRt levy that a direct payment would.
+The gas fee still funds the public good on every escrow transaction, but the levy
+does not apply. Whether that is correct is a policy question — it is noted here
+because it is the kind of thing that should be a decision rather than a surprise.
+
+## Running them
 
 ```bash
 cd /opt/csb && source ops/csb-env.sh
 npx hardhat run scripts/demo-idpoor.js --network csbRemote
 npx hardhat run scripts/demo-land.js   --network csbRemote
+npx hardhat run scripts/demo-escrow.js --network csbRemote
 ```
 
 Each deploys its contracts on first run, records them in `app/deployments.json`,

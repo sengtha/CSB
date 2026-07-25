@@ -47,9 +47,9 @@
   <main>
     <div class="card">
       <p class="lead">
-        Two worked examples of things a chain with a <strong>national identity layer</strong>
-        can do that a public chain structurally cannot. Both run on this testnet;
-        both are demonstrations, not products.
+        Three worked examples of things a chain with a <strong>national identity layer</strong>
+        can do that a public chain structurally cannot. All three run on this testnet,
+        and all three are demonstrations rather than products.
       </p>
     </div>
 
@@ -139,6 +139,61 @@
       </p>
     </div>
 
+    <!-- ================= Escrow ================= -->
+    <div class="card">
+      <h2>3 · Delivery escrow — one payment, many payees</h2>
+      <p class="lead">
+        A customer pays 20,000 riel for a food delivery. That single payment is
+        really three: the restaurant, the rider, and the platform's commission.
+        Today the platform collects everything and pays the others later — so the
+        rider is an unsecured creditor of the platform, and the customer has no
+        idea what share reaches whom.
+      </p>
+      <p class="lead" style="margin-top:10px">
+        <strong>CSB agrees the split before the customer pays</strong>, holds the money in
+        the contract rather than with the platform, and settles everyone in one
+        transaction.
+      </p>
+
+      <pre class="cmd"><code>Restaurant              15,000.00 KHRt
+Delivery rider           3,500.00 KHRt
+Platform commission      1,500.00 KHRt
+                        ──────────
+Customer pays           20,000.00 KHRt   ← agreed before paying</code></pre>
+
+      <div class="flow" style="margin-top:14px">
+        <div class="step"><div class="n">1</div><div class="t">The order and its split are recorded. <strong>Nothing has moved yet</strong> — the customer can see the rider's fare before deciding.</div></div>
+        <div class="step"><div class="n">2</div><div class="t">The customer pays <strong>into escrow</strong>. The platform never holds the money.</div></div>
+        <div class="step"><div class="n">3</div><div class="t">Delivered. The customer confirms — and <strong>all three are paid in the same transaction</strong>.</div></div>
+      </div>
+
+      <div class="out yes">✓ <strong>Nobody is trusted to forward anything.</strong> Either every payee is paid or none is, so a platform that fails mid-delivery cannot take the rider's fare with it.</div>
+      <div class="out yes">✓ <strong>Stuck orders have a way out.</strong> An arbiter can settle or refund with a recorded reason, and the buyer can reclaim after the deadline if nothing happened.</div>
+      <div class="out no">✗ <strong>A frozen payee stops the whole settlement</strong> — not just their share. Compliance is not suspended inside an escrow.</div>
+
+      <p class="note" style="margin-top:12px">
+        That last one is deliberate. Paying the other two and stranding the rider's
+        share would leave money in escrow with no owner and an order that is
+        neither settled nor refundable. An enforcement freeze outranks the
+        commercial obligation; the arbiter's remaining move is to refund the buyer.
+      </p>
+
+      <table class="kv" id="escrow-contracts"></table>
+
+      <div class="caveat">
+        <strong>Known interaction, worth stating.</strong> The escrow must be a
+        council-vetted system contract to hold tokenized riel without a personal
+        KYC attestation. System contracts are exempt from the public-good transfer
+        levy, so an escrowed payment does not contribute the 1 KHRt levy a direct
+        payment would — the gas fee still funds the public good, but the levy does
+        not apply. Whether that is right is a policy question; it is written down
+        so it stays a decision rather than a surprise.
+      </div>
+      <p class="note" style="margin-top:10px">
+        <a href="https://github.com/sengtha/CSB/blob/main/docs/use-cases.md#3-delivery-escrow--one-payment-many-payees" target="_blank" rel="noopener">Full write-up ↗</a>
+      </p>
+    </div>
+
     <!-- ================= Build ================= -->
     <div class="card">
       <h2>Build on this — deploy your own contract</h2>
@@ -198,6 +253,9 @@ const GROUPS = {
   "land-contracts": [
     ["LandTitleRegistry", "The cadastre index — the only door to tokenizing a title"],
     ["LandCollateralVault", "An unrelated lender taking titles as collateral"],
+  ],
+  "escrow-contracts": [
+    ["PaymentEscrow", "Holds the buyer's payment and settles the split atomically"],
   ],
 };
 

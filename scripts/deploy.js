@@ -63,6 +63,11 @@ async function main() {
   await rielPay.waitForDeployment();
   console.log(`RielPay:             ${rielPay.target}  (levy off; publicFund ${publicFund})`);
 
+  // Escrow for multi-party settlement (delivery orders and the like).
+  const escrow = await hre.ethers.deployContract("PaymentEscrow", [council, council]);
+  await escrow.waitForDeployment();
+  console.log(`PaymentEscrow:       ${escrow.target}  (arbiter ${council})`);
+
   // Grant the enforcement authority its token-level power and wire the adapter
   // when the deployer holds the admin roles (devnet convenience).
   if (council === deployer.address) {
@@ -72,6 +77,9 @@ async function main() {
     // RielConverter: let it custody KHRt without KYC, and approve KHRt for conversion.
     await (await khr.setSystemContract(converter.target, true)).wait();
     await (await converter.setApproved(khr.target, true)).wait();
+    // The escrow custodies KHRt on behalf of orders and has no personal KYC
+    // attestation, so it needs the same vetting the adapter and converter get.
+    await (await khr.setSystemContract(escrow.target, true)).wait();
     // Allow-list the converter on the Native Minter so it can mint tRIEL against
     // locked collateral. No-op on a local node without the precompile.
     try {
@@ -99,6 +107,7 @@ async function main() {
       MockBridgeAdapter: adapter.target,
       RielConverter: converter.target,
       RielPay: rielPay.target,
+      PaymentEscrow: escrow.target,
     },
     roles: { council, idAuthority, enforcer, issuer },
   };
