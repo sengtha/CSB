@@ -169,3 +169,25 @@ npx hardhat run scripts/demo-land.js   --network csbRemote
 Each deploys its contracts on first run, records them in `app/deployments.json`,
 creates its cast of KYC'd demo accounts, and funds them with gas. Re-running is
 safe — accounts and contracts are reused and topped up.
+
+### If a demo reverts with no reason
+
+```bash
+npx hardhat run scripts/check-demo-ready.js --network csbRemote
+```
+
+CSB is permissioned *below* the contract layer, so Subnet-EVM's allow-list
+precompiles reject a transaction before any contract runs — the provider reports
+a bare `execution reverted` with no data to decode. Two cases account for almost
+all of it:
+
+- **A generated demo account is not on the `txAllowList`.** KYC decides who may
+  hold KHRt; the txAllowList decides who may send a transaction at all. Both are
+  required, and the second failing looks nothing like a permissions problem.
+- **`LandTitleRegistry` is not on the `contractDeployerAllowList`.** It deploys a
+  token per parcel, and that create is performed *by the registry's own address*,
+  so the factory itself needs deploy rights. This one reverts with no reason
+  string whatsoever.
+
+Both demo scripts now enable these on every run, so re-running the demo is
+usually the fix. The preflight above names which one is missing.

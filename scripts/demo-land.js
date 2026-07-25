@@ -1,6 +1,7 @@
 const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
+const { enableTransactor, enableDeployer, explain } = require("./lib/csb-precompiles");
 
 /**
  * Land title — tokenize a parcel (ERC-3643), sell a share, borrow against it.
@@ -49,6 +50,13 @@ async function main() {
     d.contracts.LandTitleRegistry = registry.target;
     console.log(`  LandTitleRegistry ${registry.target}`);
   }
+  // The registry deploys a LandTitleToken per parcel. On a chain with
+  // contractDeployerAllowList that create is performed BY THE REGISTRY, so the
+  // registry's own address must be allow-listed — otherwise tokenizeParcel
+  // reverts with no reason string at all, which is unreadable from the error.
+  // Run this on the reuse path too: a registry deployed before this check
+  // existed is still missing the permission.
+  await enableDeployer(ethers, deployer, registry.target, "LandTitleRegistry");
   if (d.contracts.LandCollateralVault) {
     vault = await ethers.getContractAt("LandCollateralVault", d.contracts.LandCollateralVault);
     console.log(`Using existing LandCollateralVault ${vault.target}`);
@@ -79,6 +87,7 @@ async function main() {
     // spending gas since last time, and an empty one fails in a way that looks
     // like the policy rejecting the payment rather than a flat tank.
     await fundGas(ethers, deployer, cast[key].address);
+    await enableTransactor(ethers, deployer, cast[key].address);
     return cast[key];
   };
   console.log("\nCast (KYC'd on chain):");
@@ -185,4 +194,7 @@ function fmt(units) {
   return (Number(units) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-main().catch((e) => { console.error(e); process.exitCode = 1; });
+main().catch((e) => {
+  console.error("\nFailed:", explain(e));
+  process.exitCode = 1;
+});

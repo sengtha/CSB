@@ -1,6 +1,7 @@
 const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
+const { enableTransactor, enableDeployer, explain } = require("./lib/csb-precompiles");
 
 /**
  * ID Poor — programmable money you can watch work.
@@ -75,6 +76,10 @@ async function main() {
     // spending gas since last time, and an empty one fails in a way that looks
     // like the policy rejecting the payment rather than a flat tank.
     await fundGas(ethers, deployer, cast[key].address);
+    // KYC decides who may hold KHRt; the chain's txAllowList decides who may
+    // send a transaction at all. Both are needed, and only the second produces
+    // an error that looks nothing like a permissions problem.
+    await enableTransactor(ethers, deployer, cast[key].address);
     return cast[key];
   };
   console.log("\nCast (KYC'd on chain):");
@@ -171,4 +176,7 @@ async function show(khr, addr, label) {
   console.log(`  ${label}: ${fmt(total)} KHRt total = ${fmt(restricted)} earmarked + ${fmt(free)} own`);
 }
 
-main().catch((e) => { console.error(e); process.exitCode = 1; });
+main().catch((e) => {
+  console.error("\nFailed:", explain(e));
+  process.exitCode = 1;
+});
