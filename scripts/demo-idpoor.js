@@ -33,6 +33,27 @@ async function main() {
 
   console.log(`Deployer / authorities: ${deployer.address}\n`);
 
+  // A chain deployed before the assigned-spend-target upgrade is running a KHRt
+  // without these functions. Calling one is a call to a selector the contract
+  // does not have, which reverts with NO reason string — indistinguishable from
+  // a permissions failure in the error. Check once, up front, and say plainly
+  // what is wrong instead of letting it surface as "execution reverted".
+  try {
+    await khr.spendPolicy();
+  } catch (_) {
+    console.error(`The KHRt at ${khr.target} predates the assigned-spend-target upgrade —`);
+    console.error(`it has no spendPolicy()/issueRestricted(), so this demo cannot run against it.\n`);
+    console.error(`Redeploy the contract suite to pick up the new code:`);
+    console.error(`    npx hardhat run scripts/deploy.js --network csbRemote`);
+    console.error(`    npx hardhat run scripts/seed-accounts.js --network csbRemote`);
+    console.error(`    npx hardhat run scripts/enable-charity-levy.js --network csbRemote\n`);
+    console.error(`Note this replaces KHRt: token balances and the levy total start from zero.`);
+    console.error(`Gas-fee routing is chain-level (RewardManager), so it is unaffected, and the`);
+    console.error(`charity address keeps the tRIEL it has already collected.`);
+    process.exitCode = 1;
+    return;
+  }
+
   // --- 1. contracts -------------------------------------------------------
   let merchants, programs;
   if (d.contracts.MerchantRegistry && d.contracts.SocialProgramRegistry) {
