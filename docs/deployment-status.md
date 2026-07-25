@@ -149,13 +149,29 @@ It is close-run rather than wildly over: a 2,107,273-gas deployment costs
 **Durable fix** (needs a restart):
 
 ```bash
-bash ops/csb-chain-config.sh --restart
+node ops/csb-patch-chain-config.js            # dry run — shows the diff
+node ops/csb-patch-chain-config.js --write    # apply (backs up config.json.orig)
+export PATH=$PATH:$HOME/bin
+avalanche node local stop csb-local-node-fuji && avalanche node local start csb-local-node-fuji
 ```
 
-That writes the chain config to all three validators and restarts the cluster.
-It auto-detects where the node actually reads chain config from, and afterwards
-checks `txpool_status` as a canary: both settings live in the same file, so if
-the txpool API answers, the fee cap was lifted too.
+**avalanche-cli does not read `configs/chains/<id>/config.json`.** It passes the
+whole chain config inline, base64-encoded *twice*, in each node's own
+`config.json` under `flags.chain-config-content`:
+
+```
+flags["chain-config-content"]  = base64 of
+  { "<blockchainID>": { "Config": base64 of
+      { "log-level": …, "eth-apis": [ … ] } } }
+```
+
+A file written into `configs/chains/` is read by nobody and behaves exactly like
+a setting that has no effect — which is what made this take several rounds to
+find. `ops/csb-chain-config.sh` writes those (ignored) files and is kept only for
+clusters that do use a chain-config directory; on this one, use the patcher.
+
+Verify afterwards with `txpool_status`: both settings live in the same blob, so
+if the txpool API answers, the fee cap was lifted too.
 
 **No-restart alternative** — drop the gas price for the duration of the
 deployment and put it back afterwards:
