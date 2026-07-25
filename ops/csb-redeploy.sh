@@ -27,9 +27,18 @@ cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source ops/csb-env.sh
 
 HIGH_PRICE="${CSB_GAS_PRICE_WEI:-55000000000000}"   # ~55,000 gwei, the normal setting
-CHEAP_TRIEL="${CSB_CHEAP_TRIEL:-0.05}"              # temporary: 0.05 riel per transfer
-CHEAP_PRICE="${CSB_CHEAP_PRICE_WEI:-3000000000000}" # ~3,000 gwei, above the cheap floor
 NORMAL_TRIEL="${CSB_GAS_TRIEL_NORMAL:-1}"           # the policy to restore
+
+# Only a MODEST reduction. Lowering minBaseFee moves the floor, but the fee
+# actually charged decays toward it a few percent per block — and blocks are only
+# produced when transactions arrive. Ask for a 95% cut and the base fee needs
+# ~100 blocks to get there while nothing is producing them, so every deployment
+# hangs under-priced forever. A 10% cut needs a handful of blocks, which the
+# settle step below produces deliberately.
+CHEAP_TRIEL="${CSB_CHEAP_TRIEL:-0.9}"               # 0.9 riel → floor ~42,857 gwei
+CHEAP_PRICE="${CSB_CHEAP_PRICE_WEI:-44000000000000}" # 44,000 gwei: above that floor,
+                                                     # and 2.1M gas = 92.7 tRIEL < 100 cap
+SETTLE_GWEI="${CSB_SETTLE_GWEI:-44000}"
 
 restore() {
   echo
@@ -49,6 +58,13 @@ trap restore EXIT
 
 echo "─── Temporarily lowering gas so deployments fit under the node's fee cap ───"
 CSB_GAS_TRIEL="$CHEAP_TRIEL" npx hardhat run scripts/set-gas-price.js --network csbRemote
+
+# Lowering the floor is not enough: the CURRENT base fee has to come down too,
+# and it only decays as blocks are produced. Make some.
+echo
+echo "─── Letting the current base fee decay to the new floor ───"
+CSB_TARGET_GWEI="$SETTLE_GWEI" npx hardhat run scripts/settle-base-fee.js --network csbRemote
+
 export CSB_GAS_PRICE_WEI="$CHEAP_PRICE"
 
 echo
