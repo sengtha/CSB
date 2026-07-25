@@ -25,6 +25,9 @@ contracts/
                                      caps, confiscation, system-contract allowlist
   token/RielConverter.sol            1:1 convert approved tokenized riel <-> native
                                      tRIEL (lock/mint, burn/release); council-gated
+  payments/RielPay.sol               Native-tRIEL payments (usable before KHRt);
+                                     optional off-by-default public-good levy to a
+                                     council-set public fund, with exemptions
   egress/EgressGateway.sol           The sovereign boundary: token allowlist,
                                      min tiers, daily caps, circuit breaker
   egress/IBridgeAdapter.sol          Transport abstraction (policy/transport split)

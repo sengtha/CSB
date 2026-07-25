@@ -56,6 +56,13 @@ async function main() {
   await converter.waitForDeployment();
   console.log(`RielConverter:       ${converter.target}`);
 
+  // Native-tRIEL payments with an OPTIONAL public-good levy (off by default), so
+  // CSB is usable before any tokenized-riel (KHRt) is licensed.
+  const publicFund = process.env.PUBLIC_FUND_ADDR ?? council;
+  const rielPay = await hre.ethers.deployContract("RielPay", [council, publicFund]);
+  await rielPay.waitForDeployment();
+  console.log(`RielPay:             ${rielPay.target}  (levy off; publicFund ${publicFund})`);
+
   // Grant the enforcement authority its token-level power and wire the adapter
   // when the deployer holds the admin roles (devnet convenience).
   if (council === deployer.address) {
@@ -91,6 +98,7 @@ async function main() {
       EgressGateway: gateway.target,
       MockBridgeAdapter: adapter.target,
       RielConverter: converter.target,
+      RielPay: rielPay.target,
     },
     roles: { council, idAuthority, enforcer, issuer },
   };

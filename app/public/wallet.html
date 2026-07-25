@@ -59,6 +59,22 @@
       </div>
     </div>
 
+    <div class="card">
+      <h2>Pay in tRIEL (native riel)</h2>
+      <p class="small" style="margin-bottom:8px">Usable even before KHRt is licensed — tRIEL <i>is</i> the riel. Zero fee unless the council enables a public-good levy.</p>
+      <div class="grid2">
+        <div>
+          <label>Recipient</label>
+          <input id="tr-to" placeholder="0x…" />
+        </div>
+        <div>
+          <label>Amount (tRIEL)</label>
+          <input id="tr-amount" placeholder="e.g. 1,000" />
+        </div>
+      </div>
+      <button id="tr-send">Send tRIEL</button>
+    </div>
+
     <div id="msg" class="banner"></div>
 
     <div class="card">
@@ -75,6 +91,7 @@ let wallet = null;
 async function refreshAccount() {
   if (!wallet) return;
   const s = await kycSummary(wallet.address);
+  const nativeBal = await getProvider().getBalance(wallet.address);
   const badge =
     s.frozen ? '<span class="badge bad">FROZEN</span>' :
     s.status === "active" ? '<span class="badge ok">KYC ACTIVE</span>' :
@@ -82,7 +99,7 @@ async function refreshAccount() {
   document.getElementById("acct-info").innerHTML = `
     <b>Address</b> <span class="mono">${wallet.address}</span><br/>
     <b>KYC</b> ${badge} &nbsp; <span class="badge info">tier ${TIER_NAMES[s.tier]}</span><br/>
-    <b>Balance</b> ${fmtKHR(s.balance)} KHRt<br/>
+    <b>Balance</b> ${fmtKHR(s.balance)} KHRt &nbsp;·&nbsp; ${Number(ethers.formatEther(nativeBal)).toLocaleString("en-US")} tRIEL<br/>
     <b>Recovery</b> <span class="small">Identity Authority-backed (smart-account rotation) — lost key ≠ lost assets</span>`;
   await refreshActivity();
 }
@@ -157,6 +174,24 @@ async function run(fn) {
     const tx = await khr.transfer(to, amount, await feeOverrides());
     await tx.wait();
     return `Paid ${fmtKHR(amount)} KHRt to ${short(to)} — fee: 0. Tx ${shortHash(tx.hash)}`;
+  });
+
+  // Native tRIEL payment — works with or without KHRt. Routes through RielPay
+  // (so an optional public-good levy applies) when it's deployed, else a plain
+  // native transfer.
+  document.getElementById("tr-send").onclick = () => run(async () => {
+    const to = document.getElementById("tr-to").value.trim();
+    if (!ethers.isAddress(to)) throw new Error("Enter a valid recipient address.");
+    const value = ethers.parseEther(String(document.getElementById("tr-amount").value).replaceAll(",", ""));
+    if (value <= 0n) throw new Error("Enter an amount greater than zero.");
+    const { rielPay } = await getContracts(wallet);
+    const overrides = await feeOverrides();
+    const tx = rielPay
+      ? await rielPay.pay(to, ethers.ZeroHash, { value, ...overrides })
+      : await wallet.sendTransaction({ to, value, ...overrides });
+    await tx.wait();
+    const amt = Number(ethers.formatEther(value)).toLocaleString("en-US");
+    return `Sent ${amt} tRIEL to ${short(to)}${rielPay ? "" : " (direct)"}. Tx ${shortHash(tx.hash)}`;
   });
 
   document.getElementById("eg-send").onclick = () => run(async () => {

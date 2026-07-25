@@ -77,6 +77,17 @@ const ABI = {
     "error DailyCapExceeded(address token, uint256 cap, uint256 attempted)",
     "error EnforcedPause()",
   ],
+  RielPay: [
+    "function pay(address to, bytes32 memo) payable",
+    "function quoteLevy(address from, address to, uint256 amount) view returns (uint256)",
+    "function levyBps() view returns (uint16)",
+    "function publicFund() view returns (address)",
+    "function totalRaised() view returns (uint256)",
+    "event Paid(address indexed from, address indexed to, uint256 net, uint256 levy, bytes32 memo)",
+    "error ZeroAddress()",
+    "error ZeroAmount()",
+    "error EnforcedPause()",
+  ],
   Common: [
     "error AccessControlUnauthorizedAccount(address account, bytes32 neededRole)",
     "error OwnableUnauthorizedAccount(address account)",
@@ -129,6 +140,8 @@ async function getContracts(runner) {
     enforcement: new ethers.Contract(cfg.contracts.EnforcementRegistry, ABI.EnforcementRegistry, r),
     khr: new ethers.Contract(cfg.contracts.KHRStablecoin, ABI.KHRStablecoin, r),
     gateway: new ethers.Contract(cfg.contracts.EgressGateway, ABI.EgressGateway, r),
+    // RielPay is optional — only present on chains deployed with it.
+    rielPay: cfg.contracts.RielPay ? new ethers.Contract(cfg.contracts.RielPay, ABI.RielPay, r) : null,
   };
 }
 
