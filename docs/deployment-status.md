@@ -128,11 +128,39 @@ Browser access: your Elestio host over HTTPS (passcode-gated). **Easiest login: 
 
 ## Next steps (testnet checklist continues)
 
-1. Watch that the 3-validator chain keeps producing blocks over days, not minutes — the earlier chains wedged only after sustained use. Add a watchdog that restarts the cluster if height stops advancing.
+1. Watch that the 3-validator chain keeps producing blocks over days, not minutes — the earlier chains wedged only after sustained use. Install the watchdog (below) so a stall is caught automatically instead of during a demo.
 2. Decide the gas policy: leave gas near-free, or charge a small fee and route it to the public fund with the RewardManager precompile (`setRewardAddress`).
 3. Real ICTT egress to Fuji C-Chain (`docs/fuji-ictt.md`) — first token across the governed gateway onto a public chain.
 4. Remaining rehearsals: freeze/confiscate, validator remove, fee raise/lower (partly done), backup restore, coordinated upgrade.
 5. Invite an external validator operator using `docs/validator-manual.md` (the Docker validator in `docker-compose.validator.yml`, ports 9652/9653, is the template for an off-VM operator).
+
+## Watchdog
+
+`ops/csb-watchdog.sh` probes chain liveness every 5 minutes and restarts the
+validator cluster when it is genuinely stuck. It deliberately does **not** treat
+a flat block height as a stall on its own — Subnet-EVM only builds a block when
+there is something to include, so an idle chain legitimately sits still. It acts
+only when the height is flat *and* either transactions are waiting in the mempool
+or the node reports unhealthy.
+
+```bash
+# --- on the VM, as root ---
+cd /opt/csb && git pull
+install -m 755 ops/csb-watchdog.sh /usr/local/bin/csb-watchdog
+cp ops/csb-watchdog.service ops/csb-watchdog.timer /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now csb-watchdog.timer
+
+# dry run first — alerts, never touches the cluster
+CSB_WATCHDOG_RESTART=0 /usr/local/bin/csb-watchdog
+
+systemctl list-timers csb-watchdog.timer
+journalctl -u csb-watchdog -n 50
+```
+
+If the L1 is ever redeployed, update `CSB_RPC_URL` in
+`/etc/systemd/system/csb-watchdog.service`. The mempool signal needs the txpool
+API — without `internal-txpool` in the node's `eth-apis`, the watchdog says so
+in its log and falls back to treating a flat height as idle.
 
 ## Backups (keep off the VM)
 

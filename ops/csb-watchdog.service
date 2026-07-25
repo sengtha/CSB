@@ -1,0 +1,14 @@
+[Unit]
+Description=CSB chain liveness watchdog (one-shot, driven by csb-watchdog.timer)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Environment=HOME=/root
+# Point at the current chain. Update CSB_RPC_URL if the L1 is redeployed.
+Environment=CSB_RPC_URL=http://127.0.0.1:9650/ext/bc/299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW/rpc
+Environment=CSB_CLUSTER=csb-local-node-fuji
+# Set to 0 to log stalls without touching the cluster.
+Environment=CSB_WATCHDOG_RESTART=1
+ExecStart=/usr/local/bin/csb-watchdog
