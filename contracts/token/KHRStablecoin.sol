@@ -5,6 +5,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IdentityRegistry} from "../identity/IdentityRegistry.sol";
 import {EnforcementRegistry} from "../enforcement/EnforcementRegistry.sol";
+import {ISpendPolicy} from "../social/ISpendPolicy.sol";
 
 /**
  * @title KHRStablecoin
@@ -38,6 +39,10 @@ contract KHRStablecoin is ERC20, AccessControl {
     mapping(address => bool) public isSystemContract;
 
     bool private _inEnforcement;
+    /// @dev Administrative move (clawback): skips compliance checks and the levy
+    ///      the same way enforcement does, but is a separate flag so the two
+    ///      powers stay distinguishable in the code that reads them.
+    bool private _inAdminMove;
 
     /**
      * @notice Optional flat public-good levy taken on each ordinary transfer and
@@ -53,6 +58,30 @@ contract KHRStablecoin is ERC20, AccessControl {
     mapping(address => bool) public levyExempt;
     uint256 public totalLevied;
 
+    /**
+     * @notice Assigned spend target — the programmable-money half of KHRt.
+     *
+     * A social transfer is issued as an *earmarked* balance: the tokens are
+     * ordinary KHRt, but `restrictedBalance` of them may only move to a
+     * recipient the programme's policy permits (a licensed food merchant, say).
+     * Everything else the holder owns stays ordinary money they control.
+     *
+     * Two properties make this actually mean something:
+     *  - Restricted funds are spent FIRST on a permitted payment, so aid is used
+     *    for its purpose before the holder's own money is touched.
+     *  - A payment to a non-permitted recipient may only draw on the
+     *    unrestricted balance, and reverts if that is not enough. This is what
+     *    stops aid being handed to a moneylender.
+     *
+     * The earmark does NOT follow the money: the merchant receives ordinary
+     * KHRt. A restriction that propagated forever would make the token
+     * unbankable and quietly turn recipients into second-class holders.
+     */
+    ISpendPolicy public spendPolicy;
+    mapping(address => uint256) public restrictedBalance;
+    mapping(address => uint32) public restrictedProgram;
+    uint256 public totalRestricted;
+
     event Issued(address indexed to, uint256 amount);
     event Redeemed(address indexed from, uint256 amount);
     event Confiscated(address indexed from, address indexed to, uint256 amount, bytes32 indexed orderRef);
@@ -61,12 +90,23 @@ contract KHRStablecoin is ERC20, AccessControl {
     event TransferLevySet(uint256 levy, address indexed recipient);
     event LevyExemptSet(address indexed account, bool exempt);
     event LevyCollected(address indexed from, address indexed recipient, uint256 amount);
+    event SpendPolicySet(address indexed policy);
+    event RestrictedIssued(address indexed to, uint256 amount, uint32 indexed programId);
+    event RestrictedSpent(address indexed from, address indexed to, uint256 amount, uint32 indexed programId);
+    event RestrictedClawedBack(address indexed from, address indexed to, uint256 amount, bytes32 reason);
 
     error NotKycActive(address account);
     error AccountFrozen(address account);
     error TierCapExceeded(address account, uint8 tier, uint256 cap, uint256 amount);
     error OrderRefRequired();
     error LevyRecipientRequired();
+    /// @dev Raised when a payment would have to draw on earmarked funds to reach
+    ///      a recipient the programme does not permit. `available` is the
+    ///      holder's own (unrestricted) balance.
+    error SpendTargetNotPermitted(address from, address to, uint256 requested, uint256 available, uint32 programId);
+    error NoSpendPolicy();
+    error ProgramRequired();
+    error RestrictedBalanceExceeded(address account, uint256 restricted, uint256 amount);
 
     constructor(IdentityRegistry identity_, EnforcementRegistry enforcement_, address councilAdmin, address issuer)
         ERC20("Khmer Riel Token", "KHRt")
@@ -95,6 +135,77 @@ contract KHRStablecoin is ERC20, AccessControl {
         emit Redeemed(_msgSender(), amount);
     }
 
+    // ------------------------------------------------- assigned spend target
+
+    /**
+     * @notice Issue an earmarked social transfer: real KHRt that can only be
+     *         spent where programme `programId` permits.
+     * @dev A holder carries one programme at a time. Topping up the same
+     *      programme adds to the earmark; switching programmes while an earmark
+     *      is still unspent is refused rather than silently relabelling money
+     *      that was granted under different rules.
+     */
+    function issueRestricted(address to, uint256 amount, uint32 programId) external onlyRole(ISSUER_ROLE) {
+        if (programId == 0) revert ProgramRequired();
+        if (address(spendPolicy) == address(0)) revert NoSpendPolicy();
+        uint32 current = restrictedProgram[to];
+        if (current != 0 && current != programId && restrictedBalance[to] > 0) {
+            revert ProgramRequired();
+        }
+        _mint(to, amount);
+        restrictedBalance[to] += amount;
+        restrictedProgram[to] = programId;
+        totalRestricted += amount;
+        emit Issued(to, amount);
+        emit RestrictedIssued(to, amount, programId);
+    }
+
+    /**
+     * @notice Recover unspent earmarked funds — a programme closing, an
+     *         eligibility change, an expired grant.
+     * @dev Deliberately narrow: it can only reach the *earmarked* portion, never
+     *      money the holder earned or was given otherwise. The power to place a
+     *      restriction should not become a general power to take.
+     */
+    function clawbackRestricted(address from, uint256 amount, bytes32 reason) external onlyRole(ISSUER_ROLE) {
+        uint256 r = restrictedBalance[from];
+        if (amount > r) revert RestrictedBalanceExceeded(from, r, amount);
+        restrictedBalance[from] = r - amount;
+        totalRestricted -= amount;
+        _inAdminMove = true;
+        _update(from, _msgSender(), amount);
+        _inAdminMove = false;
+        emit RestrictedClawedBack(from, _msgSender(), amount, reason);
+    }
+
+    /// @notice The holder's own money — what they may spend anywhere.
+    function unrestrictedBalanceOf(address account) public view returns (uint256) {
+        uint256 bal = balanceOf(account);
+        uint256 r = restrictedBalance[account];
+        return bal > r ? bal - r : 0;
+    }
+
+    /// @notice Would this payment be allowed, and if not, why? Lets a wallet
+    ///         explain the refusal before the user signs anything.
+    function canSpend(address from, address to, uint256 amount)
+        external
+        view
+        returns (bool allowed, string memory reason)
+    {
+        uint256 r = restrictedBalance[from];
+        if (r == 0) return (amount <= balanceOf(from), amount <= balanceOf(from) ? "" : "insufficient balance");
+        uint32 programId = restrictedProgram[from];
+        if (address(spendPolicy) != address(0) && spendPolicy.isSpendAllowed(programId, from, to)) {
+            return (amount <= balanceOf(from), amount <= balanceOf(from) ? "" : "insufficient balance");
+        }
+        uint256 free = unrestrictedBalanceOf(from);
+        if (amount <= free) return (true, "");
+        string memory why = address(spendPolicy) == address(0)
+            ? "assistance funds cannot be spent while no programme policy is set"
+            : spendPolicy.declineReason(programId, from, to);
+        return (false, why);
+    }
+
     // ------------------------------------------------------------- enforcement
 
     /**
@@ -117,6 +228,15 @@ contract KHRStablecoin is ERC20, AccessControl {
     function setTierTransferCap(uint8 tier, uint256 cap) external onlyRole(DEFAULT_ADMIN_ROLE) {
         tierTransferCap[tier] = cap;
         emit TierTransferCapSet(tier, cap);
+    }
+
+    /// @notice Set (or clear) the policy that decides where earmarked social
+    ///         transfers may be spent. Clearing it leaves existing earmarks
+    ///         spendable only as the holder's own money would be — restrictive,
+    ///         not permissive, so removing the policy cannot unlock aid.
+    function setSpendPolicy(ISpendPolicy policy) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        spendPolicy = policy;
+        emit SpendPolicySet(address(policy));
     }
 
     function setSystemContract(address account, bool allowed) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -144,7 +264,7 @@ contract KHRStablecoin is ERC20, AccessControl {
     /// @dev The levy applied to a (from,to,value) transfer; 0 for exempt flows.
     function _levyOn(address from, address to, uint256 value) private view returns (uint256) {
         if (transferLevy == 0 || levyRecipient == address(0)) return 0;
-        if (_inEnforcement) return 0;                       // enforcement moves untaxed
+        if (_inEnforcement || _inAdminMove) return 0;       // enforcement / clawback untaxed
         if (from == address(0) || to == address(0)) return 0; // mint / burn untaxed
         if (from == levyRecipient || to == levyRecipient) return 0; // fund's own flows
         if (levyExempt[from] || levyExempt[to]) return 0;
@@ -156,7 +276,8 @@ contract KHRStablecoin is ERC20, AccessControl {
     // -------------------------------------------------------------- compliance
 
     function _update(address from, address to, uint256 value) internal override {
-        if (!_inEnforcement) {
+        bool bypass = _inEnforcement || _inAdminMove;
+        if (!bypass) {
             if (from != address(0)) {
                 _requireEligible(from);
                 if (!isSystemContract[from]) {
@@ -169,7 +290,10 @@ contract KHRStablecoin is ERC20, AccessControl {
                 _requireEligible(to);
             }
         }
-        uint256 levy = _levyOn(from, to, value);
+        bool spentRestricted = _applySpendTarget(from, to, value, bypass);
+        // Aid is not taxed: a levy on a food payment made with assistance money
+        // would take the fee out of the assistance itself.
+        uint256 levy = spentRestricted ? 0 : _levyOn(from, to, value);
         if (levy > 0) {
             super._update(from, levyRecipient, levy);   // public-good slice to the fund
             super._update(from, to, value - levy);      // remainder to the payee
@@ -178,6 +302,43 @@ contract KHRStablecoin is ERC20, AccessControl {
         } else {
             super._update(from, to, value);
         }
+    }
+
+    /**
+     * @dev Enforce the assigned spend target and consume the earmark.
+     * @return spentRestricted whether any earmarked funds were used.
+     *
+     * Called with the balances as they stand BEFORE the transfer, which is what
+     * makes `balanceOf(from) - restricted` the correct free balance here.
+     *
+     * Burns are exempt: `_burn` is only reachable through `redeem`, where the
+     * issuer burns its own balance, so there is no path for a holder to destroy
+     * an earmark to escape it.
+     */
+    function _applySpendTarget(address from, address to, uint256 value, bool bypass) private returns (bool) {
+        if (bypass || from == address(0) || to == address(0)) return false;
+        uint256 restricted = restrictedBalance[from];
+        if (restricted == 0) return false;
+
+        uint32 programId = restrictedProgram[from];
+        bool permitted = address(spendPolicy) != address(0) && spendPolicy.isSpendAllowed(programId, from, to);
+
+        if (!permitted) {
+            // Only the holder's own money may go here.
+            uint256 free = balanceOf(from) - restricted;
+            if (value > free) {
+                revert SpendTargetNotPermitted(from, to, value, free, programId);
+            }
+            return false;
+        }
+
+        // Permitted: spend the earmark first, so assistance is used for its
+        // purpose before the holder's own money is drawn down.
+        uint256 used = value > restricted ? restricted : value;
+        restrictedBalance[from] = restricted - used;
+        totalRestricted -= used;
+        emit RestrictedSpent(from, to, used, programId);
+        return true;
     }
 
     function _requireEligible(address account) private view {
