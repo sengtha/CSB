@@ -16,7 +16,8 @@ This is the running record of the CSB testnet: what exists, where, and how to op
 | Validator Manager | V2 PoA, owned by the deployer key (Governing-Council slot in production) |
 | Validators | **3** (avalanche-cli local cluster `csb-local-node-fuji`) — see Infrastructure. Multi-validator from birth so block production keeps going under load. |
 | Native token | **tRIEL** (1,000,000 allocated to the deployer at genesis) |
-| Gas | constant, non-zero price; pilot accounts are funded with tRIEL at seed time so they can pay it. Set gas free later via the feeManager precompile (`minBaseFee` → 0) if the free-gas model is wanted. Gas fees are **not burned** — RewardManager is enabled at genesis so they can be routed to a public-good address. |
+| Gas | **~1 tRIEL (1 riel) per ordinary payment** — fee floor ≈ 47,619 gwei, so a 21,000-gas transfer costs 1 tRIEL and heavier transactions cost proportionally more. Set with `scripts/set-gas-price.js`. |
+| Gas fees go to | **The public-good fund, not burned** — RewardManager (`0x…04`) routes every transaction's fee to the charity address. Set with `scripts/set-reward-address.js`. |
 | Version pair | AvalancheGo **v1.14.1** / Subnet-EVM **v0.8.0** (both plugin protocol 44 — the only released working pair; see `docs/create-testnet.md`) |
 | Local RPC | `http://127.0.0.1:9650/ext/bc/299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW/rpc` |
 
@@ -36,7 +37,7 @@ This is the running record of the CSB testnet: what exists, where, and how to op
 |---|---|---|
 | Transaction Allow List | `0x0200000000000000000000000000000000000002` | Chain-level KYC gate — only enabled addresses transact |
 | Contract Deployer Allow List | `0x0200000000000000000000000000000000000000` | Only vetted addresses deploy contracts |
-| Fee Manager | `0x0200000000000000000000000000000000000003` | Live fee config; used to set gas free |
+| Fee Manager | `0x0200000000000000000000000000000000000003` | Live fee config; sets the ~1 tRIEL-per-payment price (`scripts/set-gas-price.js`) |
 | Native Minter | `0x0200000000000000000000000000000000000001` | Administrative tRIEL minting (also backs RielConverter wrap/unwrap) |
 | Reward Manager | `0x0200000000000000000000000000000000000004` | Gas-fee distribution — enabled so fees are **routed, not burned** (set a reward address to fund public good) |
 | Warp | (activates ICM) | Interchain messaging / ACP-77 L1 |
@@ -75,6 +76,51 @@ Roles at deploy time all point to the deployer (pilot mode): council, identity a
 
 > The charity account is a **placeholder** used to demonstrate the public-good levy. Nothing here is endorsed by, affiliated with, or arranged with any real organisation — it is a worked example on a testnet.
 
+## Money and fee policy (decided)
+
+1. **Gas costs about 1 tRIEL per payment.** The EVM prices per unit of gas, not
+   per transaction, so the floor is set so a 21,000-gas transfer costs exactly
+   1 tRIEL; a KHRt transfer (~65–100k gas) costs a few riel. "1 riel per
+   transaction" is the price of an ordinary payment, not a flat cap.
+2. **A tokenized riel exists from day 1.** Issuance is a government function and
+   deliberately not tied to one institution — the central bank is one possible
+   issuer among several. KHRt ships as the reference issuer, approved in the
+   RielConverter at deploy time, so conversion works in both directions on day 1
+   rather than as a later phase. *(Placeholder roles — no real institution is
+   implied or committed.)*
+3. **All gas fees go to the public-good fund.** Routed to the charity address via
+   RewardManager, so every transaction on the chain contributes — not only KHRt
+   payments.
+
+Applying 1 and 3 on the live chain:
+
+```bash
+export PATH=$PATH:$HOME/bin
+export RPC=http://127.0.0.1:9650/ext/bc/299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW/rpc
+cd ~/csb
+
+# 3. route gas fees to the fund FIRST, so nothing is burned in between
+CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
+  npx hardhat run scripts/set-reward-address.js --network csbRemote
+
+# 1. then price gas at ~1 tRIEL per transfer
+CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
+  npx hardhat run scripts/set-gas-price.js --network csbRemote
+
+# top pilot accounts up — 10 tRIEL only buys ~2 payments once gas is priced
+CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
+  npx hardhat run scripts/fund-native.js --network csbRemote
+```
+
+**Order matters:** set the reward address *before* raising the fee, or the fees
+charged in between are burned instead of funding anything.
+
+**Keep `CSB_GAS_PRICE_WEI` above the floor.** `hardhat.config.js` prices script
+transactions at a fixed 55,000 gwei, chosen to sit ~15% above the 47,619 gwei
+floor. If the fee policy changes, this must change too — a script submitting
+below the floor produces a transaction that never mines, which looks exactly
+like the chain being wedged. `set-gas-price.js` prints the value to use.
+
 ## Public-good levy (worked example)
 
 KHRt carries an optional per-transfer levy: **1 KHRt of every KHRt transfer** is
@@ -95,7 +141,7 @@ donation on the payment panel and the running total raised.
 - **Per-transfer public-good levy on KHRt** enabled (1 KHRt → charity address).
 - Gated app UI (explorer/wallet/admin) serving the live chain on :8080; passcode login works.
 - Self-service **scoped RPC** — any KYC-active address can mint its own read-filtered RPC URL by signing a challenge; council can revoke from the admin console.
-- Gas is constant/non-zero (not yet set free); pilot accounts hold tRIEL to pay it. RewardManager is enabled, so fees can be routed to a public fund rather than burned.
+- Gas priced at ~1 tRIEL per ordinary payment, with all gas fees routed to the public-good fund via RewardManager (see Money and fee policy).
 - ICM Messenger/Registry deployed, but the **relayer is not funded** (chose "Not now" at deploy) — cross-chain egress delivery needs it funded first.
 
 ## Operate it

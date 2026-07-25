@@ -11,7 +11,7 @@ A sovereign hybrid blockchain for Cambodia: **public within the country, private
 - Open, composable DeFi and digital-asset activity for anyone inside the perimeter — under strict on-chain KYC.
 - Ledger data, infrastructure, and governance under Cambodian sovereign control.
 - A single, governed gateway through which only **permitted tokens** route to global public blockchains (Avalanche, Ethereum, Solana, …).
-- Free gas for users; the state absorbs infrastructure cost.
+- A token fee — about 1 riel per payment — routed to a public-good fund rather than burned, so the cost of running the chain becomes visible public benefit (§8).
 - Designed for a future in which AI-driven attacks and quantum computing stress the traditional banking system: multisig-everywhere, tamper-evident audit trails, identity-bound recoverable accounts, and **crypto-agility** as a first-class pillar.
 
 This is not a single CBDC. Money is **two-tier**: a native, riel-pegged base coin (**tRIEL**) that also pays gas, and **many tokenized-riel stablecoins** (KHRt is one reference issuer) that all convert to tRIEL 1:1 — like USDT/USDC redeeming to the dollar. The chain itself is a neutral registry-and-asset layer; see §6.
@@ -39,11 +39,12 @@ Containment: the chain runs even if the P-Chain is unreachable; validator change
 ## 3. Network architecture
 
 - **Validators:** public institutions (hypothetically, government bodies such as ministries), each running a validator in in-country data centers under sovereign jurisdiction. PoA via a **Validator Manager contract** owned by the governing council's multisig.
-- **Chain parameters** (see `chain/genesis.example.json`): chainId **8555**, zero base fee, and four Subnet-EVM precompiles activated at genesis:
+- **Chain parameters** (see `chain/genesis.example.json`): chainId **8555**, a low base fee priced so an ordinary payment costs about 1 riel (§8), and five Subnet-EVM precompiles activated at genesis:
   - `txAllowList` — only KYC-provisioned addresses may transact (chain-wide KYC enforcement below the contract layer);
   - `contractDeployerAllowList` — contract deployment restricted to vetted deployers (tier 3+ process);
-  - `feeManager` — fees are zero in normal operation but can be raised under attack (pressure valve);
-  - `contractNativeMinter` — administrative issuance of the native coin **tRIEL**, which is riel-pegged base money (not a speculative token); minted only under reserve discipline (§6), never freely.
+  - `feeManager` — sets the fee level; also the pressure valve for raising fees under attack;
+  - `contractNativeMinter` — administrative issuance of the native coin **tRIEL**, which is riel-pegged base money (not a speculative token); minted only under reserve discipline (§6), never freely;
+  - `rewardManager` — directs gas fees to a public-good fund instead of burning them. **Only settable at genesis**, so it is enabled from the start (§8).
 - **Multisig clarification:** validators sign blocks automatically with node keys (HSM-protected — no per-block human approval). Multisig lives at the *governance layer*: the Validator Manager, precompile admin addresses, and every administrative contract role are held by institutional multisigs, so **no official below the council can act unilaterally**.
 - **Trust model honesty:** with all validators under one government, BFT does not defend against the state itself. What it buys: tamper-evidence *between* institutions, auditability, and no single point of technical failure. Credibility can be strengthened later by seating a minority of validators outside the executive (audit bodies, universities, regional partners).
 
@@ -58,7 +59,7 @@ Powers are deliberately split across institutions and enforced in code:
 | Identity issuance, suspension, revocation, address quotas | Identity Authority (placeholder) | `IdentityRegistry` |
 | Asset freezing / confiscation (with mandatory order reference) | Judicial / AML authority | `EnforcementRegistry`, `KHRStablecoin.confiscate` |
 | tRIEL base issuance (reserve-backed) | Sovereign / treasury reserve (placeholder — the anchor of the whole system) | Native Minter, under reserve discipline |
-| Tokenized-riel issuance (mint/redeem) + issuer approval | Pluggable issuers (central bank / bank consortium / treasury — placeholders); council approves reserve-backed issuers | `ITokenizedRiel` ISSUER_ROLE; `RielConverter` |
+| Tokenized-riel issuance (mint/redeem) + issuer approval | Government-authorized issuers, not limited to the central bank (treasury / licensed bank consortium / payments authority — placeholders); council approves reserve-backed issuers | `ITokenizedRiel` ISSUER_ROLE; `RielConverter` |
 | Egress token allowlist, caps, circuit breaker | Governing Council | `EgressGateway` |
 | Validator set, protocol upgrades, precompile admin | Governing Council | Validator Manager + genesis admin keys |
 
@@ -85,6 +86,10 @@ CSB uses a **two-tier monetary model**, mirroring how real money works — base 
 | **Tokenized riel** | **KHRt and others** — many issuers, each a KYC-gated riel stablecoin, all convertible to tRIEL 1:1. `KHRStablecoin` is the *reference* implementation, not "the" riel. | USDT / USDC / PYUSD → all redeem to USD |
 
 So KHRt is **one issuer's product**, not a monopoly: multiple institutions can each issue their own tokenized riel (competing on trust and features), and **tRIEL is the neutral denominator** they all convert into — which makes every riel token mutually fungible through the base (KHRt → tRIEL → OtherRiel).
+
+**Issuance is a government function, but not a single institution's monopoly.** Authority to issue a tokenized riel would come from the state, and deliberately is *not* tied to any one body — the central bank is one possible issuer among several (a treasury, a licensed bank consortium, a designated payments authority). The design keeps the issuer slot pluggable so the monetary question stays a policy decision rather than something the code has already settled. *(As throughout: hypothetical placeholders. No real institution is implied, approached, or committed.)*
+
+**At least one tokenized riel must exist from day 1.** A launch with only tRIEL and no tokenized riel would leave the two-tier model theoretical — nothing to convert, and the RielConverter idle. So the chain launches with a reference tokenized riel deployed and approved in the converter (in this pilot, KHRt, approved at deploy time in `scripts/deploy.js`), and conversion working in both directions on the first day rather than as a later phase.
 
 **tRIEL is backed money, not a free utility token.** Because 1 tRIEL = 1 riel, it must be reserve-backed exactly like a stablecoin, and minted **only** via conversion or reserve-backed issuance — never freely. Two consequences:
 - The genesis allocation and any Native-Minter use represent **issuing real money**, under the same reserve discipline as KHRt.
@@ -115,13 +120,31 @@ The **single authorized exit** to public blockchains, and the load-bearing requi
 - **Explicit boundary:** everything crossing the gateway becomes permanently world-public on external chains. Wallet UX must surface this to users at the moment of egress.
 - **Staged rollout:** caps start small and widen with operational confidence.
 
-## 8. Gas: subsidized, not free — and anti-spam
+## 8. Gas: about 1 riel per transaction, funding public good
 
-Gas is paid in **tRIEL**, which is real riel-pegged money (§6), so gas is never truly costless — the base fee is set to zero and **the state subsidizes the cost** so citizens transact feeless. Spam defense is the **identity layer**, not the fee market: every account is KYC-bound, so abuse is rate-limited and revocable at the identity level — which is why gas *can* be subsidized to zero without inviting spam. Under active attack, `feeManager` can temporarily raise fees.
+**Decision: a transaction costs about 1 tRIEL (= 1 riel), and every riel of it goes to a public-good fund.**
 
-**Optional public-good fee routing.** Because gas fees are real value, the chain can (if policy chooses) direct fees to a **council-governed public-fund address** rather than the citizen paying nothing — e.g. exempt citizen P2P but levy a small fee on merchant/egress flows, accumulating transparently on-chain for public services. This is a deliberate fiscal decision, kept separate from the anti-spam design.
+Gas is paid in **tRIEL**, which is real riel-pegged money (§6), so gas was never going to be costless — the choice is only who pays and where it lands. Rather than have the state absorb the cost invisibly, the fee is set at roughly **1 riel per payment**: small enough to be irrelevant to a citizen (a fraction of a US cent), real enough to price the resource, and — routed to a public fund — it turns the cost of running the chain into visible public benefit.
 
-**Design decision — gas fees are NOT burned.** The chain enables the Subnet-EVM **RewardManager precompile** (`0x…04`, admin = council) *at genesis*. RewardManager controls where gas fees go: `setRewardAddress(publicFund)` routes every transaction's gas fee to a chosen address (the public fund) instead of the default **burn**. This must be set at genesis — it cannot be added by upgrade — so it is switched on from the start to keep the option open. Note the interaction with free gas: gas fees only exist when `minBaseFee > 0`, so "route fees to the fund" implies charging a small gas fee; with truly-free gas there is nothing to route. Enabling RewardManager does not itself charge gas — it makes the *don't-burn, fund-public-good* policy available whenever the council chooses it.
+**Why "about" and not exactly 1 riel.** The EVM charges `gasPrice × gasUsed`, so a chain cannot price every transaction at a flat amount; it can only fix the price *per unit of gas*. CSB sets that price so a plain transfer costs 1 tRIEL, which means heavier work costs proportionally more (a contract call a few riel, a deployment more). This is honest pricing — complex transactions consume more of the shared resource — but it is not a flat fee, and anything advertised as "1 riel per transaction" should be understood as the price of an ordinary payment. Where a genuinely flat charge is wanted, it belongs at the contract layer (`KHRStablecoin.transferLevy`, `RielPay`), not the fee config. Set with `scripts/set-gas-price.js`.
+
+**Gas fees are NOT burned — they fund public good.** The chain enables the Subnet-EVM **RewardManager precompile** (`0x…04`, admin = council) *at genesis*, which controls where gas fees go. `setRewardAddress(fund)` routes every transaction's fee to a chosen address instead of the default **burn**. This had to be decided at genesis — it cannot be added by upgrade — so it was switched on from the start. Set with `scripts/set-reward-address.js`; reversible to burning or to paying block producers.
+
+**Two mechanisms, deliberately different in reach.** They are complementary, not duplicates:
+
+| | Gas fee → fund (RewardManager) | Transfer levy → fund (`transferLevy`, `RielPay`) |
+|---|---|---|
+| Applies to | **Every transaction on the chain** — transfers, contract calls, mints, deployments | Only payments through that specific contract |
+| Charged in | tRIEL (native) | The token being sent (e.g. KHRt) |
+| Amount | Proportional to work done (~1 tRIEL for a transfer) | Flat per payment |
+| Enforced by | The chain itself, at block production | Contract code |
+| Avoidable? | No — nothing transacts without paying gas | Yes — exempt addresses, or use another contract |
+
+The gas route is universal and unavoidable; the levy is targeted and flat. Together they let policy fund public services from *all* chain activity while keeping a recognisable "1 riel of this payment helps a hospital" story for ordinary users.
+
+**Spam defense is the identity layer, not the fee market.** Every account is KYC-bound, so abuse is rate-limited and revocable at the identity level. The fee is set for fairness and funding, not as the primary anti-spam mechanism — which is why it can stay near-zero-cost to citizens. Under active attack, `feeManager` can temporarily raise fees as a pressure valve.
+
+**Reversibility.** None of this is locked in. Fees can go back to zero (`scripts/set-gas-free.js`), fees can be burned instead of routed (`CSB_REWARD_MODE=burn`), and the recipient can change by council decision. What genesis fixed is only that the *option* to not burn exists.
 
 ## 9. Data sovereignty and privacy posture
 

@@ -43,7 +43,12 @@ module.exports = {
       // never get stuck under-priced in the mempool (this chain's effective base
       // fee can jump above ethers' automatic estimate). The deployer holds ~1M
       // tRIEL, so overpaying gas is immaterial; override with CSB_GAS_PRICE_WEI.
-      gasPrice: Number(process.env.CSB_GAS_PRICE_WEI ?? 500_000_000_000), // 500 gwei
+      // Fixed price so scripts can't submit an under-priced tx that never mines.
+      // This MUST stay above the chain's minBaseFee. Under the "1 tRIEL per
+      // transfer" policy the floor is 1e18/21000 ≈ 47,619 gwei, so the default
+      // is ~15% above that. If you change the fee policy with
+      // scripts/set-gas-price.js, change this too — the script prints the value.
+      gasPrice: Number(process.env.CSB_GAS_PRICE_WEI ?? 55_000_000_000_000), // 55,000 gwei
     },
   },
 };

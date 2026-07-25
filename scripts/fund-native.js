@@ -25,7 +25,7 @@ const path = require("path");
  *     npx hardhat run scripts/fund-native.js --network csbRemote
  *
  * Optional env:
- *   CSB_FUND_AMOUNT   tRIEL to top each account up to (default "10")
+ *   CSB_FUND_AMOUNT   tRIEL to top each account up to (default "1000")
  *   CSB_FUND_EXTRA    comma-separated extra addresses to fund as well
  */
 const NATIVE_MINTER = "0x0200000000000000000000000000000000000001";
@@ -41,7 +41,9 @@ async function main() {
   const deployments = JSON.parse(fs.readFileSync(file, "utf8"));
   const [deployer] = await ethers.getSigners();
 
-  const target = ethers.parseEther(process.env.CSB_FUND_AMOUNT ?? "10");
+  // Default sized for the "~1 tRIEL per transfer" fee policy: 1000 tRIEL is a
+  // fraction of a cent but covers a few hundred payments.
+  const target = ethers.parseEther(process.env.CSB_FUND_AMOUNT ?? "1000");
 
   // --- chain / mempool diagnostics ---------------------------------------
   const block = await provider.getBlock("latest");

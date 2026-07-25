@@ -38,8 +38,12 @@ async function main() {
   // cannot send a single transfer. Always give them gas money — a tiny amount
   // is harmless on a truly-free-gas chain and essential otherwise. (To top up
   // already-seeded accounts on the live chain, use scripts/fund-native.js.)
+  // 1000 tRIEL = 1000 riel, a fraction of a US cent, but enough for a few
+  // hundred payments under the "~1 tRIEL per transfer" fee policy. (10 tRIEL,
+  // the old amount, buys roughly two KHRt transfers once gas is priced.)
+  const gasMoney = ethers.parseEther(process.env.CSB_SEED_GAS ?? "1000");
   for (const w of [sokha, dara, vanna]) {
-    await (await deployer.sendTransaction({ to: w.address, value: ethers.parseEther("10") })).wait();
+    await (await deployer.sendTransaction({ to: w.address, value: gasMoney })).wait();
   }
 
   // Enable the funded pilot accounts in the txAllowList precompile so they can
