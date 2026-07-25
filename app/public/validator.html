@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Run a validator — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .lead { font-size: 14px; line-height: 1.7; color: var(--ink); }
+    .note { font-size: 12.5px; color: var(--muted); line-height: 1.65; }
+    .step { display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; margin-bottom: 10px; }
+    .step .n { width: 26px; height: 26px; border-radius: 50%; background: var(--blue); color: #fff;
+               font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+    .step .t { font-size: 13px; line-height: 1.6; padding-top: 4px; }
+    table.kv { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.kv th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
+                  width: 38%; padding: 8px 10px 8px 0; vertical-align: top; }
+    table.kv td { padding: 8px 0; border-bottom: 1px solid var(--line); }
+    table.kv tr:last-child td { border-bottom: 0; }
+    pre.cmd { background: #f7f9fc; border: 1px solid var(--line); border-radius: 8px;
+              padding: 12px; overflow-x: auto; font-size: 12px; margin-top: 8px; }
+    .danger { border-left: 3px solid var(--red); background: #fff5f5; padding: 12px 15px;
+              border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.65; margin-top: 12px; }
+    .caveat { border-left: 3px solid var(--warn); background: #fffaf2; padding: 10px 14px;
+              border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.65; margin-top: 12px; }
+    .ports { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+    @media (max-width: 700px) { .ports { grid-template-columns: 1fr; } }
+    .port { border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; }
+    .port.open { border-color: #bfe5cd; background: #f4fbf6; }
+    .port.shut { border-color: #f5c2c2; background: #fff5f5; }
+    .port .p { font-family: ui-monospace, Menlo, monospace; font-size: 16px; font-weight: 700; }
+    .port .d { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin-top: 4px; }
+    .foot { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0 24px; line-height: 1.6; }
+  </style>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 Run a CSB validator</h1>
+    <span class="sub">who can join, what it takes — no login required</span>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="wallet.html">Wallet</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="fund.html">Fund</a>
+      <a href="use-cases.html">Use cases</a>
+      <a href="validator.html" class="active">Validators</a>
+      <a href="node.html">Node info</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="card">
+      <p class="lead">
+        A validator is a server holding a copy of the CSB ledger and taking part in
+        confirming its blocks. The testnet runs a small validating set today and is
+        open to additional operators.
+      </p>
+      <p class="lead" style="margin-top:10px">
+        <strong>It costs a server, not money.</strong> There is no stake, nothing to buy,
+        and no financial risk — everything here is test data and test riel. If you
+        can run a Linux server with Docker, you can run a validator.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>What is actually being asked of you</h2>
+      <table class="kv">
+        <tr><th>Keep the node running</th><td>Aim for 24/7, but testnet downtime is not a crisis. Tell the coordinator if you stop.</td></tr>
+        <tr><th>Apply upgrades</th><td>When a version pair is announced, update and restart. Version mismatches are the most common cause of a node falling out.</td></tr>
+        <tr><th>Keep your RPC port private</th><td><strong>A term of participation, not a suggestion.</strong> See below.</td></tr>
+        <tr><th>Back up your staking key</th><td>It <em>is</em> your validator identity. Lose it and the node cannot be recovered — only replaced.</td></tr>
+      </table>
+      <p class="note" style="margin-top:12px">
+        Registration fees on Avalanche Fuji are paid by the coordinator with free
+        test AVAX. You are not asked to fund anything.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Server requirements</h2>
+      <table class="kv">
+        <tr><th>Operating system</th><td>Ubuntu 22.04 or 24.04 (other Linux works; the guide assumes Ubuntu)</td></tr>
+        <tr><th>Hardware</th><td>4+ vCPU · 8+ GB RAM · 100+ GB SSD</td></tr>
+        <tr><th>Network</th><td>A public IPv4 address</td></tr>
+        <tr><th>Software</th><td>Docker with the compose plugin</td></tr>
+        <tr><th>Provider</th><td>Anything — your own data centre or a cloud VM</td></tr>
+      </table>
+
+      <div class="ports">
+        <div class="port open">
+          <div class="p">9651 — open</div>
+          <div class="d">Peer-to-peer. This is how validators talk to each other, and it must be reachable from the internet.</div>
+        </div>
+        <div class="port shut">
+          <div class="p">9650 — closed</div>
+          <div class="d">The RPC API. Must never be reachable from the internet. It stays bound to localhost.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>The one obligation that affects everyone else</h2>
+      <div class="danger">
+        <strong>Your node's RPC port serves the entire ledger to anyone who can reach
+        it, with no authentication.</strong> Exposing it does not just affect your own
+        users — it breaks the chain's "private to the world" guarantee for
+        <em>every</em> participant at once. One carelessly open port undoes the
+        privacy property for everybody.
+      </div>
+      <p class="note" style="margin-top:12px">
+        Two independent locks, and you keep both: the port stays <strong>bound to
+        127.0.0.1</strong> (the supplied configuration already does this — do not change
+        <span class="mono">http-host</span>), and you <strong>never open 9650 in your firewall
+        or cloud security group</strong>. Either one alone is enough to protect the
+        chain; requiring both is deliberate, so a single mistake is not sufficient
+        to cause harm.
+      </p>
+      <p class="note" style="margin-top:8px">
+        Users reach the chain through scoped, per-address RPC URLs instead — the
+        same mechanism behind <em>Connect wallet</em> on this site.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>How to join</h2>
+      <div class="step"><div class="n">1</div><div class="t"><strong>Contact the coordinator.</strong> This is a permissioned chain: the validator set is governed, so you are added deliberately rather than by joining anonymously. You will receive the Subnet ID, VM ID and the version pair to run — these cannot be guessed.</div></div>
+      <div class="step"><div class="n">2</div><div class="t"><strong>Prepare a server</strong> to the specification above, with port 9651 open and 9650 closed.</div></div>
+      <div class="step"><div class="n">3</div><div class="t"><strong>Run the node</strong> — clone the repository, paste the coordinator's values into <span class="mono">.env</span>, and start it with Docker Compose. About ten minutes of work.</div></div>
+      <div class="step"><div class="n">4</div><div class="t"><strong>Send your NodeID and proof-of-possession</strong> to the coordinator, who registers you in the validator-manager contract. Your node begins validating once registration confirms.</div></div>
+      <div class="step"><div class="n">5</div><div class="t"><strong>Back up your staking key</strong> off the server, before you need it.</div></div>
+
+      <pre class="cmd"><code>git clone https://github.com/sengtha/CSB.git && cd CSB
+cp .env.validator.example .env   # paste the coordinator's Subnet ID / VM ID
+docker compose -f docker-compose.validator.yml up -d --build
+docker compose -f docker-compose.validator.yml logs -f</code></pre>
+
+      <p class="note" style="margin-top:12px">
+        <a href="https://github.com/sengtha/CSB/blob/main/docs/validator-manual.md" target="_blank" rel="noopener"><strong>Full operator manual ↗</strong></a>
+        — setup, registration, upgrades, troubleshooting, and how to leave cleanly.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Why the validator set is governed</h2>
+      <p class="lead">
+        Anyone can validate a public chain anonymously. CSB deliberately cannot
+        work that way: the whole design rests on validators being known parties who
+        accept an obligation about what they do with the data they hold. That is the
+        cost of "private to the world" — it is a promise that only holds if every
+        node keeps it.
+      </p>
+      <div class="caveat">
+        <strong>Said honestly:</strong> a governed validator set means the operators can,
+        collectively, see everything. Byzantine fault tolerance does not protect
+        against the parties running the chain — it protects against one of them
+        acting alone, and it makes tampering evident to the others. Credibility here
+        comes from <em>who</em> the validators are and how independent they are of one
+        another, not from cryptography. Seating operators outside any single
+        institution is what would strengthen it.
+      </div>
+    </div>
+
+    <p class="foot">
+      CSB is a personal, independent experiment — not a government project. Running a
+      testnet validator means taking part in a research prototype, nothing more. No
+      affiliation with or endorsement by any institution is implied.
+    </p>
+  </main>
+
+<!--
+  No live validator count here on purpose. The node's peer count reports peers on
+  the Avalanche primary network, not CSB's validating set, so showing it would be
+  a precise-looking number that answers a different question. Better to say
+  nothing than to say something confidently wrong.
+-->
+</body>
+</html>
