@@ -123,6 +123,13 @@ See what the fund has raised across both streams:
 npx hardhat run scripts/fund-report.js --network csbRemote
 ```
 
+Or on the website: **`/fund.html`** — a public transparency page showing the
+running total, both income streams, and where each riel came from. It is the one
+page served **without the passcode**, backed by a narrow read-only `/fund`
+endpoint that exposes this single address and is not an RPC passthrough. That is
+deliberate: everywhere else the app restricts each user to their own data, and a
+public fund is the opposite case.
+
 Verified live on the current chain: fee floor 47,619 gwei (a transfer costs
 1.0000 tRIEL), KHRt approved in the RielConverter, and `currentRewardAddress` =
 the charity `0xE77566de0F9B7c21Ae33228ea9329Cc9931e6863`.

@@ -19,6 +19,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { filterBody } = require("./rpc-filter");
 const { deriveToken, addressFromToken, verifySignature } = require("./rpc-access");
+const { fundReport } = require("./fund");
 
 const RPC_URL = process.env.CSB_RPC_URL ?? "http://127.0.0.1:8545";
 const PORT = Number(process.env.PORT ?? process.env.DEMO_PORT ?? 8080);
@@ -82,12 +83,18 @@ function writeRevoked(set) {
   fs.writeFileSync(revokedFile(), JSON.stringify([...set], null, 2));
 }
 
-// IdentityRegistry address from deployments.json (for live KYC checks).
-function identityAddress() {
+// deployments.json, or null when it hasn't been generated yet. Re-read each
+// time so a redeploy is picked up without restarting the app.
+function loadDeployments() {
   try {
     const file = process.env.CSB_DEPLOYMENTS_FILE ?? path.join(__dirname, "deployments.json");
-    return JSON.parse(fs.readFileSync(file, "utf8")).contracts.IdentityRegistry;
+    return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (_) { return null; }
+}
+
+// IdentityRegistry address from deployments.json (for live KYC checks).
+function identityAddress() {
+  return loadDeployments()?.contracts?.IdentityRegistry ?? null;
 }
 
 // Live on-chain KYC check: IdentityRegistry.isActive(address). Cached ~30s so a
@@ -160,6 +167,25 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === "/session") {
     send(res, 200, { authed: authed(req) });
+    return;
+  }
+
+  // Public-good fund — the one DELIBERATELY PUBLIC endpoint. No passcode, no
+  // session: anyone can audit what the fund holds and where it came from, which
+  // is the transparency claim itself rather than a gap in the gate. It is narrow
+  // by construction — one address's public data, not an RPC passthrough — so it
+  // cannot be used to read anyone else's balances or transactions.
+  if (url.pathname === "/fund") {
+    try {
+      const data = await fundReport(RPC_URL, loadDeployments(), {
+        blocks: url.searchParams.get("blocks"),
+        address: /^0x[0-9a-fA-F]{40}$/.test(url.searchParams.get("address") ?? "")
+          ? url.searchParams.get("address") : undefined,
+      });
+      send(res, 200, data, { "Cache-Control": "public, max-age=15" });
+    } catch (e) {
+      send(res, e.code === "NO_FUND" ? 404 : 502, { error: e.message });
+    }
     return;
   }
 

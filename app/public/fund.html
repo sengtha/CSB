@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Public-good fund — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .hero { text-align: center; padding: 26px 20px 22px; }
+    .hero .amount { font-size: 46px; font-weight: 800; color: var(--blue); line-height: 1.05; }
+    .hero .amount .unit { font-size: 20px; font-weight: 600; color: var(--muted); margin-left: 6px; }
+    .hero .cap { font-size: 13px; color: var(--muted); margin-top: 8px; }
+    .streams { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
+    @media (max-width: 760px) { .streams { grid-template-columns: 1fr; } }
+    .stream { border: 1px solid var(--line); border-radius: 9px; padding: 14px 16px; background: #fbfcfe; }
+    .stream .v { font-size: 24px; font-weight: 700; color: var(--blue); }
+    .stream .t { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+    .stream .d { font-size: 12.5px; color: var(--muted); margin-top: 7px; line-height: 1.5; }
+    .kind { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .kind.gas { background: #e8ecf7; color: var(--blue); }
+    .kind.levy { background: #fdeef0; color: var(--red); }
+    .kind.xfer { background: #eef1f5; color: var(--muted); }
+    .kind.odd { background: #fef3e2; color: var(--warn); }
+    .amt { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+    .note { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+    .addr { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; word-break: break-all; }
+    .foot { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0 24px; line-height: 1.6; }
+    #tbl-wrap { overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB Public-good fund</h1>
+    <span class="sub">open to everyone — no login required</span>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="fund.html" class="active">Fund</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="wallet.html">Wallet</a>
+      <a href="https://github.com/sengtha/CSB" target="_blank" rel="noopener">GitHub ↗</a>
+    </nav>
+  </header>
+
+  <main>
+    <div id="err" class="banner"></div>
+
+    <div class="card hero">
+      <div class="amount"><span id="total">–</span><span class="unit">riel</span></div>
+      <div class="cap">raised for <strong id="label">the public-good fund</strong></div>
+      <div class="cap addr" id="addr" style="margin-top:10px"></div>
+
+      <div class="streams">
+        <div class="stream">
+          <div class="t"><span class="kind gas">gas fees</span></div>
+          <div class="v"><span id="s-gas">–</span> <span style="font-size:14px;color:var(--muted)">tRIEL</span></div>
+          <div class="d">
+            Paid by <strong>every transaction on the chain</strong> — payments, contract
+            calls, anything. The chain hands the fee to this account when it builds
+            the block, so nobody opts in and nobody can opt out.
+            <span id="gas-off" class="badge bad" style="display:none">not currently routed here</span>
+          </div>
+        </div>
+        <div class="stream">
+          <div class="t"><span class="kind levy">transfer levy</span></div>
+          <div class="v"><span id="s-levy">–</span> <span style="font-size:14px;color:var(--muted)" id="s-levy-sym">KHRt</span></div>
+          <div class="d">
+            <span id="levy-rate">A flat amount</span> on each KHRt payment, taken by the
+            token contract. This is the part a payer actually sees in their wallet.
+            <span id="levy-off" class="badge bad" style="display:none">levy is off</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Where the money came from</h2>
+      <div id="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>Block</th><th>When</th><th>Source</th><th style="text-align:right">Amount</th><th>Paid by</th><th>Transaction</th></tr>
+          </thead>
+          <tbody id="rows"><tr><td colspan="6" class="note">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <p class="note" style="margin-top:12px">
+        <strong>Why gas rows have no transaction link.</strong> A gas fee is not a
+        transfer — the chain credits it to this account while producing the block, so
+        there is no transaction hash to point at. It is visible as the balance being
+        higher than in the previous block, which is what these rows measure. Levy rows
+        are ordinary token transfers and do have a hash. Anything sent to the fund
+        directly is listed separately so it is never counted as fees the chain collected.
+      </p>
+      <p class="note" id="window"></p>
+    </div>
+
+    <div class="card">
+      <h2>Check this yourself</h2>
+      <p class="note">
+        Nothing here is a claim you have to take on faith — the fund is an ordinary
+        account and every figure can be re-derived from the chain. The raw data behind
+        this page is at <a href="/fund">/fund</a>, and the balance can be read straight
+        from any node:
+      </p>
+      <pre class="mono" style="background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:10px;overflow-x:auto;font-size:12px"><code>curl -s -X POST -H 'content-type:application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"eth_getBalance","params":["<span id="curl-addr">0x…</span>","latest"]}' \
+  $CSB_RPC_URL</code></pre>
+      <p class="note" style="margin-top:10px">
+        This page is deliberately the one part of CSB open without a login. Everywhere
+        else the chain restricts each person to their own data; a public fund is the
+        opposite case, and it should be auditable by anyone without asking permission.
+      </p>
+    </div>
+
+    <p class="foot" id="disclaimer"></p>
+  </main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (n, dp = 2) => Number(n).toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
+
+function when(ts) {
+  if (!ts) return "–";
+  const d = new Date(ts * 1000);
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  if (mins < 1440) return `${Math.floor(mins / 60)} h ago`;
+  return d.toLocaleDateString();
+}
+
+const KIND = {
+  "gas-fees":             { cls: "gas",  text: "gas fees" },
+  "levy":                 { cls: "levy", text: "transfer levy" },
+  "transfer-in":          { cls: "xfer", text: "sent directly" },
+  "unexplained-decrease": { cls: "odd",  text: "decrease" },
+};
+
+async function load() {
+  let d;
+  try {
+    const r = await fetch("/fund");
+    d = await r.json();
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+  } catch (e) {
+    $("err").className = "banner err";
+    $("err").textContent = "Could not load fund data: " + e.message;
+    $("rows").innerHTML = '<tr><td colspan="6" class="note">unavailable</td></tr>';
+    return;
+  }
+
+  $("total").textContent = fmt(d.totalRiel);
+  $("label").textContent = d.label;
+  $("addr").textContent = d.address;
+  $("curl-addr").textContent = d.address;
+  $("disclaimer").textContent = d.disclaimer;
+
+  $("s-gas").textContent = fmt(d.triel, 4);
+  $("gas-off").style.display = d.gasFeesRouted ? "none" : "inline-block";
+
+  if (d.token) {
+    $("s-levy").textContent = fmt(d.token.totalLevied);
+    $("s-levy-sym").textContent = d.token.symbol;
+    $("levy-rate").textContent = `${fmt(d.token.perTransfer)} ${d.token.symbol}`;
+    $("levy-off").style.display = d.token.active ? "none" : "inline-block";
+  }
+
+  const w = d.window;
+  $("window").textContent = w.complete
+    ? `Covering the whole chain — blocks 0 to ${w.toBlock}.`
+    : `Covering the most recent ${w.blocks.toLocaleString()} blocks (${w.fromBlock.toLocaleString()}–${w.toBlock.toLocaleString()}). Older activity is not shown.`;
+
+  const rows = d.activity ?? [];
+  if (rows.length === 0) {
+    $("rows").innerHTML = '<tr><td colspan="6" class="note">No activity yet — the fund has not received anything in this window.</td></tr>';
+    return;
+  }
+  $("rows").innerHTML = rows.map((r) => {
+    const k = KIND[r.kind] ?? { cls: "xfer", text: r.kind };
+    const isToken = r.kind === "levy";
+    const dp = isToken ? 2 : 4;
+    const unit = isToken ? (d.token?.symbol ?? "KHRt") : "tRIEL";
+    const hash = r.txHash
+      ? `<a href="explorer.html" title="${r.txHash}" class="mono">${r.txHash.slice(0, 10)}…</a>`
+      : '<span class="note">— credited by the chain</span>';
+    const payer = r.from ? `<span class="mono">${r.from.slice(0, 8)}…${r.from.slice(-4)}</span>` : '<span class="note">—</span>';
+    return `<tr>
+      <td class="mono">${r.block.toLocaleString()}</td>
+      <td>${when(r.timestamp)}</td>
+      <td><span class="kind ${k.cls}">${k.text}</span></td>
+      <td class="amt" style="text-align:right">${fmt(r.amount, dp)} <span class="note">${unit}</span></td>
+      <td>${payer}</td>
+      <td>${hash}</td>
+    </tr>`;
+  }).join("");
+}
+
+load();
+setInterval(load, 20000);
+</script>
+</body>
+</html>
