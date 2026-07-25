@@ -112,6 +112,12 @@
             <label>Contract</label><input id="cnl-s-addr" placeholder="0x…" />
             <label>Allowed</label><select id="cnl-s-allowed"><option value="1">yes</option><option value="0">no</option></select>
             <button id="cnl-s-go">Update</button>
+            <h2 style="margin-top:18px">Public-good levy (KHRt)</h2>
+            <p class="small">A flat KHRt fee on each transfer sent to a fund (e.g. a hospital charity). 0 = off.</p>
+            <label>Levy per transfer (KHRt)</label><input id="cnl-lv-amt" placeholder="e.g. 1.00" />
+            <label>Fund recipient</label><input id="cnl-lv-to" placeholder="0x…" />
+            <button id="cnl-lv-go">Set levy</button>
+            <div id="cnl-lv-info" class="small" style="margin-top:8px"></div>
           </div>
         </div>
       </div>
@@ -269,6 +275,24 @@ async function refreshStatus() {
     await (await khr.setSystemContract(val("cnl-s-addr"), val("cnl-s-allowed") === "1")).wait();
     return "System-contract list updated.";
   });
+  document.getElementById("cnl-lv-go").onclick = () => run(async () => {
+    const { khr } = await getContracts(signer());
+    const amt = val("cnl-lv-amt") ? parseKHR(val("cnl-lv-amt")) : 0n;
+    const to = val("cnl-lv-to") || "0x0000000000000000000000000000000000000000";
+    await (await khr.setTransferLevy(amt, to)).wait();
+    await refreshLevy();
+    return amt > 0n ? `Levy set: ${val("cnl-lv-amt")} KHRt/transfer → ${short(to)}.` : "Levy disabled.";
+  });
+  async function refreshLevy() {
+    try {
+      const { khr } = await getContracts();
+      const [amt, to, raised] = await Promise.all([khr.transferLevy(), khr.levyRecipient(), khr.totalLevied()]);
+      document.getElementById("cnl-lv-info").innerHTML = amt > 0n
+        ? `Active: <b>${fmtKHR(amt)} KHRt</b>/transfer → <span class="mono">${short(to)}</span> · raised ${fmtKHR(raised)} KHRt`
+        : "Levy is off.";
+    } catch (_) {}
+  }
+  refreshLevy();
 
   // --- Issuer
   document.getElementById("iss-go").onclick = () => run(async () => {

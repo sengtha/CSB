@@ -45,6 +45,7 @@
         <label>Amount (KHRt)</label>
         <input id="pay-amount" placeholder="e.g. 25,000.00" />
         <button id="pay-send">Send payment</button>
+        <p id="levy-note" class="small" style="margin-top:8px"></p>
       </div>
       <div class="card">
         <h2>Bridge out (egress gateway)</h2>
@@ -155,6 +156,20 @@ async function run(fn) {
   const d = cfg.pilot?.destinationChain;
   if (d) dest.add(new Option(d.label, d.id));
 
+  // Show the public-good levy (if the council enabled one) so payers see the donation.
+  (async () => {
+    try {
+      const { khr } = await getContracts();
+      const levy = await khr.transferLevy();
+      if (levy > 0n) {
+        const raised = await khr.totalLevied();
+        const who = cfg.pilot?.charity?.label ?? "the public fund";
+        document.getElementById("levy-note").innerHTML =
+          `💛 ${fmtKHR(levy)} KHRt of each payment supports <b>${who}</b>. Raised so far: ${fmtKHR(raised)} KHRt.`;
+      }
+    } catch (_) { /* levy not present on this deployment */ }
+  })();
+
   document.getElementById("acct-load").onclick = async () => {
     try {
       const base = new ethers.Wallet(document.getElementById("acct-key").value.trim(), getProvider());
@@ -171,9 +186,11 @@ async function run(fn) {
     const { khr } = await getContracts(wallet);
     const to = document.getElementById("pay-to").value.trim();
     const amount = parseKHR(document.getElementById("pay-amount").value);
+    const levy = await khr.transferLevy();
     const tx = await khr.transfer(to, amount, await feeOverrides());
     await tx.wait();
-    return `Paid ${fmtKHR(amount)} KHRt to ${short(to)} — fee: 0. Tx ${shortHash(tx.hash)}`;
+    const donation = levy > 0n ? ` — ${fmtKHR(levy)} KHRt donated to the public fund` : "";
+    return `Paid ${fmtKHR(amount)} KHRt to ${short(to)} (gas 0)${donation}. Tx ${shortHash(tx.hash)}`;
   });
 
   // Native tRIEL payment — works with or without KHRt. Routes through RielPay

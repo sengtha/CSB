@@ -39,16 +39,34 @@ contract KHRStablecoin is ERC20, AccessControl {
 
     bool private _inEnforcement;
 
+    /**
+     * @notice Optional flat public-good levy taken on each ordinary transfer and
+     *         routed to `levyRecipient` (e.g. a hospital charity). OFF by default
+     *         (`transferLevy == 0`) so the token is fee-free until the council
+     *         switches it on. 1 KHRt = 1 riel, so a levy of `1_00` sends 1 riel
+     *         of every payment to the fund. Exempt flows: mint/burn, enforcement,
+     *         system contracts, the recipient's own transfers, and `levyExempt`
+     *         accounts. Transfers at or below the levy are not taxed.
+     */
+    uint256 public transferLevy;
+    address public levyRecipient;
+    mapping(address => bool) public levyExempt;
+    uint256 public totalLevied;
+
     event Issued(address indexed to, uint256 amount);
     event Redeemed(address indexed from, uint256 amount);
     event Confiscated(address indexed from, address indexed to, uint256 amount, bytes32 indexed orderRef);
     event TierTransferCapSet(uint8 indexed tier, uint256 cap);
     event SystemContractSet(address indexed account, bool allowed);
+    event TransferLevySet(uint256 levy, address indexed recipient);
+    event LevyExemptSet(address indexed account, bool exempt);
+    event LevyCollected(address indexed from, address indexed recipient, uint256 amount);
 
     error NotKycActive(address account);
     error AccountFrozen(address account);
     error TierCapExceeded(address account, uint8 tier, uint256 cap, uint256 amount);
     error OrderRefRequired();
+    error LevyRecipientRequired();
 
     constructor(IdentityRegistry identity_, EnforcementRegistry enforcement_, address councilAdmin, address issuer)
         ERC20("Khmer Riel Token", "KHRt")
@@ -106,6 +124,35 @@ contract KHRStablecoin is ERC20, AccessControl {
         emit SystemContractSet(account, allowed);
     }
 
+    /// @notice Council sets the flat per-transfer public-good levy and its
+    ///         recipient. `levy == 0` disables it. Amount is in KHRt units
+    ///         (2 decimals): `1_00` = 1.00 KHRt = 1 riel per transfer.
+    function setTransferLevy(uint256 levy, address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (levy > 0 && recipient == address(0)) revert LevyRecipientRequired();
+        transferLevy = levy;
+        levyRecipient = recipient;
+        emit TransferLevySet(levy, recipient);
+    }
+
+    /// @notice Exempt an account (payer or payee) from the transfer levy —
+    ///         e.g. keep citizen-to-citizen payments free while merchants are levied.
+    function setLevyExempt(address account, bool exempt) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        levyExempt[account] = exempt;
+        emit LevyExemptSet(account, exempt);
+    }
+
+    /// @dev The levy applied to a (from,to,value) transfer; 0 for exempt flows.
+    function _levyOn(address from, address to, uint256 value) private view returns (uint256) {
+        if (transferLevy == 0 || levyRecipient == address(0)) return 0;
+        if (_inEnforcement) return 0;                       // enforcement moves untaxed
+        if (from == address(0) || to == address(0)) return 0; // mint / burn untaxed
+        if (from == levyRecipient || to == levyRecipient) return 0; // fund's own flows
+        if (levyExempt[from] || levyExempt[to]) return 0;
+        if (isSystemContract[from] || isSystemContract[to]) return 0; // bridges/converter
+        if (value <= transferLevy) return 0;                // don't zero-out tiny transfers
+        return transferLevy;
+    }
+
     // -------------------------------------------------------------- compliance
 
     function _update(address from, address to, uint256 value) internal override {
@@ -122,7 +169,15 @@ contract KHRStablecoin is ERC20, AccessControl {
                 _requireEligible(to);
             }
         }
-        super._update(from, to, value);
+        uint256 levy = _levyOn(from, to, value);
+        if (levy > 0) {
+            super._update(from, levyRecipient, levy);   // public-good slice to the fund
+            super._update(from, to, value - levy);      // remainder to the payee
+            totalLevied += levy;
+            emit LevyCollected(from, levyRecipient, levy);
+        } else {
+            super._update(from, to, value);
+        }
     }
 
     function _requireEligible(address account) private view {
