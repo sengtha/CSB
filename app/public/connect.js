@@ -24,7 +24,36 @@
  */
 (function () {
   const PANEL_ID = "csb-connect-panel";
+  const STORE_KEY = "csb.connect";
   let state = { address: null, rpcPath: null, chainIdHex: null, chainId: null };
+
+  /**
+   * This site is nine separate documents, so every link is a full page load and
+   * anything held in a variable is gone. Two things have to survive that, and
+   * they survive differently.
+   *
+   * The ADDRESS comes back from the wallet itself: eth_accounts reports the
+   * accounts already shared with this origin and never prompts, so a connected
+   * wallet is recognised on load with nothing stored anywhere.
+   *
+   * The SCOPED RPC PATH cannot — it is issued by the server against a signature,
+   * so losing it means signing again. It is kept in sessionStorage: a bearer
+   * credential granting a read-only view of one address, so it lasts as long as
+   * the tab and no longer. Closing the tab costs one more signature; leaving it
+   * in localStorage would leave the credential on a shared machine for good.
+   */
+  function loadSaved() {
+    try { return JSON.parse(sessionStorage.getItem(STORE_KEY) || "null"); } catch (_) { return null; }
+  }
+  function saveState() {
+    try {
+      if (state.address && state.rpcPath) {
+        sessionStorage.setItem(STORE_KEY, JSON.stringify({ address: state.address, rpcPath: state.rpcPath }));
+      } else {
+        sessionStorage.removeItem(STORE_KEY);
+      }
+    } catch (_) { /* private mode — the widget still works, it just re-signs */ }
+  }
 
   const css = `
     /* The widget lives at the top of the page body, not in the header. In the
@@ -108,6 +137,45 @@
     document.addEventListener("click", (e) => {
       if (!wrap.contains(e.target)) panel.classList.remove("open");
     });
+
+    hydrate(btn, panel);
+  }
+
+  /** Pick the connection back up on a page that has only just loaded. */
+  async function hydrate(btn, panel) {
+    if (!window.ethereum) return;
+    try {
+      // eth_accounts, NOT eth_requestAccounts — this must never raise a wallet
+      // prompt just because someone opened a page.
+      const accounts = await window.ethereum.request({ method: "eth_accounts" });
+      applyAccount(accounts?.[0] ?? null, btn, panel);
+    } catch (_) { /* leave it disconnected */ }
+
+    // Switching account in the wallet, or disconnecting the site, has to be
+    // reflected here — otherwise the button keeps naming an address the wallet
+    // will no longer sign for.
+    window.ethereum.on?.("accountsChanged", (accs) => applyAccount(accs?.[0] ?? null, btn, panel));
+  }
+
+  function applyAccount(address, btn, panel) {
+    if (!address) {
+      state.address = null;
+      state.rpcPath = null;
+      btn.textContent = "Connect wallet";
+      btn.classList.remove("on");
+    } else {
+      const saved = loadSaved();
+      state.address = address;
+      // A scoped URL belongs to exactly ONE address. Carrying a stored one over
+      // to a different account would hand that account someone else's endpoint,
+      // so it is only restored on an exact match.
+      state.rpcPath = saved && saved.address?.toLowerCase() === address.toLowerCase()
+        ? saved.rpcPath : null;
+      btn.textContent = short(address);
+      btn.classList.add("on");
+    }
+    saveState();
+    if (panel.classList.contains("open")) render(panel, btn);
   }
 
   function say(panel, kind, html) {
@@ -179,9 +247,7 @@
     go.disabled = true; go.textContent = "Connecting…";
     try {
       const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-      state.address = accounts[0];
-      btn.textContent = short(state.address);
-      btn.classList.add("on");
+      applyAccount(accounts[0], btn, panel);
       render(panel, btn);
     } catch (e) {
       go.disabled = false; go.textContent = "Connect";
@@ -218,6 +284,7 @@
         return;
       }
       state.rpcPath = out.path;
+      saveState(); // so the next page keeps it instead of asking for another signature
       render(panel, btn);
       say(panel, "ok", "Access granted — this URL is scoped to your address only.");
     } catch (e) {

@@ -264,9 +264,19 @@ $("mine").addEventListener("click", async () => {
 $("mint").addEventListener("click", mint);
 
 // Deep link: /assets.html?address=0x…
+// Failing that, use the wallet already connected to this site. eth_accounts
+// never prompts, so arriving here with a wallet connected shows your holdings
+// straight away rather than making you press "Use my wallet" on every visit.
 const initial = new URLSearchParams(location.search).get("address");
 if (initial) $("addr").value = initial;
-load(initial || null);
+(async () => {
+  let a = initial;
+  if (!a && window.ethereum) {
+    try { a = (await window.ethereum.request({ method: "eth_accounts" }))?.[0] ?? null; } catch (_) { /* ignore */ }
+    if (a) $("addr").value = a;
+  }
+  load(a || null);
+})();
 </script>
 </body>
 </html>
