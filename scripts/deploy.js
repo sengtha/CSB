@@ -121,8 +121,28 @@ async function main() {
   };
   const outPath = process.env.CSB_DEPLOYMENTS_FILE ?? path.join(__dirname, "..", "app", "deployments.json");
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
+
+  // Carry the `pilot` block across a redeploy. It holds PRIVATE KEYS — the only
+  // copy that exists anywhere, since this file is gitignored — for the pilot
+  // cast, the escrow cast, the ID-Poor and land demos, plus the charity record
+  // the fee-routing scripts read. Writing a fresh object here silently
+  // destroyed all of it every time the suite was redeployed, and a lost key is
+  // lost for good.
+  //
+  // The keys stay valid; what does NOT survive is their state on chain. New
+  // contracts mean an empty IdentityRegistry, so the seeded accounts hold no
+  // KYC and no KHRt until they are re-registered. Re-running seed-accounts.js
+  // reuses these same keys and re-registers them.
+  let carried = null;
+  try { carried = JSON.parse(fs.readFileSync(outPath, "utf8")).pilot ?? null; } catch (_) { /* first deploy */ }
+  if (carried) deployments.pilot = carried;
+
   fs.writeFileSync(outPath, JSON.stringify(deployments, null, 2));
   console.log(`\nWrote ${outPath}`);
+  if (carried) {
+    console.log("Kept the existing `pilot` block (keys preserved). Those accounts are NOT");
+    console.log("registered on the new contracts — re-run scripts/seed-accounts.js.");
+  }
 }
 
 main().catch((error) => {

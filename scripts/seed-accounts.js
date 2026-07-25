@@ -6,7 +6,12 @@ const path = require("path");
  * Optionally seeds a freshly deployed suite with pilot/test accounts for the
  * wallet/explorer/admin UIs. Assumes the deployer holds all roles (pilot
  * mode). Reads addresses from app/deployments.json (written by
- * scripts/deploy.js) and appends the generated account keys to it.
+ * scripts/deploy.js) and merges the account keys into it.
+ *
+ * Safe to re-run. It reuses the cast already on file (re-registering it against
+ * whatever contracts are current), tops balances up to target instead of adding
+ * to them, and merges into `pilot` rather than replacing it — that block also
+ * holds the escrow / ID-Poor / land casts and the charity record.
  *
  * On the real CSB L1, accounts must also be enabled in the txAllowList
  * precompile before they can transact — this script now does that for the
@@ -27,9 +32,22 @@ async function main() {
   const khr = await ethers.getContractAt("KHRStablecoin", deployments.contracts.KHRStablecoin);
   const gateway = await ethers.getContractAt("EgressGateway", deployments.contracts.EgressGateway);
 
-  const sokha = ethers.Wallet.createRandom().connect(ethers.provider);
-  const dara = ethers.Wallet.createRandom().connect(ethers.provider);
-  const vanna = ethers.Wallet.createRandom().connect(ethers.provider);
+  // Reuse the cast if this file already has one. Minting fresh wallets on every
+  // run orphans the previous ones — their KYC registration, their KHRt and their
+  // tRIEL stay on chain under addresses nothing references any more, and anyone
+  // holding the old keys (a browser tab, a note, a screenshot) finds an account
+  // the UI no longer knows. Re-running should REPAIR the cast, not replace it.
+  const existing = deployments.pilot?.accounts ?? {};
+  const reuse = (name) => {
+    const k = existing[name]?.key;
+    try { return k ? new ethers.Wallet(k, ethers.provider) : null; } catch (_) { return null; }
+  };
+  const sokha = reuse("sokha") ?? ethers.Wallet.createRandom().connect(ethers.provider);
+  const dara = reuse("dara") ?? ethers.Wallet.createRandom().connect(ethers.provider);
+  const vanna = reuse("vanna") ?? ethers.Wallet.createRandom().connect(ethers.provider);
+  console.log(Object.keys(existing).length
+    ? "Reusing the pilot cast already in deployments.json (re-registering as needed)."
+    : "No pilot cast on file — minting a new one.");
 
   // Fund native gas for every seeded account. Even where the CSB fee floor is
   // set to zero, the node still reserves maxFeePerGas * gasLimit from the
@@ -43,7 +61,11 @@ async function main() {
   // the old amount, buys roughly two KHRt transfers once gas is priced.)
   const gasMoney = ethers.parseEther(process.env.CSB_SEED_GAS ?? "1000");
   for (const w of [sokha, dara, vanna]) {
-    await (await deployer.sendTransaction({ to: w.address, value: gasMoney })).wait();
+    // Top up to the target rather than adding on every run, so repeated repairs
+    // don't inflate balances the demos quote at people.
+    const have = await ethers.provider.getBalance(w.address);
+    if (have >= gasMoney) continue;
+    await (await deployer.sendTransaction({ to: w.address, value: gasMoney - have })).wait();
   }
 
   // Enable the funded pilot accounts in the txAllowList precompile so they can
@@ -69,15 +91,15 @@ async function main() {
   // AlreadyRegistered, which estimateGas reports as a bare "execution reverted"
   // — so a re-run after a partly-failed deploy would look like a new failure
   // rather than work already done.
-  // The identity commitment is salted with the address: each seeded run mints
-  // NEW wallets, and reusing a fixed commitment would try to attach a second
-  // address to an identity whose quota is one — QuotaExceeded, surfacing as a
-  // bare "execution reverted" on the re-run.
+  // The identity commitment is salted with the address, so a run that does mint
+  // new wallets cannot collide with an earlier cast: a fixed commitment would
+  // try to attach a second address to an identity whose quota is one —
+  // QuotaExceeded, surfacing as a bare "execution reverted".
   await registerIfNeeded(identity, sokha.address, `identity-sokha-${sokha.address}`, 2);
   await registerIfNeeded(identity, dara.address, `identity-dara-${dara.address}`, 1);
 
-  await (await khr.issue(sokha.address, 5_000_000_00)).wait(); // 5,000,000.00 KHRt
-  await (await khr.issue(dara.address, 1_000_000_00)).wait();
+  await issueUpTo(khr, sokha.address, 5_000_000_00n); // 5,000,000.00 KHRt
+  await issueUpTo(khr, dara.address, 1_000_000_00n);
   await (await khr.setTierTransferCap(1, 400_000_00)).wait(); // tier-1 cap: 400,000 KHRt/transfer
 
   // Permit KHRt egress to the configured destination through the mock adapter:
@@ -87,14 +109,18 @@ async function main() {
     await gateway.setTokenPolicy(khr.target, true, 2, 1_000_000_00, deployments.contracts.MockBridgeAdapter)
   ).wait();
 
+  // MERGE. `pilot` also carries the escrow, ID-Poor and land casts written by
+  // the demo scripts, and the charity record the fee-routing scripts read —
+  // assigning a fresh object here deleted all of them, keys included.
   deployments.pilot = {
+    ...(deployments.pilot ?? {}),
     destinationChain: { label: "Avalanche C-Chain", id: destChain },
     accounts: {
       sokha: { address: sokha.address, key: sokha.privateKey, tier: 2, note: "full KYC, funded" },
       dara: { address: dara.address, key: dara.privateKey, tier: 1, note: "capped tier, funded" },
       vanna: { address: vanna.address, key: vanna.privateKey, tier: 0, note: "NOT KYC'd — rejection cases" },
     },
-    deployerKey: null,
+    deployerKey: deployments.pilot?.deployerKey ?? null,
   };
   fs.writeFileSync(file, JSON.stringify(deployments, null, 2));
 
@@ -117,6 +143,16 @@ async function registerIfNeeded(identity, address, idLabel, tier) {
     return;
   }
   await (await identity.register(address, ethers.id(idLabel), tier)).wait();
+}
+
+/** Issue only the shortfall, so a repeat run tops up instead of doubling. */
+async function issueUpTo(khr, address, target) {
+  const have = await khr.balanceOf(address);
+  if (have >= target) {
+    console.log(`  ${address} already holds ${have} KHRt units — no issuance needed`);
+    return;
+  }
+  await (await khr.issue(address, target - have)).wait();
 }
 
 main().catch((error) => {
