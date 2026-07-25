@@ -21,6 +21,11 @@
 # Check on it:
 #   systemctl list-timers csb-watchdog.timer
 #   journalctl -u csb-watchdog -n 50
+#
+# If you ever suspect the watchdog itself, turn it off before debugging the node:
+#   systemctl stop csb-watchdog.timer
+# It has taken a healthy cluster down before (see the notes on locking and on
+# node_unhealthy below), so rule it out first rather than last.
 set -uo pipefail
 
 RPC="${CSB_RPC_URL:-http://127.0.0.1:9650/ext/bc/299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW/rpc}"
@@ -32,6 +37,52 @@ PROBE_GAP="${CSB_PROBE_GAP:-20}"        # seconds between probes
 RESTART="${CSB_WATCHDOG_RESTART:-1}"    # 0 = alert only, never restart
 
 log() { echo "[$(date -u +%FT%TZ)] $*"; }
+
+# avalanche-cli writes progress with ANSI escapes and other non-printable bytes.
+# Piped into the journal those become "[8B blob data]" lines that hide whatever
+# the CLI actually said — exactly when something has gone wrong and you need it.
+clean() { tr -cd '\11\12\15\40-\176'; }
+
+# Only one run at a time. The timer fires every 5 minutes; a node that is
+# bootstrapping takes longer than that, so without a lock each firing launches
+# ANOTHER `avalanche node local start` against a cluster that is already
+# starting. Competing starts are how a cluster ends up Stopped and staying
+# Stopped — the failure this watchdog exists to prevent, caused by the watchdog.
+exec 9>/run/csb-watchdog.lock
+if ! flock -n 9; then
+  log "another watchdog run is still in progress — skipping this firing."
+  exit 0
+fi
+
+# Is the cluster already up? Starting one that is running fails with
+# "node is already running", and starting one that is mid-bootstrap is worse.
+cluster_running() {
+  [ -x "$AVALANCHE" ] || return 1
+  "$AVALANCHE" node local status "$CLUSTER" 2>/dev/null | clean | grep -q 'Running'
+}
+
+# Bring the cluster up and WAIT for it, instead of firing a start and reporting
+# failure while it boots.
+start_and_wait() {
+  if cluster_running; then
+    log "cluster reports Running already — not issuing a second start."
+  else
+    log "starting cluster $CLUSTER"
+    "$AVALANCHE" node local start "$CLUSTER" 2>&1 | clean | sed 's/^/    /'
+  fi
+  local i h
+  for i in $(seq 1 "${CSB_START_WAIT_PROBES:-20}"); do
+    sleep 15
+    h=$(height)
+    if [ -n "$h" ]; then
+      log "RPC answering again at height $h after $((i * 15))s."
+      return 0
+    fi
+  done
+  log "still no RPC after $(( ${CSB_START_WAIT_PROBES:-20} * 15 ))s — a bootstrapping L1 can"
+  log "legitimately take longer than this; the next firing will check again rather than restart."
+  return 1
+}
 
 rpc() {
   curl -s --max-time 10 -X POST -H 'content-type:application/json' \
@@ -93,23 +144,37 @@ pending_txs_via_block() {
 # Is every node in the cluster reporting healthy? The health endpoint catches
 # problems a height probe cannot distinguish from an idle chain — notably
 # "not connected to enough stake", which is what a wedged L1 looks like.
+#
+# RETRIED, because this decides whether to stop a running cluster. A single
+# curl timeout under load used to be enough to report "unhealthy" and trigger a
+# stop/start of a node that was fine — the watchdog causing the outage it was
+# installed to catch. Three failures in a row is a signal; one is noise.
 node_unhealthy() {
-  local body
-  body=$(curl -s --max-time 10 "http://127.0.0.1:${1}/ext/health")
-  [ -z "$body" ] && return 0                                  # no answer = unhealthy
-  printf '%s' "$body" | grep -q '"healthy":true' && return 1
+  local i body
+  for i in 1 2 3; do
+    body=$(curl -s --max-time 10 "http://127.0.0.1:${1}/ext/health")
+    printf '%s' "$body" | grep -q '"healthy":true' && return 1
+    [ "$i" -lt 3 ] && sleep 5
+  done
+  log "health endpoint did not report healthy in 3 attempts"
   return 0
 }
 
 first=$(height)
 if [ -z "$first" ]; then
   log "RPC not answering at $RPC — chain down, not merely stalled."
-  if [ "$RESTART" = "1" ] && [ -x "$AVALANCHE" ]; then
-    log "starting cluster $CLUSTER"
-    "$AVALANCHE" node local start "$CLUSTER" 2>&1 | sed 's/^/    /'
-  elif [ ! -x "$AVALANCHE" ]; then
+  if [ ! -x "$AVALANCHE" ]; then
     log "avalanche CLI not found at $AVALANCHE (set AVALANCHE_BIN) — cannot restart."
+    exit 1
   fi
+  if [ "$RESTART" != "1" ]; then
+    log "CSB_WATCHDOG_RESTART=0 — alerting only."
+    exit 1
+  fi
+  # Exit 0 when the recovery WORKED. The old code exited 1 unconditionally, so
+  # a successful recovery was still recorded as a service failure — which made
+  # the journal useless for telling "it fixed itself" from "it is still broken".
+  if start_and_wait; then exit 0; fi
   exit 1
 fi
 
@@ -158,7 +223,7 @@ fi
 log "STALLED: height flat at $last across $frozen probes" \
     "(mempool: $waiting; node: $([ "$unhealthy" -eq 1 ] && echo UNHEALTHY || echo healthy))."
 if [ -x "$AVALANCHE" ]; then
-  "$AVALANCHE" node local list 2>&1 | sed 's/^/    /'
+  "$AVALANCHE" node local list 2>&1 | clean | sed 's/^/    /'
 else
   log "note: avalanche CLI not found at $AVALANCHE (set AVALANCHE_BIN) — cannot inspect or restart."
   exit 1
@@ -170,11 +235,10 @@ if [ "$RESTART" != "1" ]; then
 fi
 
 log "restarting cluster $CLUSTER"
-"$AVALANCHE" node local stop "$CLUSTER"  2>&1 | sed 's/^/    /'
+"$AVALANCHE" node local stop "$CLUSTER"  2>&1 | clean | sed 's/^/    /'
 sleep 5
-"$AVALANCHE" node local start "$CLUSTER" 2>&1 | sed 's/^/    /'
+start_and_wait || true
 
-sleep 30
 after=$(height)
 if [ -n "$after" ] && [ "$after" -gt "$last" ]; then
   log "recovered — height now $after"
