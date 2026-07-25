@@ -48,7 +48,34 @@ const ORDER_STATUS = ["none", "created", "funded", "released", "refunded", "disp
 const CACHE_MS = 6000;
 let _cache = null;
 
+// ABI decoding here is by hand, and every length and offset in the input comes
+// from the node rather than from us. A contract that is not the one we think is
+// at an address returns words that decode as astronomical lengths, and
+// Array.from({length: 1e77}) spends twenty seconds before failing — on a public
+// endpoint that is a denial of service reachable by anyone, so every offset is
+// range-checked against the data actually returned and every count is capped.
+const MAX_ITEMS = 64;
 const hexToBig = (h) => (typeof h === "string" && h !== "0x" ? BigInt(h) : 0n);
+/** Byte length of a 0x-hex payload. */
+const byteLen = (hex) => Math.floor(String(hex ?? "").replace(/^0x/, "").length / 2);
+/**
+ * A COUNT decoded from a call result, clamped to something a loop may use.
+ * Without this, `orderCount` returning 0xff…ff becomes 1.15e77 — and
+ * `for (let i = n - 2; i <= n; i++)` never terminates, because at that
+ * magnitude `n - 2 === n` and `i++` cannot change the value. It burned twenty
+ * seconds and died on an out-of-memory array.
+ */
+function countIn(hex, max = MAX_ITEMS) {
+  const v = hexToBig(hex);
+  return v > BigInt(max) ? max : Number(v);
+}
+/** A byte offset decoded from `hex`, or null when it points outside it. */
+function offsetIn(hex, w) {
+  const v = hexToBig(w);
+  if (v > BigInt(byteLen(hex))) return null;
+  const n = Number(v);
+  return n % 32 === 0 ? n : null; // ABI offsets are word-aligned
+}
 const pad32 = (a) => "000000000000000000000000" + String(a).toLowerCase().replace(/^0x/, "");
 const padNum = (n) => BigInt(n).toString(16).padStart(64, "0");
 const word = (hex, i) => "0x" + hex.replace(/^0x/, "").slice(i * 64, (i + 1) * 64);
@@ -74,21 +101,24 @@ const call = (rpc) => (to, data) =>
 /** Decode a solidity `string` at a byte offset inside `hex`. */
 function strAt(hex, byteOffset) {
   try {
+    if (byteOffset == null || byteOffset < 0 || byteOffset >= byteLen(hex)) return "";
     const b = hex.replace(/^0x/, "");
     const off = byteOffset * 2;
-    const len = Number(BigInt("0x" + b.slice(off, off + 64)));
+    const declared = Number(BigInt("0x" + b.slice(off, off + 64)));
+    // Trust the smaller of what it claims and what is actually there.
+    const len = Math.max(0, Math.min(declared, (b.length - off - 64) / 2));
     return Buffer.from(b.slice(off + 64, off + 64 + len * 2), "hex").toString("utf8");
   } catch (_) { return ""; }
 }
 /** Decode a top-level `string` return value. */
 function decodeString(hex) {
   if (!hex) return "";
-  return strAt(hex, Number(hexToBig(word(hex, 0))));
+  return strAt(hex, offsetIn(hex, word(hex, 0)));
 }
 /** Decode `(bool, string)` — the shape every canX() helper returns. */
 function decodeBoolString(hex) {
   if (!hex) return { ok: false, reason: "could not read the chain" };
-  return { ok: hexToBig(word(hex, 0)) !== 0n, reason: strAt(hex, Number(hexToBig(word(hex, 1)))) };
+  return { ok: hexToBig(word(hex, 0)) !== 0n, reason: strAt(hex, offsetIn(hex, word(hex, 1))) };
 }
 
 function categoriesOf(mask) {
@@ -140,11 +170,11 @@ async function idpoorData(c, d, cast) {
     const raw = await c(d.contracts.SocialProgramRegistry, SEL.programOf + padNum(programId));
     if (raw) {
       // Program { string label; uint32 allowedCategories; uint64 expiresAt; bool active; bool allowMerchantToMerchant }
-      const base = Number(hexToBig(word(raw, 0))); // struct is dynamic (has a string)
-      const head = (i) => word(raw, base / 32 + i);
-      program = {
+      const base = offsetIn(raw, word(raw, 0)); // struct is dynamic (has a string)
+      const head = (i) => (base === null ? "0x" : word(raw, base / 32 + i));
+      program = base === null ? null : {
         id: programId,
-        label: strAt(raw, base + Number(hexToBig(head(0)))),
+        label: strAt(raw, offsetIn(raw, head(0)) === null ? null : base + Number(hexToBig(head(0)))),
         categories: categoriesOf(hexToBig(head(1))),
         expiresAt: Number(hexToBig(head(2))),
         active: hexToBig(head(3)) !== 0n,
@@ -157,13 +187,14 @@ async function idpoorData(c, d, cast) {
     if (!p || !d.contracts.MerchantRegistry) return null;
     const raw = await c(d.contracts.MerchantRegistry, SEL.merchantOf + pad32(p.address));
     if (!raw) return null;
-    const base = Number(hexToBig(word(raw, 0)));
+    const base = offsetIn(raw, word(raw, 0));
+    if (base === null) return null;
     const head = (i) => word(raw, base / 32 + i);
     return {
       registered: hexToBig(head(0)) !== 0n,
       categories: categoriesOf(hexToBig(head(0))),
       suspended: hexToBig(head(1)) !== 0n,
-      label: strAt(raw, base + Number(hexToBig(head(2)))),
+      label: strAt(raw, offsetIn(raw, head(2)) === null ? null : base + Number(hexToBig(head(2)))),
     };
   };
   const [grocerLic, lenderLic] = await Promise.all([licence(grocer), licence(lender)]);
@@ -187,7 +218,8 @@ async function idpoorData(c, d, cast) {
 async function landData(c, d, cast) {
   const registry = d.contracts.LandTitleRegistry;
   if (!registry) return null;
-  const count = Number(hexToBig(await c(registry, SEL.parcelCount)));
+  // Bounded: this indexes the registry, and an unbounded value is a loop bomb.
+  const count = countIn(await c(registry, SEL.parcelCount), 1e6);
   if (!count) return null;
   const parcelId = await c(registry, SEL.parcelIdAt + padNum(count - 1));
   if (!parcelId) return null;
@@ -196,7 +228,8 @@ async function landData(c, d, cast) {
   if (!raw) return null;
   // Parcel { bytes32 parcelId; address token; string location; uint256 areaSqm;
   //          uint256 totalShares; uint64 registeredAt; bool active }
-  const base = Number(hexToBig(word(raw, 0)));
+  const base = offsetIn(raw, word(raw, 0));
+  if (base === null) return null;
   const head = (i) => word(raw, base / 32 + i);
   const token = addrFromWord(head(1));
   const [name, symbol, supply] = await Promise.all([
@@ -215,7 +248,7 @@ async function landData(c, d, cast) {
     token,
     name: name ? decodeString(name) : "",
     symbol: symbol ? decodeString(symbol) : "",
-    location: strAt(raw, base + Number(hexToBig(head(2)))),
+    location: strAt(raw, offsetIn(raw, head(2)) === null ? null : base + Number(hexToBig(head(2)))),
     areaSqm: Number(hexToBig(head(3))),
     totalShares: Number(hexToBig(supply ?? head(4))),
     active: hexToBig(head(6)) !== 0n,
@@ -226,7 +259,7 @@ async function landData(c, d, cast) {
 async function escrowData(c, d, cast) {
   const escrow = d.contracts.PaymentEscrow;
   if (!escrow) return null;
-  const count = Number(hexToBig(await c(escrow, SEL.orderCount)));
+  const count = countIn(await c(escrow, SEL.orderCount), 1e6);
   if (!count) return null;
 
   // Several orders, newest last. The demo deliberately creates one that settles
@@ -243,12 +276,19 @@ async function order(c, escrow, id, cast) {
   if (!raw) return null;
   // Order { bytes32 ref; address payer; address token; uint256 total;
   //         uint64 deadline; Status status; address[] payees; uint256[] amounts }
-  const base = Number(hexToBig(word(raw, 0)));
+  const base = offsetIn(raw, word(raw, 0));
+  if (base === null) return null;
   const head = (i) => word(raw, base / 32 + i);
   const arr = (offsetWord) => {
-    const at = base + Number(hexToBig(offsetWord));
-    const n = Number(hexToBig(word(raw, at / 32)));
-    return Array.from({ length: n }, (_, i) => word(raw, at / 32 + 1 + i));
+    const rel = offsetIn(raw, offsetWord);
+    if (rel === null) return [];
+    const at = base + rel;
+    if (at + 32 > byteLen(raw)) return [];
+    // Cap by BOTH the declared count and the words actually present: a length
+    // word of 2^256-1 must not become an allocation.
+    const available = Math.floor((byteLen(raw) - at - 32) / 32);
+    const n = Math.min(Number(hexToBig(word(raw, at / 32))), available, MAX_ITEMS);
+    return Array.from({ length: Math.max(0, n) }, (_, i) => word(raw, at / 32 + 1 + i));
   };
   const payees = arr(head(6)).map(addrFromWord);
   const amounts = arr(head(7)).map(hexToBig);
@@ -344,4 +384,11 @@ async function useCaseCheck(rpcUrl, deployments, { kase, to, amount }) {
   return bad("unknown check");
 }
 
-module.exports = { useCases, useCaseCheck, _internal: { decodeBoolString, categoriesOf, riel, toUnits } };
+module.exports = {
+  useCases,
+  useCaseCheck,
+  // resetCache is for tests: the response cache is global, so without it a
+  // second call inside the window returns the first call's answer and any test
+  // that varies its input silently measures nothing.
+  _internal: { decodeBoolString, categoriesOf, riel, toUnits, countIn, offsetIn, resetCache: () => { _cache = null; } },
+};
