@@ -27,7 +27,12 @@ That enables the address on both allowlist precompiles and funds it with gas:
 | Native gas (tRIEL) | Native Minter / transfer | Pay for transactions |
 
 To enable several at once: `CSB_DEV_ADDR=0xdev1,0xdev2`. Change the gas grant with
-`CSB_DEV_GAS=25`.
+`CSB_DEV_GAS=2000`.
+
+The default grant is **1000 tRIEL**. Gas costs about 1 tRIEL per ordinary
+transaction and roughly 100 for a contract deployment, so a smaller grant runs
+out quickly — and anything under ~100 cannot deploy at all, which is the point
+of the access being granted.
 
 > This is **technical** access only. To *hold or transfer KHRt*, the address also
 > needs a KYC attestation in the IdentityRegistry (admin console → Identity).

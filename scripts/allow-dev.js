@@ -22,7 +22,8 @@ const path = require("path");
  *     npx hardhat run scripts/allow-dev.js --network csbRemote
  *
  * Optional env:
- *   CSB_DEV_GAS      tRIEL to fund each dev address with (default "10")
+ *   CSB_DEV_GAS      tRIEL to fund each dev address with (default "1000" — about
+ *                    1 tRIEL per ordinary tx, ~100 for a contract deploy)
  *   CSB_DEV_DEPLOYER set "0" to grant tx access only (no contract-deploy rights)
  */
 const TX_ALLOWLIST = "0x0200000000000000000000000000000000000002";
@@ -45,7 +46,11 @@ async function main() {
   for (const a of addrs) if (!ethers.isAddress(a)) throw new Error(`Not an address: ${a}`);
 
   const grantDeploy = process.env.CSB_DEV_DEPLOYER !== "0";
-  const gas = ethers.parseEther(process.env.CSB_DEV_GAS ?? "10");
+  // Gas is priced at about 1 tRIEL per ordinary transaction on CSB, and a
+  // contract deployment runs to ~100 tRIEL. The old default of 10 could not pay
+  // for a single deploy — which is what this script exists to enable — so a dev
+  // was onboarded, told they were ready, and stopped on their first attempt.
+  const gas = ethers.parseEther(process.env.CSB_DEV_GAS ?? "1000");
 
   // Explicit high fee + explicit nonce, so txs can't get stuck under-priced or
   // queued behind an earlier stuck tx (same approach as scripts/fund-native.js).
