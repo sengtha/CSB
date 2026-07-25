@@ -63,7 +63,26 @@ CSB_GAS_TRIEL="$CHEAP_TRIEL" npx hardhat run scripts/set-gas-price.js --network 
 # and it only decays as blocks are produced. Make some.
 echo
 echo "─── Letting the current base fee decay to the new floor ───"
-CSB_TARGET_GWEI="$SETTLE_GWEI" npx hardhat run scripts/settle-base-fee.js --network csbRemote
+if ! CSB_TARGET_GWEI="$SETTLE_GWEI" npx hardhat run scripts/settle-base-fee.js --network csbRemote; then
+  cat >&2 <<'WHY'
+
+The base fee did not come down to the target, so this whole approach cannot work
+on this chain: deployments would be submitted under-priced and hang forever.
+
+Observed on CSB: the base fee stays pinned at its original value no matter what
+minBaseFee is lowered to, and no matter how many blocks are produced. Lowering
+the fee therefore does NOT make a deployment cheaper here, which is the entire
+premise of this script.
+
+Use the node-config route instead — it lifts the cap directly and leaves the
+1-riel policy alone:
+
+    ps -eo args= | grep -o -- '--chain-config-dir[= ][^ ]*'   # find the real path
+    CSB_CHAIN_CONFIG_DIR=<that path> bash ops/csb-chain-config.sh --restart
+
+WHY
+  exit 1
+fi
 
 export CSB_GAS_PRICE_WEI="$CHEAP_PRICE"
 

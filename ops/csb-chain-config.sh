@@ -52,6 +52,8 @@ echo
 # conventional location, and print what was chosen so it can be checked.
 detect_chain_config_dir() {
   local node_dir="$1" found=""
+  # 0. explicit override always wins — detection is a convenience, not a rule
+  if [ -n "${CSB_CHAIN_CONFIG_DIR:-}" ]; then echo "$CSB_CHAIN_CONFIG_DIR"; return; fi
   # 1. the running avalanchego process for this node
   found=$(ps -eo args= 2>/dev/null \
     | grep -F "$(basename "$node_dir")" \
