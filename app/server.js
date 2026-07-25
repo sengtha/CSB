@@ -21,6 +21,7 @@ const { filterBody } = require("./rpc-filter");
 const { deriveToken, addressFromToken, verifySignature } = require("./rpc-access");
 const { fundReport } = require("./fund");
 const { nodeInfo } = require("./node-info");
+const { assets } = require("./assets");
 
 const RPC_URL = process.env.CSB_RPC_URL ?? "http://127.0.0.1:8545";
 const PORT = Number(process.env.PORT ?? process.env.DEMO_PORT ?? 8080);
@@ -178,6 +179,21 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/node-info") {
     try {
       send(res, 200, await nodeInfo(RPC_URL, loadDeployments()), { "Cache-Control": "public, max-age=10" });
+    } catch (e) {
+      send(res, 502, { error: e.message });
+    }
+    return;
+  }
+
+  // Token / NFT viewer data. Public, read-only, and scoped: it reports what
+  // tokens exist on this chain, plus the holdings of an address the CALLER
+  // names. It cannot enumerate holders — browsing who owns what would work
+  // around the read-privacy model the chain exists to provide.
+  if (url.pathname === "/assets") {
+    try {
+      send(res, 200, await assets(RPC_URL, loadDeployments(), {
+        address: url.searchParams.get("address"),
+      }), { "Cache-Control": "public, max-age=8" });
     } catch (e) {
       send(res, 502, { error: e.message });
     }

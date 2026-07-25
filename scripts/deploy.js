@@ -68,6 +68,13 @@ async function main() {
   await escrow.waitForDeployment();
   console.log(`PaymentEscrow:       ${escrow.target}  (arbiter ${council})`);
 
+  // A mintable, KYC-gated NFT — the thing a visitor can try for themselves.
+  const collectible = await hre.ethers.deployContract("CSBCollectible", [
+    identity.target, enforcement.target, council,
+  ]);
+  await collectible.waitForDeployment();
+  console.log(`CSBCollectible:      ${collectible.target}  (on-chain artwork)`);
+
   // Grant the enforcement authority its token-level power and wire the adapter
   // when the deployer holds the admin roles (devnet convenience).
   if (council === deployer.address) {
@@ -108,6 +115,7 @@ async function main() {
       RielConverter: converter.target,
       RielPay: rielPay.target,
       PaymentEscrow: escrow.target,
+      CSBCollectible: collectible.target,
     },
     roles: { council, idAuthority, enforcer, issuer },
   };

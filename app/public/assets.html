@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tokens & NFTs — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .lead { font-size: 14px; line-height: 1.7; }
+    .note { font-size: 12.5px; color: var(--muted); line-height: 1.65; }
+    .tok { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+           border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; margin-bottom: 10px; background: #fbfcfe; }
+    .tok .s { font-size: 15px; font-weight: 700; color: var(--blue); }
+    .tok .n { font-size: 12.5px; color: var(--muted); margin-top: 2px; line-height: 1.5; }
+    .tok .bal { text-align: right; font-variant-numeric: tabular-nums; }
+    .tok .bal .v { font-size: 18px; font-weight: 700; }
+    .tok .bal .k { font-size: 11px; color: var(--muted); }
+    .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+    .nft { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; }
+    .nft img { display: block; width: 100%; aspect-ratio: 1; }
+    .nft .cap { padding: 8px 10px; font-size: 12.5px; font-weight: 600; color: var(--blue); }
+    .mintbox { border: 1px solid var(--line); border-radius: 10px; padding: 16px; background: #fbfcfe; }
+    .addrbar { display: flex; gap: 8px; flex-wrap: wrap; }
+    .addrbar input { flex: 1 1 260px; }
+    .addrbar button { margin-top: 0; }
+    .msg { font-size: 13px; border-radius: 8px; padding: 10px 12px; margin-top: 10px; line-height: 1.55; }
+    .msg.err { background: #fdecec; border: 1px solid #f5c2c2; color: #8f1d1d; }
+    .msg.ok { background: #e6f6ec; border: 1px solid #bfe5cd; color: #14532d; }
+    .msg.info { background: #eef2fb; border: 1px solid #d3ddf5; color: #22365e; }
+    .foot { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0 24px; line-height: 1.6; }
+  </style>
+  <script src="shell.js" defer></script>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB Tokens &amp; NFTs</h1>
+    <span class="sub">see what exists, and mint one yourself</span>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="wallet.html">Wallet</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="fund.html">Fund</a>
+      <a href="assets.html" class="active">Tokens &amp; NFTs</a>
+      <a href="use-cases.html">Use cases</a>
+      <a href="validator.html">Validators</a>
+      <a href="node.html">Node info</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main>
+    <div id="err" class="banner"></div>
+
+    <div class="card">
+      <h2>Look up an address</h2>
+      <p class="note" style="margin-bottom:10px">
+        Paste any CSB address to see what it holds, or use <em>Connect wallet</em> above
+        to fill in your own. Balances are read live from the chain.
+      </p>
+      <div class="addrbar">
+        <input id="addr" placeholder="0x…" spellcheck="false" />
+        <button id="go">Look up</button>
+        <button id="mine" class="ghost">Use my wallet</button>
+      </div>
+      <p class="note" style="margin-top:10px">
+        You can only look up an address you already know — this page cannot list
+        holders. That limit is deliberate: browsing who owns what would defeat the
+        read-privacy the chain is built to provide.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Tokens on this chain</h2>
+      <div id="tokens"><p class="note">Loading…</p></div>
+    </div>
+
+    <div class="card">
+      <h2>Mint a collectible</h2>
+      <div class="mintbox">
+        <p class="lead" id="mint-intro">
+          A KYC-verified address can mint one for itself. The artwork is generated
+          <strong>on chain</strong> — no image server, no IPFS, nothing to go offline.
+        </p>
+        <div id="mint-state"></div>
+        <button id="mint" style="display:none">Mint one to my wallet</button>
+      </div>
+      <p class="note" style="margin-top:12px">
+        Minting is a real transaction on a permissioned chain, so it needs three
+        things: an active KYC attestation, permission to transact (the chain's
+        allow list), and a little tRIEL for gas. If any is missing you will be told
+        which — that refusal is the demonstration, not a fault.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2 id="gal-title">Collectibles</h2>
+      <div id="gallery" class="gallery"></div>
+      <p class="note" id="gal-note" style="margin-top:12px"></p>
+    </div>
+
+    <p class="foot">
+      Demonstration assets on a test network. The collectible represents nothing,
+      confers nothing, and is worth nothing. Tokenized riel here is test currency.
+    </p>
+  </main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let COLLECTION = null;
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = (v, dp = 2) => Number(v).toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
+
+function msg(el, kind, html) {
+  el.innerHTML = `<div class="msg ${kind}">${html}</div>`;
+}
+
+async function load(address) {
+  const q = address ? `?address=${encodeURIComponent(address)}` : "";
+  let d;
+  try {
+    const r = await fetch("/assets" + q);
+    d = await r.json();
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+  } catch (e) {
+    $("err").className = "banner err";
+    $("err").textContent = "Could not load assets: " + e.message;
+    return;
+  }
+  $("err").className = "banner";
+
+  // --- fungible tokens ---
+  $("tokens").innerHTML = d.tokens.map((t) => `
+    <div class="tok">
+      <div>
+        <div class="s">${esc(t.symbol)}</div>
+        <div class="n">${esc(t.name)}${t.note ? " — " + esc(t.note) : ""}</div>
+      </div>
+      <div class="bal">
+        ${t.balance != null
+          ? `<div class="v">${fmt(t.balance, t.decimals >= 18 ? 4 : 2)}</div><div class="k">your balance</div>`
+          : t.totalSupply != null
+            ? `<div class="v">${fmt(t.totalSupply, 2)}</div><div class="k">total supply</div>`
+            : ""}
+      </div>
+    </div>`).join("");
+
+  // --- collection ---
+  COLLECTION = d.collection;
+  if (!d.collection) {
+    $("gal-title").textContent = "Collectibles";
+    $("gallery").innerHTML = "";
+    $("gal-note").textContent = "The collectible contract is not deployed on this chain yet.";
+    msg($("mint-state"), "info", "Not available on this chain yet.");
+    return;
+  }
+
+  const own = d.collection.owned ?? [];
+  const show = own.length ? own : (d.collection.recent ?? []);
+  $("gal-title").textContent = own.length
+    ? `Held by this address — ${own.length}`
+    : `Recently minted — ${d.collection.totalMinted} in total`;
+  $("gallery").innerHTML = show.map((t) => `
+    <div class="nft">
+      <img src="${t.image}" alt="${esc(t.name)}" loading="lazy" />
+      <div class="cap">${esc(t.name)}</div>
+    </div>`).join("");
+  $("gal-note").textContent = show.length
+    ? "Every image above is stored on the chain itself — nothing is fetched from a server."
+    : (address ? "This address holds none yet." : "None minted yet — be the first.");
+
+  // --- mint state ---
+  const box = $("mint-state");
+  if (!address) {
+    msg(box, "info", "Connect a wallet, or look up an address, to see whether it can mint.");
+    $("mint").style.display = "none";
+  } else if (d.collection.canMint?.ok) {
+    msg(box, "ok", `<strong>${esc(address.slice(0, 8))}… can mint.</strong> `
+      + `Minted so far: ${d.collection.mintedByYou} of ${d.collection.maxPerAddress}.`);
+    $("mint").style.display = window.ethereum ? "" : "none";
+  } else {
+    const why = d.collection.canMint?.reason || "not eligible";
+    msg(box, "err", `<strong>This address cannot mint.</strong><br>${esc(why)}.`
+      + `<br><span class="note">On a permissioned chain that is the expected answer for an `
+      + `address the identity layer has not verified — not an error.</span>`);
+    $("mint").style.display = "none";
+  }
+}
+
+async function mint() {
+  const btn = $("mint");
+  const box = $("mint-state");
+  if (!window.ethereum) { msg(box, "err", "No wallet detected in this browser."); return; }
+  btn.disabled = true; btn.textContent = "Confirm in your wallet…";
+  try {
+    const [from] = await window.ethereum.request({ method: "eth_requestAccounts" });
+    // mint() — selector hashed, not guessed.
+    const tx = await window.ethereum.request({
+      method: "eth_sendTransaction",
+      params: [{ from, to: COLLECTION.address, data: "0x1249c58b" }],
+    });
+    msg(box, "info", `Minting… <span class="mono">${esc(tx.slice(0, 18))}…</span><br>`
+      + `<span class="note">This is a real transaction; it settles in a second or two.</span>`);
+    // Give the chain a moment, then refresh from the address that actually signed.
+    setTimeout(() => { $("addr").value = from; load(from); }, 3000);
+  } catch (e) {
+    const m = String(e?.message ?? e);
+    if (e?.code !== 4001) {
+      msg(box, "err", esc(m) + `<br><span class="note">Common causes on a permissioned chain: `
+        + `the address is not on the transaction allow list, or it holds no tRIEL for gas.</span>`);
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = "Mint one to my wallet";
+  }
+}
+
+$("go").addEventListener("click", () => {
+  const a = $("addr").value.trim();
+  if (/^0x[0-9a-fA-F]{40}$/.test(a)) load(a);
+  else msg($("mint-state"), "err", "That does not look like a 0x address.");
+});
+$("addr").addEventListener("keydown", (e) => { if (e.key === "Enter") $("go").click(); });
+$("mine").addEventListener("click", async () => {
+  if (!window.ethereum) { msg($("mint-state"), "err", "No wallet detected in this browser."); return; }
+  const [a] = await window.ethereum.request({ method: "eth_requestAccounts" });
+  $("addr").value = a;
+  load(a);
+});
+$("mint").addEventListener("click", mint);
+
+// Deep link: /assets.html?address=0x…
+const initial = new URLSearchParams(location.search).get("address");
+if (initial) $("addr").value = initial;
+load(initial || null);
+</script>
+</body>
+</html>
