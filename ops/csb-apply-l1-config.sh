@@ -16,13 +16,28 @@
 #       fee. With gas at 1 riel per transfer a contract deployment costs 100.35
 #       tRIEL (about 2.5 US cents) and is refused by a rail meant for tokens
 #       worth real money.
-#   eth-apis        — the list avalanche-cli already generates, plus
-#       internal-txpool so the watchdog can tell an idle chain from a wedged one.
 #
-# SECURITY: that list includes admin, debug, and internal-personal — enabled by
-# avalanche-cli's own defaults, kept here so this change does not quietly remove
-# them. They make port 9650 dangerous to expose. It must stay on localhost; see
-# the RPC-privacy section of docs/validator-manual.md.
+# What it deliberately does NOT set: eth-apis.
+#
+# An earlier version added "internal-txpool" to that list to give the watchdog a
+# mempool signal. That is not a valid API name in Subnet-EVM v0.8.0, and the
+# consequence was worse than a setting that does nothing — the node started, the
+# chain was created, and then:
+#
+#   ERROR failed to create path route handlers
+#     error: "failed to create inner VM handlers: API service internal-txpool not found"
+#
+# The chain's HTTP handlers failed to build, so no route was registered and the
+# L1 RPC answered 404 while the node itself looked perfectly healthy. Overriding
+# eth-apis at all means restating a list avalanche-cli generates and may change
+# between versions, so this now leaves it alone entirely: one wrong entry takes
+# the whole chain's API offline.
+#
+# If the txpool signal is wanted later, find the correct name for the installed
+# Subnet-EVM version first — check its source rather than guessing, since a bad
+# value is not rejected at config time — and change it while nothing depends on
+# the chain.
+
 set -euo pipefail
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

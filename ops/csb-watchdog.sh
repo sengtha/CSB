@@ -144,8 +144,8 @@ if [ "$unhealthy" -eq 0 ]; then
       log "height flat at $last across $frozen probes; node healthy, but neither the txpool"
       log "API nor a usable 'pending' block is available, so idle cannot be told from stuck."
       log "Treating as idle — the watchdog still covers RPC-down and unhealthy-node, but NOT"
-      log "a wedged chain. To close that gap, add 'internal-txpool' to the node's eth-apis:"
-      log "  docs/deployment-status.md → Watchdog."
+      log "a wedged chain. Closing that gap needs a txpool API this Subnet-EVM build does"
+      log "not expose under the name tried so far; see ops/csb-apply-l1-config.sh."
       exit 0
       ;;
     0)

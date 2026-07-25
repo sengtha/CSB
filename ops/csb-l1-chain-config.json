@@ -1,21 +1,3 @@
 {
-  "rpc-tx-fee-cap": 0,
-  "eth-apis": [
-    "eth",
-    "eth-filter",
-    "net",
-    "admin",
-    "web3",
-    "internal-eth",
-    "internal-blockchain",
-    "internal-transaction",
-    "internal-debug",
-    "internal-account",
-    "internal-personal",
-    "internal-txpool",
-    "debug",
-    "debug-tracer",
-    "debug-file-tracer",
-    "debug-handler"
-  ]
+  "rpc-tx-fee-cap": 0
 }
