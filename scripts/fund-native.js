@@ -70,15 +70,9 @@ async function main() {
     // We still submit below in case block production resumes shortly, but warn first.
   }
 
-  // Price high enough to REPLACE any earlier stuck attempt (those used up to
-  // ~575 gwei). Overpaying is harmless — the node charges only the real base
-  // fee, and the deployer holds ~1,000,000 tRIEL.
-  const fees = {
-    maxFeePerGas: baseFee * 20n + ethers.parseUnits("3000", "gwei"),
-    maxPriorityFeePerGas: ethers.parseUnits("500", "gwei"),
-  };
-  console.log(`Pricing txs at maxFeePerGas ${ethers.formatUnits(fees.maxFeePerGas, "gwei")} gwei, ` +
-    `priority ${ethers.formatUnits(fees.maxPriorityFeePerGas, "gwei")} gwei`);
+  // Gas price comes from the csbRemote network config (fixed legacy gasPrice),
+  // which is high enough to mine reliably and to replace an earlier stuck attempt.
+  const fees = {};
   console.log(`Topping each account up to ${ethers.formatEther(target)} tRIEL\n`);
 
   // Collect recipients: every seeded pilot account plus any explicit extras.

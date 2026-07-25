@@ -30,18 +30,11 @@ async function main() {
     return;
   }
 
-  // Pay for THIS transaction at the current (still non-zero) price.
-  const block = await ethers.provider.getBlock("latest");
-  const base = block?.baseFeePerGas ?? 0n;
-  const fees = {
-    maxFeePerGas: base * 3n + ethers.parseUnits("500", "gwei"),
-    maxPriorityFeePerGas: ethers.parseUnits("2", "gwei"),
-  };
-
+  // Price comes from the csbRemote network config (fixed legacy gasPrice), so
+  // this tx can't get stuck under-priced.
   const tx = await fm.setFeeConfig(
     c.gasLimit, c.targetBlockRate, 0n, c.targetGas,
     c.baseFeeChangeDenominator, c.minBlockGasCost, c.maxBlockGasCost, c.blockGasCostStep,
-    fees,
   );
   console.log(`setFeeConfig(minBaseFee=0) … tx ${tx.hash}`);
   await tx.wait();
