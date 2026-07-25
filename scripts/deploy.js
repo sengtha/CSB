@@ -49,16 +49,35 @@ async function main() {
   await adapter.waitForDeployment();
   console.log(`MockBridgeAdapter:   ${adapter.target}`);
 
+  // Native coin (tRIEL) <-> tokenized-riel converter. Native Minter precompile
+  // lives at 0x…01 on CSB; the converter must be allow-listed on it to mint.
+  const NATIVE_MINTER = "0x0200000000000000000000000000000000000001";
+  const converter = await hre.ethers.deployContract("RielConverter", [council, NATIVE_MINTER]);
+  await converter.waitForDeployment();
+  console.log(`RielConverter:       ${converter.target}`);
+
   // Grant the enforcement authority its token-level power and wire the adapter
   // when the deployer holds the admin roles (devnet convenience).
   if (council === deployer.address) {
     await (await khr.grantRole(await khr.ENFORCER_ROLE(), enforcer)).wait();
     await (await adapter.setGateway(gateway.target)).wait();
     await (await khr.setSystemContract(adapter.target, true)).wait();
-    console.log("\nDevnet wiring complete (ENFORCER_ROLE granted, adapter gateway set, adapter marked as system contract).");
+    // RielConverter: let it custody KHRt without KYC, and approve KHRt for conversion.
+    await (await khr.setSystemContract(converter.target, true)).wait();
+    await (await converter.setApproved(khr.target, true)).wait();
+    // Allow-list the converter on the Native Minter so it can mint tRIEL against
+    // locked collateral. No-op on a local node without the precompile.
+    try {
+      const minterAllow = new hre.ethers.Contract(NATIVE_MINTER, ["function setEnabled(address addr)"], deployer);
+      await (await minterAllow.setEnabled(converter.target)).wait();
+      console.log("RielConverter enabled on the Native Minter allow list.");
+    } catch (e) {
+      console.log(`(Native Minter enable skipped — set it manually on-chain: ${e.shortMessage ?? e.message})`);
+    }
+    console.log("\nDevnet wiring complete (ENFORCER_ROLE, adapter gateway + system-contract, converter system-contract + KHRt approved).");
   } else {
     console.log(
-      "\nNOTE: council is a multisig — via the multisig: grant KHR ENFORCER_ROLE, call adapter.setGateway, and mark the adapter as a system contract on KHR."
+      "\nNOTE: council is a multisig — via the multisig: grant KHR ENFORCER_ROLE; adapter.setGateway; mark adapter AND RielConverter as system contracts on KHR; converter.setApproved(KHRt); and allow-list the RielConverter on the Native Minter precompile."
     );
   }
 
@@ -71,6 +90,7 @@ async function main() {
       KHRStablecoin: khr.target,
       EgressGateway: gateway.target,
       MockBridgeAdapter: adapter.target,
+      RielConverter: converter.target,
     },
     roles: { council, idAuthority, enforcer, issuer },
   };

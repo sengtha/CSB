@@ -19,9 +19,12 @@ contracts/
   identity/IdentityRegistry.sol      Identity Authority-issued KYC attestations, tiers,
                                      paid multi-address quotas (no PII on chain)
   enforcement/EnforcementRegistry.sol  Freeze powers, separate authority from Identity Authority
-  token/KHRStablecoin.sol            KHRt: pluggable issuer, compliance-gated
-                                     transfers, tier caps, confiscation with
-                                     order refs, system-contract allowlist
+  token/ITokenizedRiel.sol           Standard for riel stablecoins (many issuers)
+  token/KHRStablecoin.sol            KHRt: reference tokenized-riel — pluggable
+                                     issuer, compliance-gated transfers, tier
+                                     caps, confiscation, system-contract allowlist
+  token/RielConverter.sol            1:1 convert approved tokenized riel <-> native
+                                     tRIEL (lock/mint, burn/release); council-gated
   egress/EgressGateway.sol           The sovereign boundary: token allowlist,
                                      min tiers, daily caps, circuit breaker
   egress/IBridgeAdapter.sol          Transport abstraction (policy/transport split)
