@@ -95,21 +95,17 @@ Roles at deploy time all point to the deployer (pilot mode): council, identity a
 Applying 1 and 3 on the live chain:
 
 ```bash
-export PATH=$PATH:$HOME/bin
-export RPC=http://127.0.0.1:9650/ext/bc/299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW/rpc
-cd ~/csb
+cd ~/csb && source ops/csb-env.sh     # RPC, chain id, gas price, deployer key
+                                      # prints "deployer 0x8f6aE9fB…b ✓"
 
 # 3. route gas fees to the fund FIRST, so nothing is burned in between
-CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
-  npx hardhat run scripts/set-reward-address.js --network csbRemote
+npx hardhat run scripts/set-reward-address.js --network csbRemote
 
 # 1. then price gas at ~1 tRIEL per transfer
-CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
-  npx hardhat run scripts/set-gas-price.js --network csbRemote
+npx hardhat run scripts/set-gas-price.js --network csbRemote
 
 # top pilot accounts up — 10 tRIEL only buys ~2 payments once gas is priced
-CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
-  npx hardhat run scripts/fund-native.js --network csbRemote
+npx hardhat run scripts/fund-native.js --network csbRemote
 ```
 
 **Order matters:** set the reward address *before* raising the fee, or the fees
@@ -145,6 +141,25 @@ donation on the payment panel and the running total raised.
 - ICM Messenger/Registry deployed, but the **relayer is not funded** (chose "Not now" at deploy) — cross-chain egress delivery needs it funded first.
 
 ## Operate it
+
+**Load the operator environment first.** `ops/csb-env.sh` exports the RPC URL,
+chain id, gas price and deployer key, reading the key from the avalanche-cli
+keystore so it is never typed or pasted:
+
+```bash
+cd ~/csb && source ops/csb-env.sh
+# csb-env: deployer 0x8f6aE9fB0993C8691D7FCDFBFC79fbcF5A7BFa8b ✓
+```
+
+It derives the address from the key and warns if it isn't the recorded deployer
+— catching a wrong or stale keystore before it's used to send an admin
+transaction. Then any admin script is just
+`npx hardhat run scripts/<name>.js --network csbRemote`.
+
+**Never paste the deployer key into a chat, a commit, a ticket, or a shell you
+don't control.** It is the chain's root authority — precompile admin, KHRt
+issuer, validator-manager owner. Anywhere it lands is somewhere it must be
+rotated from. This one is testnet-only and must never be reused on mainnet.
 
 ```bash
 # --- on the VM ---

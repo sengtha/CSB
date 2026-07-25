@@ -10,3 +10,6 @@ app/deployments.json
 # Scoped-RPC per-user tokens (secrets)
 app/rpc-tokens.json
 app/rpc-revoked.json
+
+# operator-local overrides (may contain secrets)
+ops/*.local.sh
