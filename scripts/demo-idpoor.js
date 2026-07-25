@@ -88,8 +88,14 @@ async function main() {
     if (!cast[key]) {
       const w = ethers.Wallet.createRandom();
       cast[key] = { address: w.address, key: w.privateKey, label };
-      await (await identity.register(w.address, ethers.id(`idpoor-${key}`), tier)).wait();
-      console.log(`  registered ${label}: ${w.address}`);
+    }
+    // Check the CHAIN, not the cache. deployments.json survives a chain reset
+    // and a redeploy of the registry, so a cached account can name an address
+    // the current IdentityRegistry has never heard of — and every later step
+    // then fails on KYC for an account the script just claimed to have set up.
+    if (!(await identity.isActive(cast[key].address))) {
+      await (await identity.register(cast[key].address, ethers.id(`idpoor-${key}-${cast[key].address}`), tier)).wait();
+      console.log(`  registered ${label}: ${cast[key].address}`);
     } else {
       console.log(`  ${label}: ${cast[key].address}`);
     }

@@ -15,7 +15,7 @@ This is the running record of the CSB testnet: what exists, where, and how to op
 | VM ID | `koLRzStcoE4fZ6V1DtXJCYMVWctdrdfpR6Y5egzFbURXRSvVv` |
 | Validator Manager | V2 PoA, owned by the deployer key (Governing-Council slot in production) |
 | Validators | **3** (avalanche-cli local cluster `csb-local-node-fuji`) — see Infrastructure. Multi-validator from birth so block production keeps going under load. |
-| Native token | **tRIEL** (1,000,000 allocated to the deployer at genesis) |
+| Native token | **tRIEL** (10,000,000 allocated to the deployer at genesis) |
 | Gas | **~1 tRIEL (1 riel) per ordinary payment** — fee floor ≈ 47,619 gwei, so a 21,000-gas transfer costs 1 tRIEL and heavier transactions cost proportionally more. Set with `scripts/set-gas-price.js`. |
 | Gas fees go to | **The public-good fund, not burned** — RewardManager (`0x…04`) routes every transaction's fee to the charity address. Set with `scripts/set-reward-address.js`. |
 | Version pair | AvalancheGo **v1.14.1** / Subnet-EVM **v0.8.0** (both plugin protocol 44 — the only released working pair; see `docs/create-testnet.md`) |
