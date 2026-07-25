@@ -68,7 +68,9 @@
           <tr><th>AvalancheGo</th><td id="n-version">–</td></tr>
           <tr><th>VM</th><td id="n-vm">–</td></tr>
           <tr><th>Bootstrapped</th><td id="n-boot">–</td></tr>
+          <tr><th>Connected peers</th><td id="n-peers">–</td></tr>
         </table>
+        <p class="note" id="n-unavailable" style="margin-top:10px;display:none"></p>
         <p class="note" style="margin-top:10px">
           One node of the validating set. The others are peers of this one and do
           not serve this page.
@@ -177,7 +179,20 @@ async function load() {
   $("n-vm").textContent = vms ? Object.entries(vms).map(([k, v]) => `${k} ${v}`).join(", ") : "–";
   $("n-boot").innerHTML = d.node?.bootstrapped === true
     ? '<span class="ok">yes</span>'
-    : d.node?.bootstrapped === false ? '<span class="warn2">still bootstrapping</span>' : "–";
+    : d.node?.bootstrapped === false ? '<span class="warn2">still bootstrapping</span>' : "not reported";
+  $("n-peers").textContent = d.node?.peers != null ? d.node.peers.toLocaleString() : "–";
+
+  // A blank field with no explanation is a dead end for whoever is looking at
+  // it; show what the node actually said.
+  const un = d.node?.unavailable ?? [];
+  const unEl = $("n-unavailable");
+  if (un.length) {
+    unEl.style.display = "";
+    unEl.innerHTML = "Some node details could not be read:<br>"
+      + un.map((u) => `· ${u}`).join("<br>");
+  } else {
+    unEl.style.display = "none";
+  }
 
   $("n-floor").textContent = gwei(d.gas?.minBaseFeeWei);
   $("n-basefee").textContent = gwei(d.gas?.baseFeeWei);

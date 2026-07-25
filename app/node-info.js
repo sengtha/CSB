@@ -52,6 +52,12 @@ async function settle(p, fallback = null) {
   try { return await p; } catch (_) { return fallback; }
 }
 
+/** Like settle, but keeps the reason so the page can show it. */
+async function settleWhy(p) {
+  try { return { value: await p, error: null }; }
+  catch (e) { return { value: null, error: String(e?.message ?? e) }; }
+}
+
 async function nodeInfo(rpcUrl, deployments, opts = {}) {
   const now = Date.now();
   if (!opts.noCache && _cache && now - _cache.at < CACHE_MS) return _cache.data;
@@ -60,27 +66,34 @@ async function nodeInfo(rpcUrl, deployments, opts = {}) {
   const base = nodeBase(rpcUrl);
   const infoUrl = `${base}/ext/info`;
 
-  // The AvalancheGo info API takes object params, unlike the EVM endpoints.
-  const info = async (method) => {
+  // The AvalancheGo info API takes OBJECT params, unlike the EVM endpoints — and
+  // some methods require fields. info.isBootstrapped needs the chain to ask
+  // about; called with {} it errors, which previously turned into a silent dash
+  // on the page rather than anything a reader could act on.
+  const info = async (method, params = {}) => {
     const res = await fetch(infoUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: {} }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
     });
     const j = await res.json();
     if (j.error) throw new Error(j.error.message);
     return j.result;
   };
 
-  const [chainIdHex, heightHex, gasPriceHex, block, nodeId, version, bootstrapped] = await Promise.all([
-    settle(rpc("eth_chainId")),
-    settle(rpc("eth_blockNumber")),
-    settle(rpc("eth_gasPrice")),
-    settle(rpc("eth_getBlockByNumber", ["latest", false])),
-    settle(info("info.getNodeID")),
-    settle(info("info.getNodeVersion")),
-    settle(info("info.isBootstrapped")),
-  ]);
+  const chainKey = blockchainIdFrom(rpcUrl);
+  const [chainIdHex, heightHex, gasPriceHex, block, nodeId, version, bootstrapped, peers] =
+    await Promise.all([
+      settle(rpc("eth_chainId")),
+      settle(rpc("eth_blockNumber")),
+      settle(rpc("eth_gasPrice")),
+      settle(rpc("eth_getBlockByNumber", ["latest", false])),
+      settleWhy(info("info.getNodeID")),
+      settleWhy(info("info.getNodeVersion")),
+      // Needs the chain to ask about; {} is an error, not a default.
+      settleWhy(chainKey ? info("info.isBootstrapped", { chain: chainKey }) : Promise.reject(new Error("no blockchain id in the RPC URL"))),
+      settleWhy(info("info.peers")),
+    ]);
 
   // Fee floor, so the page can state the actual price of a payment rather than
   // repeating a policy that may have drifted from what the chain charges.
@@ -110,10 +123,20 @@ async function nodeInfo(rpcUrl, deployments, opts = {}) {
     height: heightHex ? Number(hexToBig(heightHex)) : null,
     blockTime: block?.timestamp ? Number(hexToBig(block.timestamp)) : null,
     node: {
-      nodeId: nodeId?.nodeID ?? null,
-      version: version?.version ?? null,
-      vmVersions: version?.vmVersions ?? null,
-      bootstrapped: bootstrapped?.isBootstrapped ?? null,
+      nodeId: nodeId.value?.nodeID ?? null,
+      version: version.value?.version ?? null,
+      vmVersions: version.value?.vmVersions ?? null,
+      bootstrapped: bootstrapped.value?.isBootstrapped ?? null,
+      peers: peers.value?.numPeers != null ? Number(peers.value.numPeers) : null,
+      // Say WHY a field is blank. A bare dash is indistinguishable from a node
+      // that is unreachable, an API that is disabled, and a call made wrongly —
+      // and the last of those was the actual cause here.
+      unavailable: [
+        nodeId.error && `node id: ${nodeId.error}`,
+        version.error && `version: ${version.error}`,
+        bootstrapped.error && `bootstrapped: ${bootstrapped.error}`,
+        peers.error && `peers: ${peers.error}`,
+      ].filter(Boolean),
     },
     gas: {
       minBaseFeeWei: minBaseFee != null ? minBaseFee.toString() : null,
