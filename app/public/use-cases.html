@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Use cases — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .lead { font-size: 14px; line-height: 1.7; color: var(--ink); }
+    .note { font-size: 12.5px; color: var(--muted); line-height: 1.65; }
+    .flow { display: grid; gap: 8px; margin: 12px 0; }
+    .step { display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; }
+    .step .n { width: 26px; height: 26px; border-radius: 50%; background: var(--blue); color: #fff;
+               font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+    .step .t { font-size: 13px; line-height: 1.55; padding-top: 4px; }
+    .out { border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-top: 8px; line-height: 1.5; }
+    .out.yes { background: #e6f6ec; border: 1px solid #bfe5cd; color: #14532d; }
+    .out.no  { background: #fdecec; border: 1px solid #f5c2c2; color: #8f1d1d; }
+    .addr { font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all; }
+    table.kv { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
+    table.kv th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
+                  width: 42%; padding: 7px 10px 7px 0; vertical-align: top; }
+    table.kv td { padding: 7px 0; border-bottom: 1px solid var(--line); }
+    pre.cmd { background: #f7f9fc; border: 1px solid var(--line); border-radius: 8px;
+              padding: 12px; overflow-x: auto; font-size: 12px; margin-top: 8px; }
+    .caveat { border-left: 3px solid var(--warn); background: #fffaf2; padding: 10px 14px;
+              border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.65; margin-top: 12px; }
+    .foot { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0 24px; line-height: 1.6; }
+  </style>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB Use cases</h1>
+    <span class="sub">what a permissioned chain makes possible — no login required</span>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="wallet.html">Wallet</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="fund.html">Fund</a>
+      <a href="use-cases.html" class="active">Use cases</a>
+      <a href="node.html">Node info</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="card">
+      <p class="lead">
+        Two worked examples of things a chain with a <strong>national identity layer</strong>
+        can do that a public chain structurally cannot. Both run on this testnet;
+        both are demonstrations, not products.
+      </p>
+    </div>
+
+    <!-- ================= ID Poor ================= -->
+    <div class="card">
+      <h2>1 · Targeted assistance — money that can only buy food</h2>
+      <p class="lead">
+        A government transfers cash to households in need. The intent is food on
+        the table. Some of it goes to a moneylender the day it arrives, and the
+        programme finds out months later from a survey, if at all.
+      </p>
+      <p class="lead" style="margin-top:10px">
+        <strong>CSB puts the condition inside the money.</strong> Assistance is issued as an
+        <em>earmarked</em> balance of ordinary tokenized riel — real money, with a
+        rule the chain checks on every single payment.
+      </p>
+
+      <div class="flow">
+        <div class="step"><div class="n">1</div><div class="t">A licensing registrar records that an address is a <strong>licensed food merchant</strong>.</div></div>
+        <div class="step"><div class="n">2</div><div class="t">A social-policy authority creates a programme: <strong>this money may only reach food merchants</strong>.</div></div>
+        <div class="step"><div class="n">3</div><div class="t">The issuer disburses an earmarked balance to the household.</div></div>
+        <div class="step"><div class="n">4</div><div class="t">On every transfer, the token asks the policy whether the recipient is permitted.</div></div>
+      </div>
+
+      <div class="out yes">✓ <strong>Paying the grocer works.</strong> The earmark is spent first, so assistance is used for its purpose before the household's own money is touched.</div>
+      <div class="out no">✗ <strong>Paying a moneylender is refused by the chain.</strong> Not flagged for review afterwards — it cannot settle.</div>
+      <div class="out yes">✓ <strong>Their own wages stay their own.</strong> Money the household earns can go anywhere, including to that same lender. Only the assistance carries the condition.</div>
+
+      <table class="kv" id="idpoor-contracts"></table>
+
+      <div class="caveat">
+        <strong>Said plainly:</strong> this is a mechanism for controlling how someone
+        spends money. It is defensible for a grant given for a stated purpose, where
+        the alternative is no programme or in-kind distribution. The same machinery
+        pointed at wages or savings would be something else entirely — nothing in the
+        code prevents that, only governance does. The earmark does not spread to the
+        merchant, clawback can never reach earned money, and the chain holds programme
+        rules rather than a list of who is poor.
+      </div>
+      <p class="note" style="margin-top:10px">
+        <a href="https://github.com/sengtha/CSB/blob/main/docs/use-cases.md" target="_blank" rel="noopener">Full write-up, including what it deliberately does not do ↗</a>
+      </p>
+    </div>
+
+    <!-- ================= Land ================= -->
+    <div class="card">
+      <h2>2 · Tokenized land title — issued by a regulated registrar</h2>
+      <p class="lead">
+        A land title is a paper deed and a row in a ministry database. Selling a
+        share, or borrowing against it, means manual process and bilateral trust.
+      </p>
+      <p class="lead" style="margin-top:10px">
+        <strong>CSB makes a parcel 10,000 shares of a permissioned token (ERC-3643).</strong>
+        A holder with 2,500 owns a quarter — which is what lets a lender take a
+        partial claim without the parcel being sold or subdivided.
+      </p>
+
+      <div class="flow">
+        <div class="step"><div class="n">1</div><div class="t">Only the <strong>land authority</strong> can tokenize a parcel. One parcel, one token, recorded in the registry.</div></div>
+        <div class="step"><div class="n">2</div><div class="t">The token checks the <strong>national identity registry</strong> before it will settle — the same KYC layer the whole chain uses.</div></div>
+        <div class="step"><div class="n">3</div><div class="t">Shares transfer between verified parties; the registrar keeps the powers a court needs.</div></div>
+        <div class="step"><div class="n">4</div><div class="t">An <strong>unrelated lending contract</strong> takes shares as collateral, verifying through the registry that they are a real title.</div></div>
+      </div>
+
+      <div class="out yes">✓ <strong>A sale between verified parties settles.</strong></div>
+      <div class="out no">✗ <strong>A sale to an unverified address cannot settle at all</strong> — compliance is in the token, not in an app that could be bypassed.</div>
+      <div class="out yes">✓ <strong>Borrowing against land works</strong> without the registrar building a credit market — the lender just reads the registry.</div>
+
+      <p class="note" style="margin-top:12px">
+        <strong>Why this argues for a sovereign chain.</strong> ERC-3643 expects an identity
+        registry deciding who may hold the token. On a public chain every issuer
+        builds and maintains that themselves, badly. Here it already exists and is
+        authoritative, so a security token gets compliance for free.
+      </p>
+
+      <table class="kv" id="land-contracts"></table>
+
+      <div class="caveat">
+        <strong>Two honest limits.</strong> A contract has no national identity, so it cannot
+        custody a title unless the registrar approves it — writing a lending protocol
+        against these titles is permissionless, custodying land is not. And the demo
+        vault models the mechanism only: a real lender needs a price oracle,
+        liquidations, and legal enforcement against the parcel.
+      </div>
+      <p class="note" style="margin-top:10px">
+        <a href="https://github.com/sengtha/CSB/blob/main/docs/use-cases.md#2-tokenized-land-title-erc-3643--issued-by-a-regulated-registrar" target="_blank" rel="noopener">Full write-up ↗</a>
+      </p>
+    </div>
+
+    <!-- ================= Build ================= -->
+    <div class="card">
+      <h2>Build on this — deploy your own contract</h2>
+      <p class="lead">
+        CSB is a normal EVM chain behind a permission layer. Solidity, Hardhat and
+        Foundry all work unchanged. Two things are different, and both are
+        deliberate:
+      </p>
+      <table class="kv">
+        <tr><th>Your address must be allow-listed to transact</th>
+            <td>Chain-level, below the contract layer. KYC decides who may hold tokens; the transaction allow list decides who may send a transaction at all.</td></tr>
+        <tr><th>And separately allow-listed to deploy</th>
+            <td>Contract creation is restricted to vetted deployers. A factory contract that deploys other contracts needs this too — the create is performed by the factory's own address.</td></tr>
+      </table>
+
+      <p class="note" style="margin-top:14px"><strong>1. Get a scoped RPC URL</strong> — use <em>Connect wallet</em> above, or the <a href="rpc-access.html">Developer access</a> page.</p>
+      <p class="note"><strong>2. Ask an operator to enable your address</strong> on both allow lists. On this pilot that is the chain admin; in production it is a governed process.</p>
+      <p class="note"><strong>3. Point your tooling at the chain:</strong></p>
+      <pre class="cmd"><code>// hardhat.config.js
+networks: {
+  csb: {
+    url: "https://&lt;this-host&gt;/rpc/&lt;your-token&gt;",
+    chainId: <span id="dep-chainid">8555</span>,
+    accounts: [process.env.PRIVATE_KEY],
+    // Fixed price: must stay above the chain's fee floor, or a transaction
+    // sits unmined and looks exactly like the chain being stuck.
+    gasPrice: 55_000_000_000_000,
+  },
+}</code></pre>
+      <pre class="cmd"><code>npx hardhat run scripts/deploy.js --network csb</code></pre>
+
+      <p class="note" style="margin-top:12px">
+        <a href="https://github.com/sengtha/CSB/blob/main/docs/dev-access.md" target="_blank" rel="noopener">Developer guide — allow lists, RPC access, network config ↗</a><br>
+        <a href="https://github.com/sengtha/CSB" target="_blank" rel="noopener">Source, contracts and deployment scripts ↗</a>
+      </p>
+    </div>
+
+    <p class="foot" id="disclaimer">
+      Illustrative demonstrations on a test network. Every institutional role here —
+      licensing registrar, social-policy authority, land authority, lender — is a
+      hypothetical placeholder. No real programme, ministry, cadastre, parcel or
+      beneficiary is represented, and no affiliation or endorsement is implied.
+    </p>
+  </main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+// Show the live addresses rather than a list copied into the page, which goes
+// stale the moment anything is redeployed.
+const GROUPS = {
+  "idpoor-contracts": [
+    ["KHRStablecoin", "Tokenized riel, extended with the assigned spend target"],
+    ["MerchantRegistry", "Which addresses hold which merchant licences"],
+    ["SocialProgramRegistry", "Programmes and what their money may buy"],
+  ],
+  "land-contracts": [
+    ["LandTitleRegistry", "The cadastre index — the only door to tokenizing a title"],
+    ["LandCollateralVault", "An unrelated lender taking titles as collateral"],
+  ],
+};
+
+fetch("/node-info").then((r) => r.json()).then((d) => {
+  $("dep-chainid").textContent = d.chainId ?? 8555;
+  for (const [id, rows] of Object.entries(GROUPS)) {
+    const found = rows.filter(([k]) => d.contracts?.[k]);
+    $(id).innerHTML = found.length
+      ? `<tr><th colspan="2" style="color:var(--blue);padding-top:12px">Live on this chain</th></tr>`
+        + found.map(([k, desc]) =>
+            `<tr><th>${k}<br><span style="font-weight:400">${desc}</span></th>`
+            + `<td class="addr">${d.contracts[k]}</td></tr>`).join("")
+      : `<tr><th colspan="2" class="note" style="padding-top:12px">`
+        + `Not deployed on this chain yet — run the demo scripts in the repository.</th></tr>`;
+  }
+}).catch(() => { /* the page still reads fine without live addresses */ });
+</script>
+</body>
+</html>
