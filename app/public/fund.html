@@ -165,9 +165,17 @@ async function load() {
   }
 
   const w = d.window;
-  $("window").textContent = w.complete
+  let windowText = w.complete
     ? `Covering the whole chain — blocks 0 to ${w.toBlock}.`
     : `Covering the most recent ${w.blocks.toLocaleString()} blocks (${w.fromBlock.toLocaleString()}–${w.toBlock.toLocaleString()}). Older activity is not shown.`;
+  if (d.gasHistory?.partial) {
+    // Being explicit rather than quietly showing less: the totals above are read
+    // from current state and are exact, but the per-block gas breakdown needs
+    // historical state that a pruning node no longer holds.
+    windowText += ` The gas-fee breakdown reaches back only to block ${(d.gasHistory.oldestBlock ?? w.fromBlock).toLocaleString()},`
+      + ` because this node prunes older state. The totals above are unaffected — they are read from the account as it stands now.`;
+  }
+  $("window").textContent = windowText;
 
   const rows = d.activity ?? [];
   if (rows.length === 0) {

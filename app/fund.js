@@ -102,23 +102,41 @@ function units(v, decimals) {
 async function scanGasIncome(rpc, fund, fromBlock, toBlock) {
   const entries = [];
   let total = 0n;
+  let oldestScanned = null;
+  let pruned = false;
   const target = fund.toLowerCase();
 
-  // Balance at the block before the window, as the baseline to diff against.
-  let prev = hexToBig(await rpc("eth_getBalance", [fund, "0x" + Math.max(fromBlock - 1, 0).toString(16)]));
+  const balanceAt = (n) => rpc("eth_getBalance", [fund, "0x" + Math.max(n, 0).toString(16)]);
 
-  for (let n = fromBlock; n <= toBlock; n++) {
-    const tag = "0x" + n.toString(16);
-    const [balHex, block] = await Promise.all([
-      rpc("eth_getBalance", [fund, tag]),
-      rpc("eth_getBlockByNumber", [tag, true]),
-    ]);
-    const bal = hexToBig(balHex);
-    const delta = bal - prev;
-    prev = bal;
+  // Walk BACKWARDS from the newest block. A node that prunes state answers
+  // "missing trie node" for old blocks, and walking forwards would hit that on
+  // the very first call and yield nothing at all. Going backwards returns
+  // whatever recent history the node still holds and stops cleanly at the edge
+  // of the pruning window.
+  let higher;
+  try {
+    higher = hexToBig(await balanceAt(toBlock));
+  } catch (e) {
+    return { entries, total, pruned: true, oldestScanned: null, reason: String(e.message ?? e) };
+  }
+
+  for (let n = toBlock; n >= fromBlock; n--) {
+    let lower, block;
+    try {
+      [lower, block] = await Promise.all([
+        balanceAt(n - 1).then(hexToBig),
+        rpc("eth_getBlockByNumber", ["0x" + n.toString(16), true]),
+      ]);
+    } catch (e) {
+      // State for this block is gone. Everything older is gone too.
+      pruned = true;
+      break;
+    }
+    oldestScanned = n;
+    const delta = higher - lower;
+    higher = lower;
     if (delta === 0n || !block) continue;
 
-    // Native value sent directly to the fund in this block is not fee income.
     let transferredIn = 0n;
     let sentOut = false;
     for (const tx of block.transactions ?? []) {
@@ -126,36 +144,22 @@ async function scanGasIncome(rpc, fund, fromBlock, toBlock) {
       if ((tx.from ?? "").toLowerCase() === target) sentOut = true;
     }
     const fees = delta - transferredIn;
+    const timestamp = Number(hexToBig(block.timestamp));
 
     if (transferredIn > 0n) {
-      entries.push({
-        block: n,
-        timestamp: Number(hexToBig(block.timestamp)),
-        kind: "transfer-in",
-        amount: units(transferredIn, 18),
-      });
+      entries.push({ block: n, timestamp, kind: "transfer-in", amount: units(transferredIn, 18) });
     }
     if (fees > 0n) {
       total += fees;
       entries.push({
-        block: n,
-        timestamp: Number(hexToBig(block.timestamp)),
-        kind: "gas-fees",
-        amount: units(fees, 18),
-        txCount: (block.transactions ?? []).length,
+        block: n, timestamp, kind: "gas-fees",
+        amount: units(fees, 18), txCount: (block.transactions ?? []).length,
       });
     } else if (fees < 0n && !sentOut) {
-      // Balance fell with no outgoing transaction from this account — shouldn't
-      // happen; surface it rather than silently dropping it.
-      entries.push({
-        block: n,
-        timestamp: Number(hexToBig(block.timestamp)),
-        kind: "unexplained-decrease",
-        amount: units(fees, 18),
-      });
+      entries.push({ block: n, timestamp, kind: "unexplained-decrease", amount: units(fees, 18) });
     }
   }
-  return { entries, total };
+  return { entries, total, pruned, oldestScanned };
 }
 
 /** KHRt levy payments — real transfers, so each has a payer and a tx hash. */
@@ -263,11 +267,23 @@ async function fundReport(rpcUrl, deployments, opts = {}) {
     triel: units(trielRaw, 18),
     gasFeesRouted: routedTo ? routedTo.toLowerCase() === fund.toLowerCase() : false,
     gasIncomeInWindow: units(gas.total, 18),
+    // The per-block gas breakdown needs historical state. A pruning node keeps
+    // only recent state, so the history stops at the pruning edge — the current
+    // balance is still exact, only the breakdown is partial.
+    gasHistory: {
+      partial: gas.pruned === true,
+      oldestBlock: gas.oldestScanned,
+    },
     token: tokenInfo,
     totalRiel: (trielRiel + levyRiel).toFixed(2),
     activity: [...gas.entries, ...levyPayments.map((p) => ({ ...p, kind: "levy" }))]
       .sort((a, b) => b.block - a.block || (b.timestamp ?? 0) - (a.timestamp ?? 0)),
-    window: { fromBlock, toBlock: latest, blocks: latest - fromBlock + 1, complete: fromBlock === 0 },
+    window: {
+      fromBlock: gas.oldestScanned ?? fromBlock,
+      toBlock: latest,
+      blocks: latest - (gas.oldestScanned ?? fromBlock) + 1,
+      complete: (gas.oldestScanned ?? fromBlock) === 0 && gas.pruned !== true,
+    },
     updatedAt: new Date().toISOString(),
   };
 
