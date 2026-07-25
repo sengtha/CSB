@@ -28,6 +28,16 @@
 
   const css = `
     .csb-connect { position: relative; display: inline-flex; align-items: center; }
+    /* In-body placement (phones): a full-width button at the top of the page.
+       In the header it competed with the menu button for a strip of space that
+       is not wide enough for a title and two controls. */
+    .csb-connect.inbody { display: block; width: 100%; margin-bottom: 2px; }
+    .csb-connect.inbody button.cw {
+      width: 100%; padding: 12px; font-size: 15px; border-radius: 9px;
+      background: var(--blue); border-color: var(--blue); color: #fff;
+    }
+    .csb-connect.inbody button.cw.on { background: #fff; color: var(--blue); border-color: var(--blue); }
+    .csb-connect.inbody #${PANEL_ID} { left: 0; right: 0; width: auto; }
     .csb-connect button.cw {
       margin: 0; padding: 5px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.5);
       background: rgba(255,255,255,.12); color: #fff; font-size: 13px; font-weight: 600;
@@ -79,10 +89,18 @@
     const btn = el("button", { class: "cw", type: "button" }, "Connect wallet");
     const panel = el("div", { id: PANEL_ID });
     wrap.append(btn, panel);
-    // Attached to the HEADER, not the nav. On a phone the nav collapses behind a
-    // menu button, and connecting a wallet is the last thing that should be
-    // hidden in there.
-    header.appendChild(wrap);
+
+    // Where this lives depends on the screen. On a phone the header has room for
+    // a title and ONE control; competing for that strip left the menu button
+    // stranded on a row of its own. So the header keeps the menu, and this moves
+    // to the top of the page as a full-width button — still the first thing seen,
+    // and never hidden inside the collapsed nav.
+    place(wrap);
+    let t;
+    window.addEventListener("resize", () => {
+      clearTimeout(t);
+      t = setTimeout(() => place(wrap), 150);
+    });
 
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -99,6 +117,18 @@
     document.addEventListener("click", (e) => {
       if (!wrap.contains(e.target)) panel.classList.remove("open");
     });
+  }
+
+  function place(wrap) {
+    const header = document.querySelector("header.site");
+    const main = document.querySelector("main");
+    const inBody = window.innerWidth <= 760 && !!main;
+    const target = inBody ? main : header;
+    if (!target) return;
+    wrap.classList.toggle("inbody", inBody);
+    if (wrap.parentElement === target) return;
+    if (inBody) target.insertBefore(wrap, target.firstChild);
+    else target.appendChild(wrap);
   }
 
   function say(panel, kind, html) {
