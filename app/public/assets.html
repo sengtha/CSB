@@ -13,6 +13,15 @@
     .tok .s { font-size: 15px; font-weight: 700; color: var(--blue); }
     .tok .n { font-size: 12.5px; color: var(--muted); margin-top: 2px; line-height: 1.5; }
     .tok .bal { text-align: right; font-variant-numeric: tabular-nums; }
+    .tok .addr { grid-column: 1 / -1; border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 10px;
+                 display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .tok .addr code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: #fff;
+                      border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; word-break: break-all; }
+    .tok .addr .native { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+    button.mini { margin-top: 0; padding: 5px 11px; font-size: 12px; border-radius: 6px; }
+    .idlist { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .idlist button { margin-top: 0; padding: 4px 10px; font-size: 12px; border-radius: 999px;
+                     background: #e8ecf7; color: var(--blue); font-weight: 700; }
     .tok .bal .v { font-size: 18px; font-weight: 700; }
     .tok .bal .k { font-size: 11px; color: var(--muted); }
     .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
@@ -72,6 +81,12 @@
 
     <div class="card">
       <h2>Tokens on this chain</h2>
+      <p class="note" style="margin-bottom:12px">
+        Contract addresses are below so you can add these to MetaMask. Add the CSB
+        network first — <em>Connect wallet</em> at the top of the page does that,
+        and it is required: a wallet can only import a token on the network the
+        contract lives on.
+      </p>
       <div id="tokens"><p class="note">Loading…</p></div>
     </div>
 
@@ -119,6 +134,9 @@
       <h2 id="gal-title">Collectibles</h2>
       <div id="gallery" class="gallery"></div>
       <p class="note" id="gal-note" style="margin-top:12px"></p>
+      <!-- A wallet cannot discover an NFT on its own: importing one needs the
+           collection address AND a specific token ID. Both are printed here. -->
+      <div id="nft-import" class="tok" style="display:none;margin-top:14px"></div>
     </div>
 
     <p class="foot">
@@ -153,6 +171,8 @@ async function load(address) {
   $("err").className = "banner";
 
   // --- fungible tokens ---
+  // The contract address is the thing a wallet actually needs, so it is printed
+  // in full rather than truncated — a shortened address is useless to paste.
   $("tokens").innerHTML = d.tokens.map((t) => `
     <div class="tok">
       <div>
@@ -166,6 +186,16 @@ async function load(address) {
             ? `<div class="v">${fmt(t.totalSupply, 2)}</div><div class="k">total supply</div>`
             : ""}
       </div>
+      <div class="addr">
+        ${t.address
+          ? `<code>${esc(t.address)}</code>
+             <button class="mini ghost" data-copy="${esc(t.address)}">Copy address</button>
+             <button class="mini" data-watch-erc20="${esc(t.address)}"
+                     data-symbol="${esc(t.symbol)}" data-decimals="${t.decimals}">Add to MetaMask</button>`
+          : `<span class="native"><strong>Native coin — there is no contract address.</strong>
+             tRIEL appears by itself once CSB is added as a network; use
+             <em>Connect wallet</em> at the top of the page.</span>`}
+      </div>
     </div>`).join("");
 
   // --- the 1:1 converter between the two tiers ---
@@ -175,7 +205,8 @@ async function load(address) {
       <div class="stat"><div class="v">1 : 1</div><div class="k">KHRt ⇄ tRIEL, fixed</div></div>
       <div class="stat"><div class="v">${fmt(d.converter.lockedCollateral, 2)}</div><div class="k">KHRt locked as backing</div></div>
       <div class="stat"><div class="v">${d.converter.approved ? "✓" : "✗"}</div><div class="k">${d.converter.approved ? "council-approved for conversion" : "not approved by the council"}</div></div>`;
-    $("swap-addr").innerHTML = `Converter contract <span class="mono">${esc(d.converter.address)}</span>`;
+    $("swap-addr").innerHTML = `Converter contract <span class="mono">${esc(d.converter.address)}</span> `
+      + `<button class="mini ghost" data-copy="${esc(d.converter.address)}">Copy</button>`;
   } else {
     $("swap-card").style.display = "none";
   }
@@ -186,6 +217,7 @@ async function load(address) {
     $("gal-title").textContent = "Collectibles";
     $("gallery").innerHTML = "";
     $("gal-note").textContent = "The collectible contract is not deployed on this chain yet.";
+    $("nft-import").style.display = "none";
     msg($("mint-state"), "info", "Not available on this chain yet.");
     return;
   }
@@ -203,6 +235,28 @@ async function load(address) {
   $("gal-note").textContent = show.length
     ? "Every image above is stored on the chain itself — nothing is fetched from a server."
     : (address ? "This address holds none yet." : "None minted yet — be the first.");
+
+  // --- importing the collection into a wallet ---
+  // A wallet cannot find an NFT from the collection address alone; it wants a
+  // token ID as well. So the IDs this address actually holds are offered as
+  // buttons, and the address is printed for the manual route.
+  const imp = $("nft-import");
+  imp.style.display = "";
+  imp.innerHTML = `
+    <div>
+      <div class="s">${esc(d.collection.symbol)}</div>
+      <div class="n">${esc(d.collection.name)} — ERC-721 collection${
+        own.length ? "" : ". Look up an address that holds one to import it."}</div>
+    </div>
+    <div class="bal"><div class="v">${d.collection.totalMinted}</div><div class="k">minted in total</div></div>
+    <div class="addr">
+      <code>${esc(d.collection.address)}</code>
+      <button class="mini ghost" data-copy="${esc(d.collection.address)}">Copy address</button>
+      ${own.length ? `<span class="native">Import a token you hold:</span>` : ""}
+      ${own.length ? `<span class="idlist">${own.map((t) =>
+          `<button data-watch-erc721="${esc(d.collection.address)}" data-token="${t.tokenId}">#${t.tokenId}</button>`
+        ).join("")}</span>` : ""}
+    </div>`;
 
   // --- mint state ---
   const box = $("mint-state");
@@ -248,6 +302,55 @@ async function mint() {
     btn.disabled = false; btn.textContent = "Mint one to my wallet";
   }
 }
+
+// Copy / import buttons live inside innerHTML that is rewritten on every load,
+// so they are handled by delegation rather than by re-binding each time.
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-copy], button[data-watch-erc20], button[data-watch-erc721]");
+  if (!btn) return;
+
+  if (btn.dataset.copy) {
+    try {
+      await navigator.clipboard.writeText(btn.dataset.copy);
+      const was = btn.textContent;
+      btn.textContent = "Copied";
+      setTimeout(() => { btn.textContent = was; }, 1400);
+    } catch (_) {
+      // Clipboard access is refused over plain http on some browsers. The
+      // address is on screen in full, so say that rather than fail silently.
+      alert("Copy was blocked by the browser — select the address and copy it manually.");
+    }
+    return;
+  }
+
+  if (!window.ethereum) { alert("No wallet detected in this browser."); return; }
+  const label = btn.textContent;
+  btn.disabled = true;
+  try {
+    const params = btn.dataset.watchErc20
+      ? { type: "ERC20", options: {
+          address: btn.dataset.watchErc20,
+          symbol: btn.dataset.symbol,
+          decimals: Number(btn.dataset.decimals),
+        } }
+      : { type: "ERC721", options: { address: btn.dataset.watchErc721, tokenId: btn.dataset.token } };
+    const added = await window.ethereum.request({ method: "wallet_watchAsset", params });
+    btn.textContent = added === false ? label : "Added";
+    if (added !== false) setTimeout(() => { btn.textContent = label; }, 1800);
+  } catch (err) {
+    btn.textContent = label;
+    // 4001 is the user closing the wallet prompt. Otherwise: NFT import is the
+    // one that commonly fails — wallet_watchAsset for ERC721 is not supported
+    // everywhere — so point at the manual route instead of leaving a dead end.
+    if (err?.code !== 4001) {
+      alert((err?.message ?? "The wallet refused the request.")
+        + "\n\nYou can add it by hand instead: copy the contract address above and use "
+        + "your wallet's Import tokens / Import NFT screen.");
+    }
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 $("go").addEventListener("click", () => {
   const a = $("addr").value.trim();
