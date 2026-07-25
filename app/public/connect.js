@@ -70,15 +70,19 @@
   const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
   function mount() {
-    const nav = document.querySelector("header.site nav");
-    if (!nav || document.querySelector(".csb-connect")) return;
+    const header = document.querySelector("header.site");
+    const nav = header && header.querySelector("nav");
+    if (!header || !nav || document.querySelector(".csb-connect")) return;
     document.head.appendChild(el("style", {}, css));
 
     const wrap = el("div", { class: "csb-connect" });
     const btn = el("button", { class: "cw", type: "button" }, "Connect wallet");
     const panel = el("div", { id: PANEL_ID });
     wrap.append(btn, panel);
-    nav.appendChild(wrap);
+    // Attached to the HEADER, not the nav. On a phone the nav collapses behind a
+    // menu button, and connecting a wallet is the last thing that should be
+    // hidden in there.
+    header.appendChild(wrap);
 
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
