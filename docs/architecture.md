@@ -162,6 +162,7 @@ Standard EVM chains depend on ECDSA — broken by a cryptographically relevant q
 - Accounts are **smart accounts** whose signature-verification logic is upgradeable: ECDSA today, post-quantum schemes (ML-DSA/Falcon-class) when tooling matures — without users migrating addresses or losing assets.
 - The permissioned validator set allows coordinated, fleet-wide protocol upgrades public chains cannot execute.
 - Against AI-driven attacks the claim is **resilience, not immunity**: multisig-everywhere (no single compromised official can move funds), tamper-evident cross-institution audit trails, identity-bound freeze/recovery, deterministic contract logic.
+- **"Private to the world" also blunts harvest-now-decrypt-later.** A public ledger publishes every account's public key permanently, so an adversary can collect them today and break them once a quantum computer exists. CSB's ledger is not world-readable, so there is far less material to harvest in the first place — a privacy property doing double duty as a cryptographic one.
 
 ## 11. Roadmap
 

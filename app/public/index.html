@@ -5,6 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Cambodia Sovereign Blockchain — Portal</title>
   <link rel="stylesheet" href="app.css" />
+  <style>
+    .pillars { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 820px) { .pillars { grid-template-columns: 1fr; } }
+    .pillar { border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; background: #fbfcfe; }
+    .pillar h3 { font-size: 14px; color: var(--blue); margin-bottom: 4px; }
+    .pillar .sub2 { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .pillar ul { margin: 0; padding-left: 18px; }
+    .pillar li { font-size: 12.8px; line-height: 1.6; margin-bottom: 7px; color: var(--ink); }
+    .pillar li strong { color: var(--blue); }
+    .threat { font-size: 12.5px; line-height: 1.6; background: #fff5f5; border: 1px solid #f5c2c2;
+              color: #8f1d1d; border-radius: 8px; padding: 9px 12px; margin-bottom: 12px; }
+    .honest { font-size: 12px; line-height: 1.6; border-left: 3px solid var(--warn);
+              background: #fffaf2; padding: 8px 12px; border-radius: 0 6px 6px 0; margin-top: 12px; color: var(--ink); }
+    .glance { font-size: 12.5px; color: var(--muted); line-height: 1.8; margin-top: 16px; }
+  </style>
   <script src="connect.js" defer></script>
 </head>
 <body>
@@ -42,13 +57,72 @@
       </p>
     </div>
     <div class="card">
-      <h2>Architecture at a glance</h2>
-      <p class="small" style="line-height:1.8">
-        Avalanche L1 (Subnet-EVM), permissioned PoA — public institutions as validators (placeholder) · Identity Authority-issued on-chain KYC, no PII on chain,
-        default one address per identity (extra slots by the Identity Authority fee) · KHRt stablecoin with a pluggable issuer ·
-        zero gas via feeManager, spam defense at the identity layer · single egress gateway wrapping Avalanche ICTT with a
-        council-governed token allowlist, minimum tiers, daily caps and a circuit breaker ·
-        crypto-agility: upgradeable smart-account signatures for post-quantum migration.
+      <h2>Built for the threats that are coming, not the ones that already happened</h2>
+      <p class="small" style="line-height:1.8;margin-bottom:14px">
+        Two failure modes will define the next decade of financial infrastructure:
+        <strong>AI-driven attacks</strong> that make credential theft and social engineering
+        cheap at scale, and <strong>quantum computers</strong> that eventually break the
+        signatures every blockchain relies on. A sovereign, permissioned chain can
+        answer both in ways a public chain and a traditional bank structurally cannot.
+      </p>
+
+      <div class="pillars">
+        <div class="pillar">
+          <h3>🛡 Against AI-driven attack — multisig everywhere</h3>
+          <div class="sub2">No single compromised human, key, or machine is enough.</div>
+          <div class="threat">
+            The realistic AI attack is not breaking cryptography. It is convincingly
+            impersonating an official, at scale, until someone approves something.
+          </div>
+          <ul>
+            <li><strong>No unilateral authority.</strong> The validator manager, every precompile admin address, and every administrative contract role are held by <strong>institutional multisigs</strong> — no official below the council can act alone.</li>
+            <li><strong>Powers are split across institutions.</strong> Identity issuance, asset freezing, and money issuance are three different authorities. Compromising one gets you one power, not the chain.</li>
+            <li><strong>Every enforcement action carries a court-order reference</strong> on chain. An action without one is not just wrong, it is impossible.</li>
+            <li><strong>Validators sign blocks with HSM-protected node keys</strong> — no human approves individual blocks, so there is no per-block human to deceive.</li>
+            <li><strong>A stolen key is not a lost account.</strong> Identity-bound recovery reissues to a new address under the same registered identity — the attacker's advantage expires.</li>
+            <li><strong>Tamper-evident across institutions.</strong> Altering the record requires collusion between separately-run validators, and leaves evidence with all of them.</li>
+          </ul>
+          <div class="honest">
+            <strong>Stated honestly:</strong> this is <em>resilience, not immunity</em>. It does not
+            stop an attack; it makes a single successful compromise insufficient to
+            move money, and makes the attempt visible to parties the attacker does not
+            control.
+          </div>
+        </div>
+
+        <div class="pillar">
+          <h3>🔐 Against quantum — crypto-agility by governance</h3>
+          <div class="sub2">The ability to change cryptography is worth more than any single algorithm.</div>
+          <div class="threat">
+            Every EVM chain depends on ECDSA. A cryptographically relevant quantum
+            computer breaks it — and on a public ledger, the keys it will break are
+            already published, waiting.
+          </div>
+          <ul>
+            <li><strong>Upgradeable signature verification.</strong> Accounts are smart accounts whose signing scheme can change: ECDSA today, ML-DSA / Falcon-class when the standards and tooling mature — <strong>keeping the same address, with no asset migration</strong>.</li>
+            <li><strong>A governed validator set can actually execute the upgrade.</strong> Coordinated, fleet-wide cryptographic migration is a decision here. On a public chain it is a years-long social negotiation that may simply fail.</li>
+            <li><strong>"Private to the world" limits harvest-now-decrypt-later.</strong> Public ledgers expose every public key permanently, so an adversary can collect today and break later. CSB's ledger is not world-readable, so there is far less to harvest in the first place.</li>
+            <li><strong>Migration is a planned phase</strong>, not an emergency response written after the news breaks.</li>
+          </ul>
+          <div class="honest">
+            <strong>Stated honestly:</strong> post-quantum signatures are <em>not deployed today</em>
+            — the tooling is not ready anywhere. What exists now is the architecture
+            that makes switching possible without asking every citizen to move their
+            money, plus the governance able to decide it. That is quantum
+            <em>readiness</em>, not quantum proof, and anyone claiming the latter today
+            should be read carefully.
+          </div>
+        </div>
+      </div>
+
+      <p class="glance">
+        <strong>The rest, briefly:</strong> Avalanche L1 (Subnet-EVM), permissioned proof-of-authority —
+        public institutions as validators (placeholder) · Identity-Authority-issued on-chain KYC with
+        <strong>no personal data on chain</strong>, one address per identity by default · tokenized riel with a
+        pluggable issuer · gas priced at about 1 riel per payment and routed to a
+        <a href="fund.html">public-good fund</a> rather than burned · a single
+        <strong>governed egress gateway</strong> wrapping Avalanche ICTT with a council-controlled token
+        allowlist, minimum tiers, daily caps and a circuit breaker.
         Full text: <span class="mono">docs/architecture.md</span>.
       </p>
     </div>
