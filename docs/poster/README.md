@@ -1,8 +1,17 @@
-# Poster — CSB architecture, one landscape image
+# Posters — CSB in one landscape image
 
-`csb-architecture.html` renders to a 1920×1080 image for sharing: the
-architecture, why the shape may suit Cambodia, and how it prepares for
-AI-driven attack and quantum computers.
+Two versions, both 1920×1080.
+
+- **`csb-diagram.html`** — the one to post. A picture: people → their own private
+  door → the ledger → one guarded exit, then icon cards for why it fits and what
+  it is ready for. Roughly 90 words in total, nothing smaller than 17px, because
+  most people will see it on a phone at a third of this size.
+- **`csb-architecture.html`** — the wordy version. Keeps the full reasoning and
+  the honest caveats in prose. Better as a linked image or a slide than as a
+  feed post; on a phone the body text is unreadable.
+
+If you are choosing: post the diagram. Text that cannot be read at thumbnail
+size is not communication, it is decoration.
 
 It is a plain self-contained HTML file, so it is edited like any page and
 re-rendered with a headless browser:
