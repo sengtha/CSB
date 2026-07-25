@@ -157,6 +157,12 @@ function allInterfaces() {
 async function feeOverrides() {
   const block = await getProvider().getBlock("latest");
   const baseFee = block?.baseFeePerGas ?? 0n;
+  // Free-gas chain (minBaseFee 0): send a zero-priced tx so no tRIEL balance is
+  // needed for gas at all. Otherwise price well above the base fee so the tx
+  // can't get stuck under-priced.
+  if (baseFee === 0n) {
+    return { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n };
+  }
   return {
     maxFeePerGas: baseFee * 3n + ethers.parseUnits("500", "gwei"),
     maxPriorityFeePerGas: ethers.parseUnits("2", "gwei"),
