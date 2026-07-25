@@ -27,6 +27,7 @@ const SEL = {
   mintedCount: "0xfddcb5ea",
   paused: "0x5c975abb",
   minimumTier: "0xf1ebd5dd",
+  approved: "0xd8b964e6",
 };
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const MAX_TOKENS = 60; // a viewer, not an indexer
@@ -183,6 +184,30 @@ async function assets(rpcUrl, deployments, opts = {}) {
     tokens.push(t);
   }
 
+  // --- the 1:1 converter between the two tiers of money ------------------
+  // Public because it is the claim itself: anyone can check that the tRIEL
+  // minted here is matched by KHRt locked in the contract. A backing figure
+  // nobody can verify is worth nothing.
+  let converter = null;
+  if (c.RielConverter && c.KHRStablecoin) {
+    const khr = c.KHRStablecoin;
+    const [ok, locked, dec] = await Promise.all([
+      settle(rpc("eth_call", [{ to: c.RielConverter, data: SEL.approved + pad32(khr) }, "latest"]), "0x0"),
+      settle(rpc("eth_call", [{ to: khr, data: SEL.balanceOf + pad32(c.RielConverter) }, "latest"]), "0x0"),
+      settle(rpc("eth_call", [{ to: khr, data: SEL.decimals }, "latest"])),
+    ]);
+    const decimals = dec ? Number(hexToBig(dec)) : 2;
+    converter = {
+      address: c.RielConverter,
+      token: khr,
+      symbol: "KHRt",
+      approved: hexToBig(ok) !== 0n,
+      // KHRt held by the converter IS the backing for tRIEL it has minted.
+      lockedCollateral: units(hexToBig(locked), decimals),
+      rate: "1:1",
+    };
+  }
+
   // --- the NFT collection ------------------------------------------------
   let collection = null;
   const nftAddr = c.CSBCollectible;
@@ -223,7 +248,7 @@ async function assets(rpcUrl, deployments, opts = {}) {
     }
   }
 
-  const data = { address, tokens, collection, updatedAt: new Date().toISOString() };
+  const data = { address, tokens, converter, collection, updatedAt: new Date().toISOString() };
   _cache.set(key, { at: now, data });
   if (_cache.size > 200) _cache = new Map([[key, { at: now, data }]]); // bound the cache
   return data;

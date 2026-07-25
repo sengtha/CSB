@@ -75,6 +75,28 @@
       <div id="tokens"><p class="note">Loading…</p></div>
     </div>
 
+    <!-- The swap is the link between the two tiers of money, so it belongs on
+         the page that lists them rather than only inside the gated wallet. -->
+    <div class="card" id="swap-card" style="display:none">
+      <h2>Swap — KHRt ⇄ tRIEL</h2>
+      <p class="lead">
+        The two tokens above are the same money in two forms: <strong>tRIEL</strong> is the
+        native coin that pays gas and settles between institutions; <strong>KHRt</strong> is a
+        tokenized riel issued by a government-authorized issuer. The
+        <strong>converter</strong> swaps between them at a fixed <strong>1:1</strong> — no rate,
+        no spread, no fee beyond gas.
+      </p>
+      <p class="note" style="margin-top:8px">
+        Wrapping <strong>locks</strong> KHRt in the converter and mints you the same amount of
+        tRIEL. Unwrapping <strong>burns</strong> tRIEL and releases the KHRt that was backing it.
+        So every tRIEL the converter has ever minted is matched by KHRt sitting in it — a figure
+        you can check yourself, below, rather than take on trust.
+      </p>
+      <div class="statrow" id="swap-stats" style="margin-top:14px"></div>
+      <p class="note" id="swap-addr" style="margin-top:12px"></p>
+      <p style="margin-top:10px"><a href="wallet.html">Do a swap in the wallet →</a></p>
+    </div>
+
     <div class="card">
       <h2>Mint a collectible</h2>
       <div class="mintbox">
@@ -145,6 +167,18 @@ async function load(address) {
             : ""}
       </div>
     </div>`).join("");
+
+  // --- the 1:1 converter between the two tiers ---
+  if (d.converter) {
+    $("swap-card").style.display = "";
+    $("swap-stats").innerHTML = `
+      <div class="stat"><div class="v">1 : 1</div><div class="k">KHRt ⇄ tRIEL, fixed</div></div>
+      <div class="stat"><div class="v">${fmt(d.converter.lockedCollateral, 2)}</div><div class="k">KHRt locked as backing</div></div>
+      <div class="stat"><div class="v">${d.converter.approved ? "✓" : "✗"}</div><div class="k">${d.converter.approved ? "council-approved for conversion" : "not approved by the council"}</div></div>`;
+    $("swap-addr").innerHTML = `Converter contract <span class="mono">${esc(d.converter.address)}</span>`;
+  } else {
+    $("swap-card").style.display = "none";
+  }
 
   // --- collection ---
   COLLECTION = d.collection;

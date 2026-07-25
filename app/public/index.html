@@ -53,6 +53,7 @@
         <tr><td>7</td><td><a href="use-cases.html">Use cases</a></td><td><strong>Assistance that can only buy food</strong>, <strong>land title as an ERC-3643 token</strong> a lender can take as collateral, and <strong>delivery escrow</strong> paying restaurant, rider and platform in one transaction — things a chain with a national identity layer can do that a public chain cannot. Also: how to deploy your own contract here.</td></tr>
         <tr><td>8</td><td><a href="validator.html">Validators</a></td><td>How to run a node yourself: what it costs (a server, not money), what is required, and the one obligation that protects everyone — a validator's RPC port serves the whole ledger, so keeping it private is a term of participation.</td></tr>
         <tr><td>9</td><td><a href="assets.html">Tokens &amp; NFTs</a></td><td>See what any address holds, and <strong>mint an NFT yourself</strong> if your address is verified. The artwork is generated on chain — no image server, nothing to go offline. An unverified address is told exactly why it is refused, which is the permissioning working rather than failing.</td></tr>
+        <tr><td>10</td><td><a href="wallet.html">Wallet</a></td><td><strong>Swap KHRt ⇄ tRIEL at a fixed 1:1.</strong> Two-tier money in practice: wrapping locks a tokenized riel and mints the native coin; unwrapping burns the coin and releases its backing. Anyone can check on <a href="assets.html">Tokens &amp; NFTs</a> that the locked collateral matches — no exchange rate, no spread, and nothing taken on trust.</td></tr>
       </table>
       <p class="small" style="margin-top:10px">
         Pilot accounts (optional, seeded by <span class="mono">scripts/seed-accounts.js</span>; keys in <span class="mono">app/deployments.json</span>):
@@ -122,7 +123,8 @@
         <strong>The rest, briefly:</strong> Avalanche L1 (Subnet-EVM), permissioned proof-of-authority —
         public institutions as validators (placeholder) · Identity-Authority-issued on-chain KYC with
         <strong>no personal data on chain</strong>, one address per identity by default · tokenized riel with a
-        pluggable issuer · gas priced at about 1 riel per payment and routed to a
+        pluggable issuer, <strong>convertible 1:1 with the native coin</strong> in both directions
+        from day one · gas priced at about 1 riel per payment and routed to a
         <a href="fund.html">public-good fund</a> rather than burned · a single
         <strong>governed egress gateway</strong> wrapping Avalanche ICTT with a council-controlled token
         allowlist, minimum tiers, daily caps and a circuit breaker.

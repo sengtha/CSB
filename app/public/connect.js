@@ -27,26 +27,26 @@
   let state = { address: null, rpcPath: null, chainIdHex: null, chainId: null };
 
   const css = `
-    .csb-connect { position: relative; display: inline-flex; align-items: center; }
-    /* In-body placement (phones): a full-width button at the top of the page.
-       In the header it competed with the menu button for a strip of space that
-       is not wide enough for a title and two controls. */
-    .csb-connect.inbody { display: block; width: 100%; margin-bottom: 2px; }
-    .csb-connect.inbody button.cw {
-      width: 100%; padding: 12px; font-size: 15px; border-radius: 9px;
-      background: var(--blue); border-color: var(--blue); color: #fff;
-    }
-    .csb-connect.inbody button.cw.on { background: #fff; color: var(--blue); border-color: var(--blue); }
-    .csb-connect.inbody #${PANEL_ID} { left: 0; right: 0; width: auto; }
+    /* The widget lives at the top of the page body, not in the header. In the
+       header it was a control competing with the title and the navigation for a
+       strip that was never wide enough — cramped on a phone, and stranded on a
+       line of its own on a desktop. In the body it is simply the first thing on
+       the page, at every width. */
+    .csb-connect { position: relative; display: block; width: 100%; }
     .csb-connect button.cw {
-      margin: 0; padding: 5px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.5);
-      background: rgba(255,255,255,.12); color: #fff; font-size: 13px; font-weight: 600;
+      margin: 0; padding: 10px 18px; border-radius: 9px; border: 1px solid var(--blue);
+      background: var(--blue); color: #fff; font-size: 14px; font-weight: 600;
       cursor: pointer; font-family: inherit;
     }
-    .csb-connect button.cw:hover { background: rgba(255,255,255,.22); }
-    .csb-connect button.cw.on { background: #fff; color: var(--blue); border-color: #fff; }
+    .csb-connect button.cw:hover { filter: brightness(1.15); }
+    .csb-connect button.cw.on { background: #fff; color: var(--blue); }
+    /* Thumb-sized and edge-to-edge on a phone. */
+    @media (max-width: 760px) {
+      .csb-connect button.cw { width: 100%; padding: 12px; font-size: 15px; }
+      #${PANEL_ID} { left: 0; right: 0; width: auto; }
+    }
     #${PANEL_ID} {
-      position: absolute; right: 0; top: calc(100% + 8px); width: min(360px, 88vw);
+      position: absolute; left: 0; top: calc(100% + 8px); width: min(360px, 88vw);
       background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 10px;
       box-shadow: 0 10px 30px rgba(10,20,50,.18); padding: 14px 16px; z-index: 50; display: none;
       text-align: left;
@@ -80,9 +80,8 @@
   const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
   function mount() {
-    const header = document.querySelector("header.site");
-    const nav = header && header.querySelector("nav");
-    if (!header || !nav || document.querySelector(".csb-connect")) return;
+    const main = document.querySelector("main");
+    if (!main || document.querySelector(".csb-connect")) return;
     document.head.appendChild(el("style", {}, css));
 
     const wrap = el("div", { class: "csb-connect" });
@@ -90,17 +89,9 @@
     const panel = el("div", { id: PANEL_ID });
     wrap.append(btn, panel);
 
-    // Where this lives depends on the screen. On a phone the header has room for
-    // a title and ONE control; competing for that strip left the menu button
-    // stranded on a row of its own. So the header keeps the menu, and this moves
-    // to the top of the page as a full-width button — still the first thing seen,
-    // and never hidden inside the collapsed nav.
-    place(wrap);
-    let t;
-    window.addEventListener("resize", () => {
-      clearTimeout(t);
-      t = setTimeout(() => place(wrap), 150);
-    });
+    // First element of the page, above the first card — the header carries only
+    // the title and the navigation.
+    main.insertBefore(wrap, main.firstChild);
 
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -117,18 +108,6 @@
     document.addEventListener("click", (e) => {
       if (!wrap.contains(e.target)) panel.classList.remove("open");
     });
-  }
-
-  function place(wrap) {
-    const header = document.querySelector("header.site");
-    const main = document.querySelector("main");
-    const inBody = window.innerWidth <= 760 && !!main;
-    const target = inBody ? main : header;
-    if (!target) return;
-    wrap.classList.toggle("inbody", inBody);
-    if (wrap.parentElement === target) return;
-    if (inBody) target.insertBefore(wrap, target.firstChild);
-    else target.appendChild(wrap);
   }
 
   function say(panel, kind, html) {

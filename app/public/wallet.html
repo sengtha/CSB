@@ -81,6 +81,34 @@
       <button id="tr-send">Send tRIEL</button>
     </div>
 
+    <!-- Two-tier money: tRIEL is the native settlement coin, KHRt a tokenized
+         riel issued by a licensed issuer. The converter is what makes them the
+         same money rather than two currencies — 1:1, both directions, no rate
+         and no spread. Every tRIEL it mints is backed by KHRt it just locked. -->
+    <div class="card" id="swap-card" style="display:none">
+      <h2>Swap — KHRt ⇄ tRIEL</h2>
+      <p class="small" style="margin-bottom:8px;line-height:1.7">
+        One riel is one riel. Wrapping <b>locks</b> KHRt in the converter and mints you the same
+        amount of native tRIEL; unwrapping <b>burns</b> tRIEL and releases the KHRt behind it.
+        Fixed 1:1 — there is no exchange rate, no spread and no fee beyond gas, because both sides
+        are the same unit of account.
+      </p>
+      <div class="grid2">
+        <div>
+          <label>Direction</label>
+          <select id="sw-dir">
+            <option value="wrap">KHRt → tRIEL &nbsp;(lock KHRt, mint tRIEL)</option>
+            <option value="unwrap">tRIEL → KHRt &nbsp;(burn tRIEL, release KHRt)</option>
+          </select>
+          <label>Amount (riel)</label>
+          <input id="sw-amount" placeholder="e.g. 10,000.00" />
+          <button id="sw-go">Swap</button>
+          <p id="sw-quote" class="small" style="margin-top:8px"></p>
+        </div>
+        <div id="sw-info" class="kv"><span class="small">Loading converter…</span></div>
+      </div>
+    </div>
+
     <div id="msg" class="banner"></div>
 
     <div class="card">
@@ -131,6 +159,39 @@ async function refreshActivity() {
      '<tr><td colspan="3" class="small">No activity yet.</td></tr>');
 }
 
+// Converter panel. Shown only if this deployment has a RielConverter, so an
+// older chain simply has no swap rather than a broken card.
+async function refreshSwap() {
+  const { khr, converter } = await getContracts();
+  if (!converter) return;
+  const [approved, locked, sym] = await Promise.all([
+    converter.approved(khr.target).catch(() => false),
+    khr.balanceOf(converter.target).catch(() => 0n),
+    Promise.resolve("KHRt"),
+  ]);
+  document.getElementById("sw-info").innerHTML = `
+    <b>Rate</b> 1 ${sym} = 1 tRIEL <span class="badge info">fixed 1:1</span><br/>
+    <b>Council approval</b> ${approved
+      ? '<span class="badge ok">KHRt CONVERTIBLE</span>'
+      : '<span class="badge bad">NOT APPROVED</span>'}<br/>
+    <b>Collateral locked</b> ${fmtKHR(locked)} ${sym}<br/>
+    <span class="small">— every tRIEL minted here is backed by this locked KHRt; burning tRIEL releases it.</span><br/>
+    <b>Converter</b> <span class="mono">${converter.target}</span>`;
+}
+
+function quoteSwap() {
+  const raw = String(document.getElementById("sw-amount").value ?? "").trim();
+  const out = document.getElementById("sw-quote");
+  if (!raw) { out.textContent = ""; return; }
+  let units;
+  try { units = parseKHR(raw); } catch (_) { out.textContent = "Enter a plain number of riel."; return; }
+  const wrapping = document.getElementById("sw-dir").value === "wrap";
+  const amt = fmtKHR(units);
+  out.innerHTML = wrapping
+    ? `You lock <b>${amt} KHRt</b> and receive <b>${amt} tRIEL</b>.`
+    : `You burn <b>${amt} tRIEL</b> and receive <b>${amt} KHRt</b>.`;
+}
+
 async function run(fn) {
   const msg = document.getElementById("msg");
   msg.className = "banner";
@@ -139,6 +200,7 @@ async function run(fn) {
     const r = await fn();
     banner(msg, "ok", r);
     await refreshAccount();
+    await refreshSwap().catch(() => {});
   } catch (e) {
     banner(msg, "err", explainError(e));
   }
@@ -214,6 +276,46 @@ async function run(fn) {
     await tx.wait();
     const amt = Number(ethers.formatEther(value)).toLocaleString("en-US");
     return `Sent ${amt} tRIEL to ${short(to)}${rielPay ? "" : " (direct)"}. Tx ${shortHash(tx.hash)}`;
+  });
+
+  // Swap card — only on deployments that carry a converter.
+  (async () => {
+    const { converter } = await getContracts();
+    if (!converter) return;
+    document.getElementById("swap-card").style.display = "";
+    document.getElementById("sw-dir").onchange = quoteSwap;
+    document.getElementById("sw-amount").oninput = quoteSwap;
+    await refreshSwap().catch(() => {});
+  })();
+
+  document.getElementById("sw-go").onclick = () => run(async () => {
+    const { khr, converter } = await getContracts(wallet);
+    if (!converter) throw new Error("This deployment has no RielConverter.");
+    const amount = parseKHR(document.getElementById("sw-amount").value);
+    if (amount <= 0n) throw new Error("Enter an amount greater than zero.");
+    const amt = fmtKHR(amount);
+    // KHRt carries 2 decimals and tRIEL 18, so the converter publishes the
+    // multiplier rather than the UI assuming it.
+    const scale = await converter.scale(khr.target);
+    const triel = amount * scale;
+
+    if (document.getElementById("sw-dir").value === "wrap") {
+      // The converter pulls the KHRt with transferFrom, so it needs an allowance
+      // first. Two transactions, two gas fees — worth saying out loud.
+      const allowance = await khr.allowance(wallet.address, converter.target);
+      if (allowance < amount) await (await khr.approve(converter.target, amount, await feeOverrides())).wait();
+      const tx = await converter.wrap(khr.target, amount, await feeOverrides());
+      await tx.wait();
+      return `Wrapped ${amt} KHRt → ${amt} tRIEL. The KHRt is locked in the converter as backing. Tx ${shortHash(tx.hash)}`;
+    }
+
+    const balance = await getProvider().getBalance(wallet.address);
+    if (balance < triel) {
+      throw new Error(`Not enough tRIEL: unwrapping ${amt} riel sends ${amt} tRIEL, plus gas.`);
+    }
+    const tx = await converter.unwrap(khr.target, amount, { value: triel, ...(await feeOverrides()) });
+    await tx.wait();
+    return `Unwrapped ${amt} tRIEL → ${amt} KHRt. The tRIEL is burned and its backing released. Tx ${shortHash(tx.hash)}`;
   });
 
   document.getElementById("eg-send").onclick = () => run(async () => {

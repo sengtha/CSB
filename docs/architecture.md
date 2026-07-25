@@ -101,6 +101,8 @@ So KHRt is **one issuer's product**, not a monopoly: multiple institutions can e
 
 Both coexist: trustless wrappers are the safe default; vetted reserve-backed issuers are permitted where real reserves and licenses exist. The Governing Council governs *which* issuers and tokens are approved (the same allowlist muscle used elsewhere).
 
+**Convertibility is exposed, not just implemented.** A converter nobody can reach is a claim rather than a feature, so the swap is in the product: the wallet page carries a **Swap — KHRt ⇄ tRIEL** card (wrap locks KHRt and mints tRIEL; unwrap burns tRIEL and releases the KHRt), and the *public* Tokens & NFTs page publishes the converter's **locked collateral** alongside the 1:1 rate. That figure is the backing claim itself — anyone can check that the KHRt sitting in the contract matches the tRIEL it has minted, without an account and without taking anyone's word for it.
+
 **Whoever anchors tRIEL anchors everything.** Since all riel tokens redeem to tRIEL, the foundational trust question is *who guarantees 1 tRIEL = 1 riel* — most plausibly a sovereign/treasury reserve (the CBDC-like base). Every tokenized riel inherits its credibility from that answer.
 
 **Compliance carries across every riel token** (an `ITokenizedRiel` standard; `KHRStablecoin` implements it):

@@ -84,6 +84,19 @@ const ABI = {
     "error DailyCapExceeded(address token, uint256 cap, uint256 attempted)",
     "error EnforcedPause()",
   ],
+  RielConverter: [
+    "function wrap(address token, uint256 amount)",
+    "function unwrap(address token, uint256 amount) payable",
+    "function approved(address token) view returns (bool)",
+    "function scale(address token) view returns (uint256)",
+    "event Wrapped(address indexed account, address indexed token, uint256 tokenAmount, uint256 trielAmount)",
+    "event Unwrapped(address indexed account, address indexed token, uint256 tokenAmount, uint256 trielAmount)",
+    "error TokenNotApproved(address token)",
+    "error ZeroAmount()",
+    "error WrongValue(uint256 expected, uint256 sent)",
+    "error BurnFailed()",
+    "error UnsupportedDecimals(uint8 tokenDecimals)",
+  ],
   RielPay: [
     "function pay(address to, bytes32 memo) payable",
     "function quoteLevy(address from, address to, uint256 amount) view returns (uint256)",
@@ -114,6 +127,11 @@ const FRIENDLY = {
   AccessControlUnauthorizedAccount: (a) => `Blocked: ${short(a[0])} does not hold the required role (separation of powers).`,
   OwnableUnauthorizedAccount: (a) => `Blocked: ${short(a[0])} is not the owner of this contract.`,
   OrderRefRequired: () => "Blocked: enforcement actions require a court/AML order reference.",
+  TokenNotApproved: () => "Blocked: the council has not approved this token for 1:1 conversion into tRIEL.",
+  WrongValue: (a) => `Blocked: this unwrap needs exactly ${ethers.formatEther(a[0])} tRIEL (sent ${ethers.formatEther(a[1])}).`,
+  UnsupportedDecimals: (a) => `Blocked: a token with ${a[0]} decimals cannot be converted.`,
+  BurnFailed: () => "Blocked: the tRIEL burn did not go through — nothing was converted.",
+  ZeroAmount: () => "Enter an amount greater than zero.",
   ERC20InsufficientBalance: (a) => `Blocked: insufficient balance (${fmtKHR(a[1])} KHRt available).`,
   ERC20InsufficientAllowance: () => "Blocked: gateway allowance too low — approve first.",
 };
@@ -125,7 +143,15 @@ let _provider, _config, _contracts;
 
 function getProvider() {
   if (!_provider) {
-    _provider = new ethers.JsonRpcProvider(location.origin + "/rpc", undefined, { batchMaxCount: 1 });
+    // cacheTimeout: -1 disables ethers' 250ms de-duplication of identical calls.
+    // It is a trap on an instant-finality chain: a pre-flight balance check and
+    // the post-transaction refresh land inside the same 250ms window, so the
+    // refresh serves the PRE-transaction balance and the page appears to say the
+    // transaction did nothing. A handful of duplicate reads is a fair price for a
+    // balance that is never a lie.
+    _provider = new ethers.JsonRpcProvider(location.origin + "/rpc", undefined, {
+      batchMaxCount: 1, cacheTimeout: -1,
+    });
   }
   return _provider;
 }
@@ -149,6 +175,9 @@ async function getContracts(runner) {
     gateway: new ethers.Contract(cfg.contracts.EgressGateway, ABI.EgressGateway, r),
     // RielPay is optional — only present on chains deployed with it.
     rielPay: cfg.contracts.RielPay ? new ethers.Contract(cfg.contracts.RielPay, ABI.RielPay, r) : null,
+    // Likewise the converter: a deployment without it simply has no swap.
+    converter: cfg.contracts.RielConverter
+      ? new ethers.Contract(cfg.contracts.RielConverter, ABI.RielConverter, r) : null,
   };
 }
 
