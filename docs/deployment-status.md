@@ -117,6 +117,12 @@ Check it is actually in force on the chain (read-only, sends nothing):
 npx hardhat run scripts/verify-policy.js --network csbRemote
 ```
 
+See what the fund has raised across both streams:
+
+```bash
+npx hardhat run scripts/fund-report.js --network csbRemote
+```
+
 Verified live on the current chain: fee floor 47,619 gwei (a transfer costs
 1.0000 tRIEL), KHRt approved in the RielConverter, and `currentRewardAddress` =
 the charity `0xE77566de0F9B7c21Ae33228ea9329Cc9931e6863`.
