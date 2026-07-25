@@ -1,6 +1,6 @@
 # CSB deployment status — Fuji testnet
 
-**Status:** LIVE on Avalanche Fuji · redeployed 2026-07-24 on a fresh VM (the previous chain was retired after a single-validator restart wedged it). **Wallet KHRt transfer verified working end-to-end.**
+**Status:** LIVE on Avalanche Fuji · redeployed 2026-07-24 on a fresh VM with **three validators from birth** (the previous single-validator chains kept wedging block production under load — a fresh 3-validator deploy ran the full deploy + seed + charity-levy sequence, ~30 txs, without stalling). **Wallet KHRt transfer verified working end-to-end.**
 
 This is the running record of the CSB testnet: what exists, where, and how to operate it. Public identifiers and contract addresses only — **no private keys or passcodes live in this file** (those are in `~/.avalanche-cli/key/`, `app/deployments.json`, and the operator's env, all off-repo).
 
@@ -10,23 +10,23 @@ This is the running record of the CSB testnet: what exists, where, and how to op
 |---|---|
 | Network | Avalanche **Fuji** (testnet) |
 | EVM Chain ID | **8555** (`0x216b`) |
-| Subnet ID | `FWHGBo9oxEN6HEsFp6Ajm5BMGihoKMfXk81t7zFirhAUybJxw` |
-| Blockchain ID | `mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3` |
+| Subnet ID | `fgNiKVRTRJFZbCzSUPJMix6YdG2HfpXGf1LP9rQ58b5TU9mJL` |
+| Blockchain ID | `299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW` |
 | VM ID | `koLRzStcoE4fZ6V1DtXJCYMVWctdrdfpR6Y5egzFbURXRSvVv` |
 | Validator Manager | V2 PoA, owned by the deployer key (Governing-Council slot in production) |
+| Validators | **3** (avalanche-cli local cluster `csb-local-node-fuji`) — see Infrastructure. Multi-validator from birth so block production keeps going under load. |
 | Native token | **tRIEL** (1,000,000 allocated to the deployer at genesis) |
-| Gas | constant, non-zero price; pilot accounts are funded with tRIEL at seed time so they can pay it. Set gas free later via the feeManager precompile (`minBaseFee` → 0) if the free-gas model is wanted. |
+| Gas | constant, non-zero price; pilot accounts are funded with tRIEL at seed time so they can pay it. Set gas free later via the feeManager precompile (`minBaseFee` → 0) if the free-gas model is wanted. Gas fees are **not burned** — RewardManager is enabled at genesis so they can be routed to a public-good address. |
 | Version pair | AvalancheGo **v1.14.1** / Subnet-EVM **v0.8.0** (both plugin protocol 44 — the only released working pair; see `docs/create-testnet.md`) |
-| Local RPC | `http://127.0.0.1:9650/ext/bc/mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3/rpc` |
+| Local RPC | `http://127.0.0.1:9650/ext/bc/299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW/rpc` |
 
 ## Infrastructure
 
 | | |
 |---|---|
 | Host | Elestio VM (host `cicd-upecy-u70984`; repo at `/opt/csb`, Ubuntu, Docker) |
-| Bootstrap validator | avalanche-cli local node **cluster `csb-local-node-fuji`**, `NodeID-HtEKUn7oq7ArkzRFW9km6j5Fgm4pcMrLU`, ports 9650 (API, localhost) / 9651 (P2P). **This is the chain's only registered L1 validator — always operate this cluster; never create a second one.** |
-| Staking key backup | `~/csb-backup.tgz` (staker.key/crt + BLS signer + deployer key) — pulled off the VM. Losing this key = losing the only validator. |
-| Docker validator (node #2) | not yet deployed on this VM (`docker-compose.validator.yml`, ports 9652/9653) — register it to remove the single-validator risk |
+| Validators (3) | avalanche-cli local **cluster `csb-local-node-fuji`**, all Running/Healthy/Bootstrapped. Node 1 `NodeID-BoRS383b4Z9ZdsJSVUcnrXNCXh5Qj93ux` (port **9650**, primary API) · Node 2 `NodeID-7bR7RPuFvqKqz6iJghvhcuyDSwTovV7xk` (port 32865) · Node 3 `NodeID-LfGX121t7kEmbMWTmcF5RDSP6bWARK87U` (port 37973). **Always operate this one cluster** — it holds all three validators. |
+| Staking key backup | `~/csb-backup.tgz` (staker.key/crt + BLS signer + deployer key) — pulled off the VM. Each validator's staking identity lives under `~/.avalanche-cli/local/csb-local-node-fuji/<NodeID>/staking/`. |
 | App server | `app/server.js` on port **8080** (gated wallet/explorer/admin), passcode via `EXPLORER_PASSCODE` env |
 | Deployer / admin key | `csb-deployer` → **`0x8f6aE9fB0993C8691D7FCDFBFC79fbcF5A7BFa8b`** — precompile admin, contract deployer, KHRt issuer, validator-manager owner. **TESTNET ONLY — never reuse on mainnet.** |
 
@@ -37,7 +37,8 @@ This is the running record of the CSB testnet: what exists, where, and how to op
 | Transaction Allow List | `0x0200000000000000000000000000000000000002` | Chain-level KYC gate — only enabled addresses transact |
 | Contract Deployer Allow List | `0x0200000000000000000000000000000000000000` | Only vetted addresses deploy contracts |
 | Fee Manager | `0x0200000000000000000000000000000000000003` | Live fee config; used to set gas free |
-| Native Minter | `0x0200000000000000000000000000000000000001` | Administrative tRIEL minting |
+| Native Minter | `0x0200000000000000000000000000000000000001` | Administrative tRIEL minting (also backs RielConverter wrap/unwrap) |
+| Reward Manager | `0x0200000000000000000000000000000000000004` | Gas-fee distribution — enabled so fees are **routed, not burned** (set a reward address to fund public good) |
 | Warp | (activates ICM) | Interchain messaging / ACP-77 L1 |
 
 ## Deployed contracts (CSB suite)
@@ -51,6 +52,8 @@ Recorded in `app/deployments.json`. Addresses on the CSB chain:
 | KHRStablecoin (KHRt) | `0xE3Fa15A625Ba66D69A683E42b78a993770320799` |
 | EgressGateway | `0x8c6bB6291214210eba9387befF03E725323df925` |
 | MockBridgeAdapter | `0x067322daE120a142c37B2CC36868Ae71F306721F` |
+| RielConverter (wrap tokenized RIEL ↔ tRIEL) | `0xEe001Bc1fE519932CbF46ab37098D36312c44F45` |
+| RielPay (native tRIEL payments + public-good levy) | `0xC357C7d39C9377AdaC24296610a1a379beEa0Ef4` |
 
 Interop (deployed by avalanche-cli):
 
@@ -65,17 +68,34 @@ Roles at deploy time all point to the deployer (pilot mode): council, identity a
 
 | Name | Address | Tier | txAllowList |
 |---|---|---|---|
-| Sokha | `0xF0c9A393d750dB423a2a055944Ea54f692107Ad2` | 2 (full KYC) | enabled |
-| Dara | `0xAF391010ad7c4628ab06C11296efE03350E830b9` | 1 (capped) | enabled |
-| Vanna | `0xa78cB3F68aD3A91A2960688c3cD93e9aD0bE679e` | none | not enabled (rejection cases) |
+| Sokha | `0x228C3A091CbB2FE7403C2a170f5104700e22e2ac` | 2 (full KYC) | enabled |
+| Dara | `0xfc0E5481cEa367C15dd14CA7f31Ef40a121a8929` | 1 (capped) | enabled |
+| Vanna | `0x983482601deE50782C3475854B967A09Ec571bA5` | none | not enabled (rejection cases) |
+| Charity (illustrative public-good recipient) | `0xE77566de0F9B7c21Ae33228ea9329Cc9931e6863` | 2 (full KYC) | enabled, levy-exempt |
+
+> The charity account is a **placeholder** used to demonstrate the public-good levy. Nothing here is endorsed by, affiliated with, or arranged with any real organisation — it is a worked example on a testnet.
+
+## Public-good levy (worked example)
+
+KHRt carries an optional per-transfer levy: **1 KHRt of every KHRt transfer** is
+routed to the charity address above, on-chain, with no extra step for the sender.
+Mints, burns, enforcement moves, system contracts, the recipient itself, and any
+explicitly exempt address are all excluded, as is any transfer at or below the
+levy amount. Configure it with `scripts/enable-charity-levy.js`, or from the
+admin console → Council → *Public-good levy (KHRt)*. The wallet shows the
+donation on the payment panel and the running total raised.
 
 ## What works today
 
-- Chain producing blocks on demand; RPC answers `eth_chainId` = `0x216b`.
+- Chain producing blocks on a **3-validator** cluster; RPC answers `eth_chainId` = `0x216b`.
 - Full contract suite live; Sokha/Dara KYC-active, txAllowList-enabled, and funded with tRIEL.
 - **Wallet KHRt transfer (Sokha → Dara) verified end-to-end through the gated app.**
+- **RielPay** — pay in native tRIEL directly, so the chain is usable before any tokenized riel exists.
+- **RielConverter** — wrap an approved tokenized riel 1:1 into native tRIEL (token locked, tRIEL minted) and unwrap back (tRIEL burned, token released).
+- **Per-transfer public-good levy on KHRt** enabled (1 KHRt → charity address).
 - Gated app UI (explorer/wallet/admin) serving the live chain on :8080; passcode login works.
-- Gas is constant/non-zero (not yet set free); pilot accounts hold tRIEL to pay it.
+- Self-service **scoped RPC** — any KYC-active address can mint its own read-filtered RPC URL by signing a challenge; council can revoke from the admin console.
+- Gas is constant/non-zero (not yet set free); pilot accounts hold tRIEL to pay it. RewardManager is enabled, so fees can be routed to a public fund rather than burned.
 - ICM Messenger/Registry deployed, but the **relayer is not funded** (chose "Not now" at deploy) — cross-chain egress delivery needs it funded first.
 
 ## Operate it
@@ -83,7 +103,7 @@ Roles at deploy time all point to the deployer (pilot mode): council, identity a
 ```bash
 # --- on the VM ---
 export PATH=$PATH:$HOME/bin
-export RPC=http://127.0.0.1:9650/ext/bc/mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3/rpc
+export RPC=http://127.0.0.1:9650/ext/bc/299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW/rpc
 
 # chain alive?
 curl -s -X POST -H 'content-type:application/json' --data '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' $RPC
@@ -97,11 +117,10 @@ EXPLORER_PASSCODE=<your-passcode> CSB_RPC_URL=$RPC nohup node app/server.js > /t
 CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
   npx hardhat run scripts/fund-native.js --network csbRemote
 
-# after a VM reboot, the bootstrap node must be restarted.
-# IMPORTANT: the correct cluster is 'csb-local-node-fuji' (NodeID-HtEKUn7…, the
-# registered L1 validator, port 9650). Do NOT start/track the 'csb' cluster —
-# it is a decoy with a different NodeID that can never bootstrap the L1.
-avalanche node local status csb-local-node-fuji
+# after a VM reboot, the validator cluster must be restarted. All three
+# validators live in the ONE cluster 'csb-local-node-fuji' — starting it starts
+# all of them. Never create a second cluster for this chain.
+avalanche node local list                        # shows all 3 nodes + health
 avalanche node local start csb-local-node-fuji
 ```
 
@@ -109,17 +128,18 @@ Browser access: your Elestio host over HTTPS (passcode-gated). **Easiest login: 
 
 ## Next steps (testnet checklist continues)
 
-1. Register the Docker validator as node #2 — redundancy + "validator added" rehearsal. Open 9653/tcp in Elestio firewall, `docker compose -f docker-compose.validator.yml up -d --build`, then `avalanche blockchain addValidator csb --fuji` with its NodeID.
-2. Real ICTT egress to Fuji C-Chain (`docs/fuji-ictt.md`) — first token across the governed gateway onto a public chain.
-3. Remaining rehearsals: freeze/confiscate, validator remove, fee raise/lower (partly done), backup restore, coordinated upgrade.
-4. Invite an external validator operator using `docs/validator-manual.md`.
+1. Watch that the 3-validator chain keeps producing blocks over days, not minutes — the earlier chains wedged only after sustained use. Add a watchdog that restarts the cluster if height stops advancing.
+2. Decide the gas policy: leave gas near-free, or charge a small fee and route it to the public fund with the RewardManager precompile (`setRewardAddress`).
+3. Real ICTT egress to Fuji C-Chain (`docs/fuji-ictt.md`) — first token across the governed gateway onto a public chain.
+4. Remaining rehearsals: freeze/confiscate, validator remove, fee raise/lower (partly done), backup restore, coordinated upgrade.
+5. Invite an external validator operator using `docs/validator-manual.md` (the Docker validator in `docker-compose.validator.yml`, ports 9652/9653, is the template for an off-VM operator).
 
 ## Backups (keep off the VM)
 
 - `~/.avalanche-cli/key/csb-deployer.pk` — chain root authority.
 - `app/deployments.json` — contract addresses + pilot keys.
-- **Bootstrap validator staking identity** — `~/.avalanche-cli/local/csb-local-node-fuji/NodeID-HtEKUn7…/staking/staker.key` + `staker.crt`. This key **is** the L1's single validator; lose it and the chain cannot reach quorum to bootstrap or to register a replacement. Back it up off the VM. (This is exactly what went wrong once: a stop/start landed on a *different* cluster with a new NodeID, and the L1 sat at "0% stake connected / context deadline exceeded" until the original cluster was restarted.)
-- (validator identity) `csb_avalanchego-staking` Docker volume, once node #2 is registered.
+- **Validator staking identities** — `~/.avalanche-cli/local/csb-local-node-fuji/<NodeID>/staking/staker.key` + `staker.crt`, for all three NodeIDs. Together these keys **are** the L1's validator set; lose enough of them and the chain cannot reach quorum to bootstrap or to register replacements. Back them all up off the VM. (This is exactly what went wrong once: a stop/start landed on a *different* cluster with a new NodeID, and the L1 sat at "0% stake connected / context deadline exceeded" until the original cluster was restarted.)
+- (validator identity) `csb_avalanchego-staking` Docker volume, if an off-VM Docker validator is registered.
 
 ## Troubleshooting
 
@@ -134,7 +154,7 @@ Minter (deployer is admin):
 
 ```bash
 export PATH=$PATH:$HOME/bin
-export RPC=http://127.0.0.1:9650/ext/bc/mHu6H4FQ3K6fCmmHsingG2t8y5wiVvvrEZXpS25ZhodU8gdz3/rpc
+export RPC=http://127.0.0.1:9650/ext/bc/299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW/rpc
 cd ~/csb
 CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
   npx hardhat run scripts/fund-native.js --network csbRemote
@@ -152,28 +172,45 @@ explicitly, far above the current base fee (harmless — the node only charges t
 real base fee), and `fund-native.js` times out after 90s instead of hanging. If
 a tx is reported stuck, just re-run the script.
 
+**Block height frozen — RPC answers, but `eth_blockNumber` never advances and no
+tx ever mines.** This was the defining failure of the earlier single- and
+two-validator chains. It is *not* a fee problem, a version mismatch, a validator
+balance problem, or a clock problem — all of those were ruled out, and neither a
+restart nor adding a validator afterwards recovered a chain once wedged. Check
+liveness first, and check every node in the cluster:
+
+```bash
+avalanche node local list                        # all 3 nodes should be Running/Healthy/Bootstrapped
+curl -s 127.0.0.1:9650/ext/health | head -c 400  # look for percentConnected / disconnectedValidators
+for i in 1 2; do
+  curl -s -X POST -H 'content-type:application/json' \
+    --data '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' $RPC; echo; sleep 5
+done                                             # the two numbers must differ
+```
+
+If height is frozen, restart the whole cluster (`avalanche node local stop
+csb-local-node-fuji && avalanche node local start csb-local-node-fuji`). If it
+stays frozen, the chain is wedged — redeploy with **at least three validators
+from the start**; retrofitting validators onto a wedged chain does not work.
+
 **Chain won't bootstrap after a restart: "context deadline exceeded" / health shows
-`not connected to enough stake: connected to 0.000000%`.** The node that came up is
-not the L1's registered validator (`NodeID-HtEKUn7…`). Almost always this means the
-wrong avalanche-cli cluster was started — the decoy `csb` cluster (`NodeID-LSmkHG1…`,
-port 9654) instead of `csb-local-node-fuji` (port 9650). Check with:
+`not connected to enough stake: connected to 0.000000%`.** The nodes that came up
+are not the L1's registered validators. Confirm the NodeIDs from `avalanche node
+local list` match the three recorded under Infrastructure above, and that you
+started the `csb-local-node-fuji` cluster rather than creating a new one — a
+freshly created cluster gets *new* NodeIDs that the L1 has never registered and
+can therefore never bootstrap it.
 
-```bash
-curl -s 127.0.0.1:<port>/ext/health | head -c 400   # look for disconnectedValidators / percentConnected
-avalanche node local status csb-local-node-fuji
-```
+## Validator-set caveat
 
-Fix: stop the decoy and start the real cluster.
+All three validators run in one cluster on **one VM**, so the VM is still a single
+point of failure: if it reboots, the chain pauses until `avalanche node local start
+csb-local-node-fuji` brings the cluster back — data persists. The remaining
+redundancy work is geographic: register a validator on a *different* host using
+`docs/validator-manual.md`.
 
-```bash
-avalanche node local stop csb                    # stop the wrong node
-avalanche node local start csb-local-node-fuji   # start the real validator (9650)
-```
-
-The Docker validator container `csb-validator-1` (ports 9652/9653, auto-restart) is
-harmless here and unrelated — don't kill its process (Docker just respawns it); use
-`docker compose -f docker-compose.validator.yml down` if you want it stopped.
-
-## Single-validator caveat
-
-The chain currently has one validator (the CLI bootstrap node). If the VM reboots, the chain pauses until that node is restarted — data persists. Registering the Docker validator (step 1 above) removes this single point of failure.
+Why three and not one: single- and two-validator deployments of this chain
+repeatedly stopped producing blocks after limited activity (height frozen, no
+recovery from restart or from adding a validator afterwards). The three-validator
+deploy ran the entire deploy + seed + levy sequence without stalling. Treat "one
+validator is enough for a pilot" as disproven here.
