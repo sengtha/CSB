@@ -111,6 +111,16 @@ npx hardhat run scripts/fund-native.js --network csbRemote
 **Order matters:** set the reward address *before* raising the fee, or the fees
 charged in between are burned instead of funding anything.
 
+Check it is actually in force on the chain (read-only, sends nothing):
+
+```bash
+npx hardhat run scripts/verify-policy.js --network csbRemote
+```
+
+Verified live on the current chain: fee floor 47,619 gwei (a transfer costs
+1.0000 tRIEL), KHRt approved in the RielConverter, and `currentRewardAddress` =
+the charity `0xE77566de0F9B7c21Ae33228ea9329Cc9931e6863`.
+
 **Keep `CSB_GAS_PRICE_WEI` above the floor.** `hardhat.config.js` prices script
 transactions at a fixed 55,000 gwei, chosen to sit ~15% above the 47,619 gwei
 floor. If the fee policy changes, this must change too — a script submitting
