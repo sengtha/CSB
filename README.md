@@ -60,6 +60,8 @@ infra/setup-vm.sh              Cloud VM bootstrap (Ubuntu, any provider)
 infra/deploy-l1.sh             Create + deploy the Avalanche L1 on the VM
 infra/Caddyfile                Caddy reverse proxy for HTTPS (custom domain)
 scripts/deploy.js              Deploys and wires the suite (multisig-aware)
+scripts/deploy-grove.js        Adds the Grove suite to a chain that already has
+                               CSB on it (idempotent; wires roles + allowlists)
 scripts/demo-grove.js          Grove end-to-end: plant, anchor, verify, tokenize,
                                and get paid for survival
 scripts/seed-accounts.js       Seeds pilot identities, balances, egress policy
