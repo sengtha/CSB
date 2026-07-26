@@ -11,5 +11,8 @@ app/deployments.json
 app/rpc-tokens.json
 app/rpc-revoked.json
 
+# Pending KYC requests (names people typed — not for the repo)
+app/kyc-requests.json
+
 # operator-local overrides (may contain secrets)
 ops/*.local.sh

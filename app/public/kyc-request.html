@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Request verification — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .lead { font-size: 14px; line-height: 1.7; }
+    .note { font-size: 12.5px; color: var(--muted); line-height: 1.65; }
+    .step { display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; margin-bottom: 9px; }
+    .step .n { width: 26px; height: 26px; border-radius: 50%; background: var(--blue); color: #fff;
+               font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+    .step .t { font-size: 13px; line-height: 1.6; padding-top: 4px; }
+    .msg { font-size: 13.5px; border-radius: 8px; padding: 11px 13px; margin-top: 12px; line-height: 1.55; }
+    .msg.err { background: #fdecec; border: 1px solid #f5c2c2; color: #8f1d1d; }
+    .msg.ok { background: #e6f6ec; border: 1px solid #bfe5cd; color: #14532d; }
+    .msg.info { background: #eef2fb; border: 1px solid #d3ddf5; color: #22365e; }
+    .privacy { border-left: 3px solid var(--warn); background: #fffaf2; padding: 11px 14px;
+               border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.65; margin-top: 14px; }
+    .foot { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0 24px; line-height: 1.6; }
+  </style>
+  <script src="shell.js" defer></script>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 Request verification</h1>
+    <span class="sub">ask to be KYC-registered — no login needed</span>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="wallet.html">Wallet</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="fund.html">Fund</a>
+      <a href="assets.html">Tokens &amp; NFTs</a>
+      <a href="use-cases.html">Use cases</a>
+      <a href="kyc-request.html">Get verified</a>
+      <a href="kyc-request.html" class="active">Get verified</a>
+      <a href="validator.html">Validators</a>
+      <a href="node.html">Node info</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="card">
+      <p class="lead">
+        CSB is permissioned: an address can hold tokenized riel and transact only once an
+        identity authority has registered it. This page is how you ask. It is free, sends
+        no transaction, and grants nothing by itself — an authority reviews the queue and
+        decides.
+      </p>
+      <div style="margin-top:14px">
+        <div class="step"><div class="n">1</div><div class="t">Connect your wallet, or paste an address you control.</div></div>
+        <div class="step"><div class="n">2</div><div class="t"><strong>Sign a message</strong> proving the address is yours. Signing is free and moves nothing.</div></div>
+        <div class="step"><div class="n">3</div><div class="t">An authority approves or refuses it. Come back here to see the status.</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Your request</h2>
+      <div class="grid2">
+        <div>
+          <label>Address</label>
+          <input id="addr" placeholder="0x…" spellcheck="false" />
+          <button id="use-wallet" class="ghost">Use my connected wallet</button>
+
+          <label style="margin-top:14px">Name or reference for the reviewer</label>
+          <input id="label" placeholder="e.g. Sokha — test account" maxlength="80" />
+          <p class="note">Free text, kept on this server only, shown to the reviewer so they know
+            which request is which. <strong>It is never written to the chain.</strong></p>
+
+          <label style="margin-top:14px">Tier requested</label>
+          <select id="tier">
+            <option value="1">1 · citizen basic (capped transfers)</option>
+            <option value="2" selected>2 · full KYC</option>
+            <option value="3">3 · business</option>
+            <option value="4">4 · institutional</option>
+          </select>
+
+          <button id="go">Sign &amp; submit request</button>
+        </div>
+        <div>
+          <h2>Status</h2>
+          <div id="status" class="kv"><span class="small">Enter an address to check.</span></div>
+          <div class="privacy">
+            <strong>What reaches the chain, and what does not.</strong> If this is approved, the
+            chain records a <em>commitment hash</em> and a tier against your address — never your
+            name, and never anything typed above. That is the same rule the rest of CSB follows:
+            the ledger proves an address was verified, without publishing who anyone is.
+          </div>
+        </div>
+      </div>
+      <div id="out"></div>
+    </div>
+
+    <p class="foot">
+      Test network. Verification here is a demonstration of the mechanism and carries no
+      real-world status of any kind. The reviewing "identity authority" is a placeholder
+      role held by the operator of this prototype, not any institution.
+    </p>
+  </main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const msg = (kind, html) => { $("out").innerHTML = `<div class="msg ${kind}">${html}</div>`; };
+
+async function refreshStatus() {
+  const a = $("addr").value.trim();
+  const box = $("status");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(a)) { box.innerHTML = '<span class="small">Enter a valid 0x address.</span>'; return; }
+  try {
+    const r = await fetch("/kyc-request/status?address=" + encodeURIComponent(a));
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "could not check");
+    box.innerHTML = d.kyc
+      ? '<span class="badge ok">ALREADY VERIFIED</span><br><span class="small">This address holds an active attestation — nothing more to do.</span>'
+      : d.pending
+        ? `<span class="badge warn">AWAITING REVIEW</span><br><span class="small">Requested ${esc(new Date(d.requestedAt).toLocaleString())} at tier ${d.tier}.</span>`
+        : '<span class="badge bad">NOT REGISTERED</span><br><span class="small">No attestation and no request on file yet.</span>';
+  } catch (e) {
+    box.innerHTML = `<span class="small">Could not check: ${esc(e.message)}</span>`;
+  }
+}
+
+$("use-wallet").addEventListener("click", async () => {
+  if (!window.ethereum) { msg("err", "No wallet detected in this browser. You can paste an address instead."); return; }
+  try {
+    const [a] = await window.ethereum.request({ method: "eth_requestAccounts" });
+    $("addr").value = a;
+    refreshStatus();
+  } catch (e) {
+    if (e?.code !== 4001) msg("err", esc(e?.message ?? "Could not read the wallet."));
+  }
+});
+$("addr").addEventListener("change", refreshStatus);
+
+$("go").addEventListener("click", async () => {
+  const address = $("addr").value.trim();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) { msg("err", "Enter a valid 0x address."); return; }
+  if (!window.ethereum) {
+    msg("err", "A wallet is needed to sign. The signature is what proves the address is yours — "
+      + "without it anyone could file requests for addresses they do not control.");
+    return;
+  }
+  const btn = $("go");
+  btn.disabled = true; btn.textContent = "Waiting for signature…";
+  try {
+    const { message } = await (await fetch("/kyc-request/challenge")).json();
+    const signature = await window.ethereum.request({ method: "personal_sign", params: [message, address] });
+    const res = await fetch("/kyc-request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address, message, signature, label: $("label").value, tier: Number($("tier").value) }),
+    });
+    const out = await res.json();
+    if (!res.ok) { msg("err", esc(out.error ?? `Request failed (${res.status}).`)); return; }
+    msg("ok", out.queued === "updated"
+      ? "<strong>Your request was updated.</strong> It is in the queue for review."
+      : "<strong>Request submitted.</strong> An authority will review it. Nothing is on the chain yet — "
+        + "check back here, or watch this page's status.");
+    refreshStatus();
+  } catch (e) {
+    if (e?.code === 4001) msg("info", "Signature cancelled — nothing was submitted.");
+    else msg("err", esc(e?.message ?? "Could not submit the request."));
+  } finally {
+    btn.disabled = false; btn.textContent = "Sign & submit request";
+  }
+});
+
+// Prefill from a connected wallet without prompting.
+(async () => {
+  const q = new URLSearchParams(location.search).get("address");
+  if (q) $("addr").value = q;
+  else if (window.ethereum) {
+    try {
+      const [a] = await window.ethereum.request({ method: "eth_accounts" });
+      if (a) $("addr").value = a;
+    } catch (_) { /* leave blank */ }
+  }
+  if ($("addr").value) refreshStatus();
+})();
+</script>
+</body>
+</html>

@@ -23,6 +23,7 @@ const { fundReport } = require("./fund");
 const { nodeInfo } = require("./node-info");
 const { assets } = require("./assets");
 const { useCases, useCaseCheck } = require("./use-cases");
+const kyc = require("./kyc-requests");
 
 const RPC_URL = process.env.CSB_RPC_URL ?? "http://127.0.0.1:8545";
 const PORT = Number(process.env.PORT ?? process.env.DEMO_PORT ?? 8080);
@@ -104,10 +105,14 @@ function identityAddress() {
 // chatty wallet doesn't hammer the node. Fails closed (false) if unavailable.
 const ISACTIVE_SELECTOR = "0x9f8a13d7";
 const _kycCache = new Map();
-async function isKycActive(address) {
+// `fresh` skips the cache. Anywhere a person is watching for a change they just
+// asked for, a 30-second-stale "no" is worse than a slightly slower answer: an
+// address approved seconds ago would be told it is not registered, which reads
+// as the approval having failed.
+async function isKycActive(address, fresh = false) {
   const now = Date.now();
   const cached = _kycCache.get(address);
-  if (cached && now - cached.at < 30000) return cached.active;
+  if (!fresh && cached && now - cached.at < 30000) return cached.active;
   const identity = identityAddress();
   if (!identity) return false;
   const data = ISACTIVE_SELECTOR + "000000000000000000000000" + address.toLowerCase().replace(/^0x/, "");
@@ -224,6 +229,50 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       send(res, 502, { error: e.message });
     }
+    return;
+  }
+
+  // KYC requests. The SUBMIT side is public on purpose: someone who is not yet
+  // verified cannot hold a passcode, so requiring one would mean only insiders
+  // could ask. A wallet signature stands in for the login — it proves the
+  // requester holds the address, which is the only claim worth queueing.
+  // Reading and clearing the queue is admin-only.
+  if (url.pathname === "/kyc-request/challenge" && req.method === "GET") {
+    send(res, 200, { message: kyc.challenge() });
+    return;
+  }
+  if (url.pathname === "/kyc-request" && req.method === "POST") {
+    try {
+      const body = JSON.parse((await readBody(req)).toString() || "{}");
+      const out = await kyc.submit(body, (a) => isKycActive(a));
+      if (out.error) { send(res, out.status ?? 400, { error: out.error }); return; }
+      accessLog.push({ at: new Date().toISOString(), event: "kyc-request", ip: req.socket.remoteAddress });
+      send(res, 200, out);
+    } catch (e) {
+      send(res, 400, { error: e.message });
+    }
+    return;
+  }
+  if (url.pathname === "/kyc-request/status") {
+    const a = url.searchParams.get("address");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(a ?? "")) { send(res, 400, { error: "a valid 0x address is required" }); return; }
+    send(res, 200, { ...kyc.statusOf(a), kyc: await isKycActive(a, true) });
+    return;
+  }
+  // The queue itself — who asked, and what they typed. Admin only.
+  if (url.pathname === "/kyc-requests" || url.pathname.startsWith("/kyc-requests/")) {
+    if (!authed(req)) { send(res, 401, { error: "not authenticated" }); return; }
+    if (req.method === "GET") { send(res, 200, kyc.list()); return; }
+    if (req.method === "DELETE") {
+      const a = decodeURIComponent(url.pathname.slice("/kyc-requests/".length));
+      // Approving happens ON CHAIN, signed in the admin's browser by the
+      // authority key — the server never holds it. This only clears the queue
+      // entry once that transaction has confirmed.
+      const removed = kyc.resolve(a); // once: it is destructive, not a predicate
+      send(res, removed ? 200 : 404, removed ? { ok: true } : { error: "no such request" });
+      return;
+    }
+    send(res, 405, { error: "method not allowed" });
     return;
   }
 

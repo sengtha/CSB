@@ -21,6 +21,7 @@
       <a href="fund.html">Fund</a>
       <a href="assets.html">Tokens &amp; NFTs</a>
       <a href="use-cases.html">Use cases</a>
+      <a href="kyc-request.html">Get verified</a>
       <a href="validator.html">Validators</a>
       <a href="node.html">Node info</a>
       <a href="admin.html" class="active">Admin</a>
@@ -96,6 +97,21 @@
       </div>
 
       <div id="tab-moi" class="tabpane active">
+        <!-- Requests arrive from the public page. Approving is an ON-CHAIN act
+             signed here with the authority key; the server never holds it and
+             only clears the queue entry afterwards. -->
+        <h2>Pending verification requests <span id="kyc-count" class="badge info">0</span></h2>
+        <p class="small" style="margin-bottom:10px">
+          Filed at <a href="kyc-request.html" target="_blank">kyc-request.html</a>, each proven by a
+          wallet signature. <b>Approve</b> registers the address on chain at the requested tier, enables
+          it on the transaction allow list, and sends it gas — everything it needs to actually transact.
+          The name shown is free text from the requester and never goes on chain.
+        </p>
+        <table id="kyc-list"><tr><th>Address</th><th>Name given</th><th>Tier</th><th>Asked</th><th></th></tr></table>
+        <label style="margin-top:10px">Gas to send on approval (tRIEL)</label>
+        <input id="kyc-gas" value="1000" style="max-width:200px" />
+        <hr style="margin:20px 0;border:0;border-top:1px solid var(--line)" />
+
         <div class="grid2">
           <div>
             <h2>Register address</h2>
@@ -362,6 +378,87 @@ async function refreshStatus() {
     await (await khr.redeem(parseKHR(val("iss-r-amt")))).wait();
     return `Redeemed ${val("iss-r-amt")} KHRt.`;
   });
+
+  // --- Pending KYC requests
+  // Approval is three separate grants that testers otherwise have to ask for one
+  // at a time: the attestation (may hold KHRt), the transaction allow list (may
+  // send anything at all), and gas (an enabled account with no tRIEL still
+  // cannot move). Doing one and forgetting the others is the single most common
+  // way a "verified" demo account turns out to be unusable.
+  async function loadKyc() {
+    const t = document.getElementById("kyc-list");
+    let list = [];
+    try {
+      const r = await fetch("/kyc-requests");
+      list = r.ok ? await r.json() : [];
+    } catch (_) { /* leave empty */ }
+    document.getElementById("kyc-count").textContent = list.length;
+    t.innerHTML = "<tr><th>Address</th><th>Name given</th><th>Tier</th><th>Asked</th><th></th></tr>" +
+      (list.length ? list.map((r) => `
+        <tr>
+          <td class="mono">${r.address}</td>
+          <td>${(r.label || "—").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))}</td>
+          <td>${r.tier}</td>
+          <td class="small">${new Date(r.requestedAt).toLocaleString()}</td>
+          <td style="white-space:nowrap">
+            <button data-approve="${r.address}" data-tier="${r.tier}">Approve</button>
+            <button class="danger" data-refuse="${r.address}">Refuse</button>
+          </td>
+        </tr>`).join("")
+      : '<tr><td colspan="5" class="small">No requests waiting.</td></tr>');
+
+    t.querySelectorAll("button[data-approve]").forEach((b) => {
+      b.onclick = () => run(async () => {
+        const a = b.dataset.approve;
+        const tier = Number(b.dataset.tier);
+        const { identity } = await getContracts(signer());
+        const done = [];
+
+        // The commitment is salted with the address. A fixed one would try to
+        // attach a second address to an identity whose quota is one, and fail
+        // with a bare "execution reverted" on the second approval.
+        const att = await identity.attestationOf(a);
+        if (att.identity === ethers.ZeroHash) {
+          await (await identity.register(a, ethers.id(`kyc-request-${a}`), tier, await feeOverrides())).wait();
+          done.push(`registered at tier ${tier}`);
+        } else {
+          done.push("already registered");
+        }
+
+        try {
+          if (Number(await allowList("tx").readAllowList(a)) === 0) {
+            await (await allowList("tx", signer()).setEnabled(a, await feeOverrides())).wait();
+            done.push("enabled to transact");
+          } else done.push("already allow-listed");
+        } catch (_) {
+          done.push("no allow-list precompile on this chain");
+        }
+
+        const want = ethers.parseEther(String(val("kyc-gas") || "0").replaceAll(",", ""));
+        const have = await getProvider().getBalance(a);
+        if (want > have) {
+          await (await signer().sendTransaction({ to: a, value: want - have, ...(await feeOverrides()) })).wait();
+          done.push(`funded to ${ethers.formatEther(want)} tRIEL`);
+        } else done.push("already funded");
+
+        // Only clear the queue entry once the chain has actually accepted it.
+        await fetch("/kyc-requests/" + a, { method: "DELETE" });
+        await loadKyc();
+        return `${short(a)} approved — ${done.join("; ")}.`;
+      });
+    });
+
+    t.querySelectorAll("button[data-refuse]").forEach((b) => {
+      b.onclick = () => run(async () => {
+        const res = await fetch("/kyc-requests/" + b.dataset.refuse, { method: "DELETE" });
+        if (!res.ok) throw new Error("could not remove the request");
+        await loadKyc();
+        return `Request from ${short(b.dataset.refuse)} removed. Nothing was written to the chain.`;
+      });
+    });
+  }
+  loadKyc();
+  setInterval(loadKyc, 15000);
 
   // --- Chain-level allow lists
   // readAllowList reverts on a chain without the precompiles (a local Hardhat
