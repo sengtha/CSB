@@ -22,6 +22,7 @@
       <a href="assets.html">Tokens &amp; NFTs</a>
       <a href="use-cases.html">Use cases</a>
       <a href="anchor.html">Anchor</a>
+      <a href="verify.html">Verify</a>
       <a href="kyc-request.html">Get verified</a>
       <a href="validator.html">Validators</a>
       <a href="node.html">Node info</a>
@@ -42,8 +43,56 @@
         <button data-tab="enf">Enforcement authority</button>
         <button data-tab="cnl">Governing council</button>
         <button data-tab="iss">KHR issuer</button>
+        <button data-tab="grove">Grove verifiers</button>
         <button data-tab="chain">Chain access</button>
         <button data-tab="rpc">Scoped RPC access</button>
+      </div>
+
+
+      <!-- The licensing registrar. Deliberately its own authority: one office
+           decides who is an agronomist, a different one decides what an
+           agronomist's signature is good for. -->
+      <div id="tab-grove" class="tabpane">
+        <div class="grid2">
+          <div>
+            <h2>License a field verifier</h2>
+            <p class="small">A licence is what makes a confirmation worth something —
+              because it can be taken away. Issuing one here also registers KYC and
+              enables the address to transact, because all three are required and
+              they fail in ways that look nothing alike.</p>
+            <label>Verifier address</label>
+            <input id="grv-addr" placeholder="0x…" spellcheck="false" />
+            <label>Classes held</label>
+            <div id="grv-classes" class="small" style="line-height:2">
+              <label><input type="checkbox" value="1" /> agronomist</label>
+              <label><input type="checkbox" value="2" checked /> commune officer</label>
+              <label><input type="checkbox" value="4" /> school</label>
+              <label><input type="checkbox" value="8" /> cooperative</label>
+              <label><input type="checkbox" value="16" /> NGO</label>
+              <label><input type="checkbox" value="32" /> auditor</label>
+            </div>
+            <label>Public label — the ROLE, never a person's name</label>
+            <input id="grv-label" value="Commune agriculture officer" />
+            <label>Licence reference (hashed on chain)</label>
+            <input id="grv-ref" placeholder="licence/agri-officer/2026-0042" spellcheck="false" />
+            <label>KYC tier to register with, if not already known</label>
+            <input id="grv-tier" value="2" />
+            <button id="grv-license">Issue licence</button>
+          </div>
+          <div>
+            <h2>Withdraw or restore</h2>
+            <p class="small">Suspension keeps the registration row. The record of who was
+              licensed <em>when</em> is what a dispute over a past attestation has to be
+              settled against, so nothing is deleted for a routine withdrawal.</p>
+            <label>Verifier address</label>
+            <input id="grv-s-addr" placeholder="0x…" spellcheck="false" />
+            <button id="grv-suspend" class="danger">Suspend licence</button>
+            <button id="grv-restore">Restore licence</button>
+
+            <h2 style="margin-top:18px">Licensed verifiers</h2>
+            <table class="tbl" id="grv-list"></table>
+          </div>
+        </div>
       </div>
 
       <!-- The gate BELOW the contract layer. An address refused here never
@@ -320,6 +369,94 @@ async function refreshStatus() {
     await (await khr.confiscate(val("enf-c-from"), val("enf-c-to"), parseKHR(val("enf-c-amt")), ethers.id(val("enf-c-ref")))).wait();
     return `Confiscated ${val("enf-c-amt")} KHRt under order "${val("enf-c-ref")}".`;
   });
+
+  // --- Licensing registrar (Grove field verifiers)
+  //
+  // A licence alone is inert. GroveAnchor requires a live licence AND an active
+  // KYC attestation AND, below the contract layer, permission to transact — and
+  // the third one reverts with no reason string at all. Issuing a licence
+  // without the other two produces a verifier who is licensed on paper and
+  // cannot attest to anything, which is the worst of the three to debug. So this
+  // does all of them and reports each.
+  const groveClasses = () =>
+    [...document.querySelectorAll("#grv-classes input:checked")].reduce((m, i) => m | Number(i.value), 0);
+
+  document.getElementById("grv-license").onclick = () => run(async () => {
+    const { attesters, identity } = await getContracts(signer());
+    if (!attesters) throw new Error("AttesterRegistry is not deployed — run scripts/deploy-grove.js.");
+    const who = val("grv-addr");
+    const classes = groveClasses();
+    if (!ethers.isAddress(who)) throw new Error("Enter the verifier's address.");
+    if (!classes) throw new Error("Pick at least one class — a licence for nothing is not a licence.");
+    const ref = val("grv-ref") || `licence/field-verifier/${who.toLowerCase()}`;
+    const done = [];
+
+    await (await attesters.licenseAttester(who, classes, ethers.id(ref), val("grv-label"), await feeOverrides())).wait();
+    done.push("licensed");
+
+    if (!(await identity.isActive(who))) {
+      const tier = Number(val("grv-tier") || 2);
+      await (await identity.register(who, ethers.id(`grove-attester-${who.toLowerCase()}`), tier, await feeOverrides())).wait();
+      done.push(`KYC registered at tier ${tier}`);
+    } else done.push("KYC already active");
+
+    try {
+      if (Number(await allowList("tx").readAllowList(who)) === 0) {
+        await (await allowList("tx", signer()).setEnabled(who, await feeOverrides())).wait();
+        done.push("enabled to transact");
+      } else done.push("already allow-listed");
+    } catch (_) {
+      done.push("no allow-list precompile on this chain");
+    }
+
+    await loadVerifiers();
+    return `${short(who)}: ${done.join(" · ")}. They can now confirm records at /verify.html.`;
+  });
+
+  for (const [btn, suspended, label] of [["grv-suspend", true, "Suspended"], ["grv-restore", false, "Restored"]]) {
+    document.getElementById(btn).onclick = () => run(async () => {
+      const { attesters } = await getContracts(signer());
+      if (!attesters) throw new Error("AttesterRegistry is not deployed on this chain.");
+      await (await attesters.setSuspended(val("grv-s-addr"), suspended, await feeOverrides())).wait();
+      await loadVerifiers();
+      return `${label} the licence of ${short(val("grv-s-addr"))}.`
+        + (suspended ? " Confirmations from this address stop counting immediately." : "");
+    });
+  }
+
+  async function loadVerifiers() {
+    const t = document.getElementById("grv-list");
+    if (!t) return;
+    try {
+      const { attesters } = await getContracts();
+      if (!attesters) { t.innerHTML = `<tr><td class="small">AttesterRegistry is not deployed on this chain.</td></tr>`; return; }
+      const n = Number(await attesters.attesterCount());
+      const rows = [];
+      // Capped: this is a console, not a directory, and an unbounded loop over a
+      // count read from the chain is a way to hang the page.
+      for (let i = 0; i < Math.min(n, 50); i++) {
+        const a = await attesters.attesterAt(i);
+        const info = await attesters.attesterOf(a);
+        rows.push({ a, info });
+      }
+      t.innerHTML = "<tr><th>Address</th><th>Role</th><th>Checks</th><th></th></tr>" + (rows.length
+        ? rows.map(({ a, info }) => `
+          <tr>
+            <td class="mono">${short(a)}</td>
+            <td>${String(info.label || "—").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))}
+              ${info.suspended ? '<span class="badge bad">suspended</span>' : '<span class="badge ok">current</span>'}</td>
+            <td class="small">${info.confirmations} ✓ · ${info.disputesRaised} ✗</td>
+            <td><button data-fill="${a}">Select</button></td>
+          </tr>`).join("")
+        : '<tr><td colspan="4" class="small">No verifiers licensed yet — until one is, records anchor fine and nothing ever becomes verified.</td></tr>');
+      t.querySelectorAll("button[data-fill]").forEach((b) => {
+        b.onclick = () => { document.getElementById("grv-s-addr").value = b.dataset.fill; };
+      });
+    } catch (e) {
+      t.innerHTML = `<tr><td class="small">Could not read the registry: ${String(e.message ?? e)}</td></tr>`;
+    }
+  }
+  loadVerifiers();
 
   // --- Council
   document.getElementById("cnl-pause").onclick = () => run(async () => {

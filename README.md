@@ -53,6 +53,8 @@ app/
                                address inspector, access log
   public/anchor.html           Anchor a garden record: decodes the calldata,
                                checks the three gates, signs with your own wallet
+  public/verify.html           Field verifier's page: look a grove up by name,
+                               confirm or dispute what you counted. No login.
   public/admin.html            Admin console: Identity Authority / enforcement / council / issuer
 Dockerfile                     App image: toolchain + app server
 docker-compose.app.yml         UIs + contract deployment against the live CSB L1
