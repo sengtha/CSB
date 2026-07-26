@@ -42,10 +42,17 @@ const REWARD_MANAGER = "0x0200000000000000000000000000000000000004";
 // Block-scan bounds. The chain only produces a block when there is something to
 // include, so on a quiet chain this covers a long stretch of wall-clock time.
 const DEFAULT_SCAN = 250;
-const MAX_SCAN = 2000;
+// Each scanned block costs TWO node calls — eth_getBalance plus
+// eth_getBlockByNumber with full transaction objects. `blocks` is caller-supplied
+// on a PUBLIC endpoint, so the old ceiling of 2000 let anyone ask this server for
+// 4000 calls against the node, repeatedly. 600 keeps the worst case at 1200.
+const MAX_SCAN = 600;
 const CACHE_MS = 15000;
 
 let _cache = null;
+// One scan at a time. The cache stops repeat work but not a stampede: several
+// viewers arriving just after it expires would each start their own walk.
+let _inflight = null;
 
 function pad32(addr) {
   return "000000000000000000000000" + addr.toLowerCase().replace(/^0x/, "");
@@ -196,6 +203,12 @@ async function scanLevyPayments(rpc, token, fund, fromBlock, toBlock, decimals) 
 async function fundReport(rpcUrl, deployments, opts = {}) {
   const now = Date.now();
   if (!opts.noCache && _cache && now - _cache.at < CACHE_MS) return _cache.data;
+  if (_inflight) return _inflight;
+  _inflight = _fundReport(rpcUrl, deployments, opts, now).finally(() => { _inflight = null; });
+  return _inflight;
+}
+
+async function _fundReport(rpcUrl, deployments, opts, now) {
 
   const rpc = makeRpc(rpcUrl);
 

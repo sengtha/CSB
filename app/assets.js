@@ -31,9 +31,14 @@ const SEL = {
 };
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const MAX_TOKENS = 60; // a viewer, not an indexer
+const LOG_WINDOW = 20000; // blocks; only used for collections too big to enumerate
 const CACHE_MS = 8000;
 
 let _cache = new Map();
+// Requests in flight, keyed the same as the cache. Without this, N viewers
+// arriving after the cache expires start N identical scans against one node —
+// the cache protects the node from repeat work but not from a stampede.
+const _inflight = new Map();
 
 const hexToBig = (h) => (typeof h === "string" && h !== "0x" ? BigInt(h) : 0n);
 const pad32 = (a) => "000000000000000000000000" + a.toLowerCase().replace(/^0x/, "");
@@ -97,20 +102,36 @@ function units(v, decimals) {
  */
 async function ownedTokens(rpc, collection, owner) {
   const ids = new Set();
-  try {
-    const logs = await rpc("eth_getLogs", [{
-      address: collection,
-      topics: [TRANSFER_TOPIC, null, "0x" + pad32(owner)],
-      fromBlock: "0x0",
-      toBlock: "latest",
-    }]);
-    for (const l of logs ?? []) {
-      if (l.topics?.[3]) ids.add(hexToBig(l.topics[3]).toString());
+  const total = Number(hexToBig(await settle(
+    rpc("eth_call", [{ to: collection, data: SEL.totalMinted }, "latest"]), "0x0")));
+
+  if (total <= MAX_TOKENS) {
+    // ENUMERATE, don't scan. This endpoint is public and unauthenticated, and
+    // `eth_getLogs` from block 0 makes the node build the whole matching set in
+    // memory — on a small VM that is enough to get avalanchego OOM-killed, which
+    // takes the chain down for everyone because somebody opened a web page.
+    // A demo collection is tens of tokens, so a handful of ownerOf calls answers
+    // the same question for a bounded, predictable cost.
+    for (let i = 1; i <= total; i++) ids.add(String(i));
+  } else {
+    // Large collection: a log scan is the only sane route, but over a BOUNDED
+    // recent window rather than all of history. Older holdings are missed; that
+    // is the honest trade against an endpoint anyone can call.
+    try {
+      const latest = Number(hexToBig(await rpc("eth_blockNumber")));
+      const from = Math.max(0, latest - LOG_WINDOW);
+      const logs = await rpc("eth_getLogs", [{
+        address: collection,
+        topics: [TRANSFER_TOPIC, null, "0x" + pad32(owner)],
+        fromBlock: "0x" + from.toString(16),
+        toBlock: "latest",
+      }]);
+      for (const l of logs ?? []) {
+        if (l.topics?.[3]) ids.add(hexToBig(l.topics[3]).toString());
+      }
+    } catch (_) {
+      for (let i = Math.max(1, total - MAX_TOKENS + 1); i <= total; i++) ids.add(String(i));
     }
-  } catch (_) {
-    // No log index available — fall back to scanning the (small) supply.
-    const total = Number(hexToBig(await settle(rpc("eth_call", [{ to: collection, data: SEL.totalMinted }, "latest"]), "0x0")));
-    for (let i = 1; i <= Math.min(total, MAX_TOKENS); i++) ids.add(String(i));
   }
 
   const held = [];
@@ -142,6 +163,14 @@ async function assets(rpcUrl, deployments, opts = {}) {
   const now = Date.now();
   const hit = _cache.get(key);
   if (!opts.noCache && hit && now - hit.at < CACHE_MS) return hit.data;
+  const pending = _inflight.get(key);
+  if (pending) return pending;
+  const run = _assets(rpcUrl, deployments, address, key, now).finally(() => _inflight.delete(key));
+  _inflight.set(key, run);
+  return run;
+}
+
+async function _assets(rpcUrl, deployments, address, key, now) {
 
   const rpc = makeRpc(rpcUrl);
   const c = deployments?.contracts ?? {};
