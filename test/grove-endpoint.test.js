@@ -1,5 +1,5 @@
 const { expect } = require("chai");
-const { grovePlot, groveStats, groveDemo, groveCheck } = require("../app/grove");
+const { grovePlot, groveStats, groveDemo, groveCheck, groveTitles } = require("../app/grove");
 
 /**
  * The grove endpoint is PUBLIC, CORS-open, and reads from deployments.json — the
@@ -150,6 +150,59 @@ describe("grove endpoint", function () {
     }
   });
 
+  describe("titles", function () {
+    it("keeps keys out of the title list", async function () {
+      const restore = stubFetch("0x" + "11".repeat(32 * 12));
+      try {
+        const json = JSON.stringify(await groveTitles(RPC, DEPLOYMENTS, { address: "0x" + "aa".repeat(20) }));
+        expect(json).to.not.contain("9e".repeat(32));
+        expect(json).to.not.contain("7f".repeat(32));
+        expect(json.toLowerCase()).to.not.contain('"key"');
+      } finally {
+        restore();
+      }
+    });
+
+    it("omits the balance entirely when no address is given", async function () {
+      // Not `balance: 0` — that would read as "this address holds none",
+      // which is a claim about somebody nobody asked about.
+      const restore = stubFetch("0x" + "11".repeat(32 * 12));
+      try {
+        const d = await groveTitles(RPC, DEPLOYMENTS, {});
+        expect(d.address).to.equal(null);
+        for (const g of d.groves) expect(g).to.not.have.property("balance");
+      } finally {
+        restore();
+      }
+    });
+
+    it("ignores a malformed address rather than querying it", async function () {
+      const restore = stubFetch("0x" + word("0"));
+      try {
+        expect((await groveTitles(RPC, DEPLOYMENTS, { address: "me" })).address).to.equal(null);
+      } finally {
+        restore();
+      }
+    });
+
+    it("says so when the registry is not on this chain", async function () {
+      const d = await groveTitles(RPC, { contracts: {} }, {});
+      expect(d.available).to.equal(false);
+      expect(d.reason).to.contain("not deployed");
+    });
+
+    it("stays fast when the chain reports an astronomical grove count", async function () {
+      const restore = stubFetch("0x" + "ff".repeat(32 * 10));
+      try {
+        const started = Date.now();
+        await groveTitles(RPC, DEPLOYMENTS, {});
+        expect(Date.now() - started).to.be.lessThan(3000);
+      } finally {
+        restore();
+      }
+    });
+  });
+
   describe("check", function () {
     it("refuses a malformed address or observation without asking the chain", async function () {
       let called = false;
@@ -191,8 +244,27 @@ describe("grove endpoint", function () {
       }
     });
 
+    it("answers canAnchor for the address the anchoring page asks about", async function () {
+      const reason = "this address has no active KYC attestation on CSB";
+      const hexReason = Buffer.from(reason, "utf8").toString("hex").padEnd(128, "0");
+      const restore = stubFetch(
+        "0x" + word("0") + word("40") + BigInt(reason.length).toString(16).padStart(64, "0") + hexReason,
+      );
+      try {
+        const r = await groveCheck(RPC, DEPLOYMENTS, { kase: "anchor", address: "0x" + "aa".repeat(20) });
+        expect(r.ok).to.equal(false);
+        expect(r.reason).to.contain("KYC");
+        // A pasted non-address must not reach the chain.
+        expect((await groveCheck(RPC, DEPLOYMENTS, { kase: "anchor", address: "me" })).error)
+          .to.contain("not an address");
+      } finally {
+        restore();
+      }
+    });
+
     it("says so when the contracts are not on this chain", async function () {
       const empty = { contracts: {} };
+      expect((await groveCheck(RPC, empty, { kase: "anchor" })).error).to.contain("not deployed");
       expect((await groveCheck(RPC, empty, { kase: "attest" })).error).to.contain("not deployed");
       expect((await groveCheck(RPC, empty, { kase: "claim" })).error).to.contain("not deployed");
     });

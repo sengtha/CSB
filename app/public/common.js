@@ -67,6 +67,59 @@ const ABI = {
     "error ERC20InsufficientBalance(address sender, uint256 balance, uint256 needed)",
     "error ERC20InsufficientAllowance(address spender, uint256 allowance, uint256 needed)",
   ],
+  GroveAnchor: [
+    "function anchor(bytes32 observationId, bytes32 plotId, bytes32 prevId, uint32 liveCount, bytes32 species) returns (uint64)",
+    "function attest(bytes32 observationId, bool confirm, bytes32 noteRef)",
+    "function setPlotRecorder(bytes32 plotId, address recorder, bool allowed)",
+    "function anchorOf(bytes32 observationId) view returns (tuple(bytes32 plotId, bytes32 prevId, bytes32 species, address anchoredBy, uint64 anchoredAt, uint32 liveCount, uint32 confirms, uint32 disputes, address firstConfirmer))",
+    "function isAnchored(bytes32 observationId) view returns (bool)",
+    "function isVerified(bytes32 observationId) view returns (bool)",
+    "function verifiedCountOf(bytes32 plotId) view returns (uint32)",
+    "function plotHead(bytes32 plotId) view returns (bytes32)",
+    "function plotLength(bytes32 plotId) view returns (uint32)",
+    "function plotSteward(bytes32 plotId) view returns (address)",
+    "function requiredConfirmations() view returns (uint32)",
+    "function canAnchor(address who) view returns (bool ok, string reason)",
+    "function canAttest(address who, bytes32 observationId) view returns (bool ok, string reason)",
+    "event Anchored(bytes32 indexed observationId, bytes32 indexed plotId, address indexed anchoredBy, bytes32 prevId, uint32 liveCount, uint64 anchoredAt)",
+    "event Attested(bytes32 indexed observationId, address indexed attester, bool confirmed, uint32 confirms, uint32 disputes, bytes32 noteRef)",
+    "error NotLicensedAttester(address account)",
+    "error SelfAttestation(bytes32 observationId, address attester)",
+    "error AlreadyAttested(bytes32 observationId, address attester)",
+    "error UnknownObservation(bytes32 observationId)",
+    "error NotVerifiedIdentity(address account)",
+    "error AccountFrozen(address account)",
+    "error NotPlotRecorder(bytes32 plotId, address caller)",
+    "error PrevNotHead(bytes32 plotId, bytes32 head, bytes32 given)",
+    "error AlreadyAnchored(bytes32 observationId)",
+  ],
+  GroveTitleRegistry: [
+    "function registerGrove(tuple(bytes32 plotId, string name, string symbol, string location, string groveURI, uint8 minimumTier, address steward) p) returns (address)",
+    "function syncSupply(bytes32 plotId) returns (uint32)",
+    "function setGroveActive(bytes32 plotId, bool active, bytes32 reason)",
+    "function groveOf(bytes32 plotId) view returns (tuple(bytes32 plotId, address token, address steward, string location, uint64 registeredAt, uint32 lastSyncedCount, uint64 lastSyncedAt, bool active))",
+    "function groveCount() view returns (uint256)",
+    "function supplyStatus(bytes32 plotId) view returns (uint256 supply, uint32 verifiedCount, bool inSync, string reason)",
+    "error NoVerifiedRecord(bytes32 plotId)",
+    "error NotThePlotSteward(bytes32 plotId, address given, address actual)",
+    "error GroveAlreadyRegistered(bytes32 plotId, address token)",
+    "error SupplyDriftUnresolved(bytes32 plotId, uint256 shortfall, uint256 stewardBalance)",
+  ],
+  AttesterRegistry: [
+    "function licenseAttester(address attester, uint32 classes, bytes32 licenceRef, string label)",
+    "function setSuspended(address attester, bool suspended)",
+    "function removeAttester(address attester)",
+    "function attesterOf(address attester) view returns (tuple(uint32 classes, bool suspended, string label, bytes32 licenceRef, uint64 registeredAt, uint64 confirmations, uint64 disputesRaised))",
+    "function isLicensed(address attester) view returns (bool)",
+    "function isRegistered(address attester) view returns (bool)",
+    "function attesterCount() view returns (uint256)",
+    "function attesterAt(uint256 i) view returns (address)",
+    "function AGRONOMIST() view returns (uint32)",
+    "event AttesterLicensed(address indexed attester, uint32 classes, bytes32 licenceRef, string label)",
+    "event AttesterSuspended(address indexed attester, bool suspended)",
+    "error NotLicensed(address attester)",
+    "error NoClasses()",
+  ],
   EgressGateway: [
     "function requestEgress(address token, uint256 amount, bytes32 destinationChain, bytes recipient)",
     "function setTokenPolicy(address token, bool allowed, uint8 minTier, uint256 dailyCap, address adapter)",
@@ -208,6 +261,13 @@ async function getContracts(runner) {
     // Likewise the converter: a deployment without it simply has no swap.
     converter: cfg.contracts.RielConverter
       ? new ethers.Contract(cfg.contracts.RielConverter, ABI.RielConverter, r) : null,
+    // Grove: present only on chains where scripts/deploy-grove.js has run.
+    groveAnchor: cfg.contracts.GroveAnchor
+      ? new ethers.Contract(cfg.contracts.GroveAnchor, ABI.GroveAnchor, r) : null,
+    groveTitles: cfg.contracts.GroveTitleRegistry
+      ? new ethers.Contract(cfg.contracts.GroveTitleRegistry, ABI.GroveTitleRegistry, r) : null,
+    attesters: cfg.contracts.AttesterRegistry
+      ? new ethers.Contract(cfg.contracts.AttesterRegistry, ABI.AttesterRegistry, r) : null,
   };
 }
 

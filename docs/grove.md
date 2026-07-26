@@ -69,6 +69,10 @@ Anchoring is additive, and an unanchored garden is a normal garden.
 | Tests | `test/grove.test.js` (53) |
 | Read API | `GET /grove?plot=<keccak256(plot)>` — public, CORS-open, no key |
 | Public page | **Use cases → 4** on the app server — live state, and two `canX()` checks anyone can run |
+| Grower | **`/anchor.html`** — decode the calldata, check the gates, sign with your own wallet |
+| Verifier | **`/verify.html`** — look a grove up by name, confirm or dispute it. No login. |
+| Registrar | **Admin → Grove verifiers** — issue and withdraw licences, and issue a grove title |
+| Grower's shares | **`/assets.html`** (Tokens) — grove titles and the holder's shares |
 
 ### 3.1 `AttesterRegistry` — a licence somebody can lose
 
@@ -259,11 +263,18 @@ An empty `AttesterRegistry` means every record anchors fine and none of them eve
 becomes verified — no title can be issued, and no pledge can ever pay out. This
 is the step that is easy to forget and looks like a bug:
 
+Either from the **Admin console → Grove verifiers** tab, or from the command
+line:
+
 ```bash
 ATTESTER_ADDR=0x… ATTESTER_CLASSES=commune \
 ATTESTER_LABEL="Commune agriculture officer, Sangkat Example" \
   npx hardhat run scripts/license-attester.js --network csbRemote
 ```
+
+The licensed verifier then works at **`/verify.html`** — no login, because a
+commune officer standing in a field does not hold the operator's passcode. They
+look the grove up by name, and confirm or dispute with their own wallet.
 
 A verifier has to pass **three independent gates**, and a licence alone satisfies
 only one of them:

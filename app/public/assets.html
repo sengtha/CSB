@@ -52,6 +52,8 @@
       <a href="fund.html">Fund</a>
       <a href="assets.html" class="active">Tokens &amp; NFTs</a>
       <a href="use-cases.html">Use cases</a>
+      <a href="anchor.html">Anchor</a>
+      <a href="verify.html">Verify</a>
       <a href="kyc-request.html">Get verified</a>
       <a href="validator.html">Validators</a>
       <a href="node.html">Node info</a>
@@ -89,6 +91,19 @@
         contract lives on.
       </p>
       <div id="tokens"><p class="note">Loading…</p></div>
+    </div>
+
+    <!-- Grove titles are issued one contract per grove, so they cannot be a
+         fixed row in the list above — the registry is enumerated instead. -->
+    <div class="card" id="grove-card" style="display:none">
+      <h2>Grove titles</h2>
+      <p class="note" style="margin-bottom:12px">
+        One share is <strong>one living tree a licensed verifier confirmed</strong>.
+        Supply is minted <em>and burned</em> to that count, so a grove token falls
+        when the trees do. Not a carbon credit — a count somebody can walk out and
+        check. <a href="verify.html">How verification works ↗</a>
+      </p>
+      <div id="groves"></div>
     </div>
 
     <!-- The swap is the link between the two tiers of money, so it belongs on
@@ -157,7 +172,54 @@ function msg(el, kind, html) {
   el.innerHTML = `<div class="msg ${kind}">${html}</div>`;
 }
 
+/**
+ * Grove titles, enumerated from the registry.
+ *
+ * Separate from /assets because a grove is a contract per plot rather than a
+ * fixed token this chain always has — and because the interesting number is not
+ * the balance but whether the supply still matches what was verified.
+ */
+async function loadGroves(address) {
+  const q = address ? `?address=${encodeURIComponent(address)}` : "";
+  try {
+    const d = await (await fetch("/grove/titles" + q)).json();
+    if (!d?.available || !d.groves?.length) { $("grove-card").style.display = "none"; return; }
+    $("grove-card").style.display = "";
+    $("groves").innerHTML = d.groves.map((g) => `
+      <div class="tok">
+        <div>
+          <div class="s">${esc(g.symbol)}</div>
+          <div class="n">${esc(g.name)}${g.location ? " — " + esc(g.location) : ""}
+            ${g.active ? "" : ' <span class="pill">deregistered</span>'}</div>
+          <div class="n" style="margin-top:4px">
+            ${g.inSync
+              ? `<strong>${g.supply}</strong> shares — matches the ${g.verifiedCount} trees a licensed verifier confirmed`
+              : `<strong>${g.supply}</strong> shares issued · ${
+                  g.verifiedCount ? `${g.verifiedCount} verified` : "latest record not yet verified"}
+                 ${g.driftReason ? `<br><em>${esc(g.driftReason)}</em>` : ""}`}
+          </div>
+        </div>
+        <div class="bal">
+          ${g.balance != null
+            ? `<div class="v">${g.balance}</div><div class="k">your shares</div>`
+            : `<div class="v">${g.supply}</div><div class="k">shares in issue</div>`}
+        </div>
+        <div class="addr">
+          <code>${esc(g.token)}</code>
+          <button class="mini ghost" data-copy="${esc(g.token)}">Copy address</button>
+        </div>
+      </div>`).join("");
+    // Same copy behaviour as the token list above.
+    $("groves").querySelectorAll("button[data-copy]").forEach((b) => {
+      b.onclick = () => { navigator.clipboard?.writeText(b.dataset.copy); b.textContent = "Copied"; };
+    });
+  } catch (_) {
+    $("grove-card").style.display = "none";
+  }
+}
+
 async function load(address) {
+  loadGroves(address);
   const q = address ? `?address=${encodeURIComponent(address)}` : "";
   let d;
   try {

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Verify a grove — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <!-- ethers only, for keccak256 and ABI encoding. NOT common.js: its helpers
+       read the passcode-gated /config, and a field verifier does not hold the
+       operator's passcode. Everything here is public or signed by the visitor. -->
+  <script src="vendor/ethers.umd.min.js"></script>
+  <style>
+    .lead { font-size: 14px; line-height: 1.7; color: var(--ink); }
+    .note { font-size: 12.5px; color: var(--muted); line-height: 1.65; }
+    .addr { font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all; }
+    table.kv { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+    table.kv th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
+                  width: 42%; padding: 8px 10px 8px 0; vertical-align: top; }
+    table.kv td { padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .out { border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-top: 10px; line-height: 1.5; }
+    .out.yes { background: #e6f6ec; border: 1px solid #bfe5cd; color: #14532d; }
+    .out.no  { background: #fdecec; border: 1px solid #f5c2c2; color: #8f1d1d; }
+    .out.info{ background: #f2f6ff; border: 1px solid #cfdcf8; color: #1c3a70; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+    .row input { flex: 1 1 220px; min-width: 0; margin: 0; }
+    .row button { margin: 0; flex: 0 0 auto; }
+    .verdicts { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+    .verdicts button { margin: 0; flex: 1 1 160px; }
+    button.dispute { background: #b3352c; }
+    .caveat { border-left: 3px solid var(--warn); background: #fffaf2; padding: 10px 14px;
+              border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.65; margin-top: 12px; }
+    .foot { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0 24px; line-height: 1.6; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px;
+            font-weight: 700; background: #e8ecf7; color: var(--blue); margin-left: 4px; }
+    .pill.ok { background: #e2f5e9; color: var(--ok); }
+    .pill.no { background: #fde8e8; color: var(--red); }
+  </style>
+  <script src="shell.js" defer></script>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>✅ Verify a grove</h1>
+    <span class="sub">for licensed field verifiers — confirm what you went and saw</span>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="wallet.html">Wallet</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="fund.html">Fund</a>
+      <a href="assets.html">Tokens &amp; NFTs</a>
+      <a href="use-cases.html">Use cases</a>
+      <a href="anchor.html">Anchor</a>
+      <a href="verify.html" class="active">Verify</a>
+      <a href="kyc-request.html">Get verified</a>
+      <a href="validator.html">Validators</a>
+      <a href="node.html">Node info</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="card">
+      <p class="lead">
+        A grower's phone signed a record and committed its hash here. That proves
+        who said it, and <strong>nothing about whether the plants are there</strong>.
+        This page is where that second question gets answered — by somebody who
+        went and looked, and whose licence is on the line for the answer.
+      </p>
+      <p class="note" style="margin-top:10px">
+        Go to the grove first. Count what is standing. Then confirm or dispute
+        here — the record is worth exactly as much as the visit behind it.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>1 · Find the grove</h2>
+      <p class="note">Type the plot name the grower gave you. It is hashed in your
+        browser — the chain only ever sees the hash, never the garden's name.</p>
+      <div class="row">
+        <input id="plot" placeholder="plot name, e.g. home-garden-01" spellcheck="false" />
+        <button id="plot-go">Look up</button>
+      </div>
+      <div id="found"></div>
+    </div>
+
+    <div class="card" id="verdict-card" style="display:none">
+      <h2>2 · Your verdict</h2>
+      <p class="note">You sign this with your own wallet. It is recorded against your
+        licence, permanently, with your reference to the field note.</p>
+      <div class="row">
+        <input id="note" placeholder="your field-note reference, e.g. visit-2026-07-26" spellcheck="false" />
+      </div>
+      <p class="note">The reference is <strong>hashed</strong> before it is sent. A dispute
+        can name a person, and this is a ledger a whole country can read — so keep
+        the note itself in your own records, not on chain.</p>
+      <div id="gate"></div>
+      <div class="verdicts">
+        <button id="confirm">✓ Confirm — I counted these</button>
+        <button id="dispute" class="dispute">✗ Dispute — this is not what I saw</button>
+      </div>
+      <div id="result"></div>
+
+      <div class="caveat">
+        <strong>A dispute outranks a confirmation.</strong> One from a licensed
+        verifier withholds verification even against confirmations already
+        recorded — because you have staked a licence on saying the trees are not
+        there, and the right answer to that is another human going to look, not
+        arithmetic outvoting you. Use it when you mean it.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Not licensed yet?</h2>
+      <p class="lead">
+        A licence is issued by the licensing registrar, not applied for here. It
+        records that you are a commune agriculture officer, an agronomist, a
+        school, a cooperative, an NGO or an independent auditor — and it can be
+        withdrawn, which is exactly what makes your confirmation worth something.
+      </p>
+      <p class="note" style="margin-top:10px">
+        Three things must all be true before a confirmation counts, and they fail
+        in ways that look nothing alike:
+      </p>
+      <table class="kv">
+        <tr><th>A live licence</th><td>Issued to your address in the registrar's console.</td></tr>
+        <tr><th>An active KYC attestation</th><td>The identity layer has to know you — <a href="kyc-request.html">request verification</a>.</td></tr>
+        <tr><th>Permission to transact</th><td>Chain-level, below the contracts. The registrar enables it with the licence.</td></tr>
+      </table>
+      <p class="note" style="margin-top:10px">
+        Ask the registrar to license your address. On this pilot they run
+        <span class="addr">scripts/license-attester.js</span>, or use the Grove tab
+        of the <a href="admin.html">admin console</a>, both of which clear all three.
+      </p>
+    </div>
+
+    <p class="foot">
+      Illustrative demonstration on a test network. “Licensed field verifier”,
+      “licensing registrar” and every other role here is a hypothetical
+      placeholder. No real licence, officer or grove is represented. The chain
+      records tree counts, not carbon; nothing here is a carbon credit.
+    </p>
+  </main>
+
+<script>
+"use strict";
+/**
+ * Deliberately NO LOGIN.
+ *
+ * A commune agriculture officer standing in a field is not going to hold the
+ * operator's passcode, and should not need to: everything read here comes from
+ * the public /grove endpoints, and the verdict is signed by the verifier's own
+ * wallet straight to the chain. This server never holds a key and never speaks
+ * for anybody.
+ *
+ * That is also why common.js's getContracts() is not used — it reads /config,
+ * which is gated.
+ */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const short = (a) => (String(a).length > 14 ? `${String(a).slice(0, 8)}…${String(a).slice(-6)}` : String(a));
+const day = (s) => (Number(s) ? new Date(Number(s) * 1000).toISOString().slice(0, 16).replace("T", " ") : "—");
+
+let current = null;   // { plotName, plot, head, status }
+let anchorAddress = null;
+
+fetch("/grove").then((r) => r.json()).then((d) => {
+  anchorAddress = d?.anchor ?? null;
+  if (!anchorAddress) {
+    $("found").innerHTML = `<div class="out no">Grove is not deployed on this chain yet.</div>`;
+  }
+}).catch(() => {});
+
+async function myAddress() {
+  if (!window.ethereum) return null;
+  try { return (await window.ethereum.request({ method: "eth_accounts" }))?.[0] ?? null; }
+  catch (_) { return null; }
+}
+
+async function lookup(plotName) {
+  const box = $("found");
+  $("verdict-card").style.display = "none";
+  box.innerHTML = `<div class="out">Reading the chain…</div>`;
+  try {
+    // The plot's NAME is hashed here and never sent as text — the chain files
+    // groves under keccak256(plot) and never learns what it is called.
+    const key = ethers.id(plotName);
+    const s = await (await fetch(`/grove?plot=${key}`)).json();
+    if (!s?.available) throw new Error(s?.reason || "could not read the chain");
+    if (!s.anchored) {
+      box.innerHTML = `<div class="out no">No grove with that name is anchored on this chain.
+        <span class="note">Check the spelling with the grower — the name is hashed, so one
+        different character is a different plot. The grower anchors it at
+        <a href="anchor.html">Anchor</a>.</span></div>`;
+      return;
+    }
+    const h = s.head;
+    current = { plotName, plot: key, head: h, status: s };
+
+    box.innerHTML = `
+      <table class="kv">
+        <tr><th>Grove</th><td>${esc(plotName)} <span class="note">→ ${esc(key.slice(0, 14))}…</span></td></tr>
+        <tr><th>Plants the grower recorded</th><td><strong>${h.liveCount}</strong> ${esc(h.species || "")}</td></tr>
+        <tr><th>On chain since</th><td>${day(h.anchoredAt)}
+          <span class="note">(block time — not the phone's clock)</span></td></tr>
+        <tr><th>Record</th><td class="addr">${esc(h.observationId)}</td></tr>
+        <tr><th>Recorded by</th><td class="addr">${esc(h.anchoredBy)}</td></tr>
+        <tr><th>Records anchored for this grove</th><td>${s.records}</td></tr>
+        <tr><th>Field checks so far</th><td>${h.confirms} confirmed · ${h.disputes} disputed
+          <span class="pill ${h.verified ? "ok" : "no"}">${h.verified ? "verified" : `needs ${s.requiredConfirmations} confirmation${s.requiredConfirmations === 1 ? "" : "s"}`}</span>
+          ${s.verifier ? `<br><span class="note">first confirmed by ${esc(s.verifier.label || s.verifier.classes.join(", "))}</span>` : ""}</td></tr>
+      </table>
+      <div class="out info">Go and count what is standing before you answer. The number
+        above is what the grower claims, not what anyone has checked.</div>`;
+
+    $("verdict-card").style.display = "";
+    await refreshGate();
+  } catch (e) {
+    box.innerHTML = `<div class="out no">${esc(e.message)}</div>`;
+  }
+}
+
+/**
+ * Can this address attest right now, and if not, why?
+ *
+ * Shown before the buttons rather than after a failed transaction, because the
+ * gates behind it fail in ways that look nothing alike — an unlicensed address,
+ * a lapsed KYC attestation, and a chain-level permission that reverts with no
+ * reason string at all.
+ */
+async function refreshGate() {
+  const box = $("gate");
+  if (!current) { box.innerHTML = ""; return; }
+  const me = await myAddress();
+  if (!me) {
+    box.innerHTML = `<div class="out info">Connect a wallet to record a verdict.
+      <span class="note">It is signed by you, not by this server.</span></div>`;
+    return;
+  }
+  try {
+    const r = await (await fetch(
+      `/grove/check?case=attest&address=${encodeURIComponent(me)}&observation=${current.head.observationId}`)).json();
+    box.innerHTML = r.ok
+      ? `<div class="out yes">✓ <strong>${esc(short(me))} may record a verdict on this record.</strong></div>`
+      : `<div class="out no">✗ <strong>${esc(short(me))} cannot.</strong> <span class="note">${esc(r.reason || r.error || "")}</span></div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="out no">Could not check: ${esc(e.message)}</div>`;
+  }
+}
+
+const ATTEST_ABI = ["function attest(bytes32 observationId, bool confirm, bytes32 noteRef)"];
+
+async function attest(confirm) {
+  const box = $("result");
+  if (!current || !anchorAddress) return;
+  if (!window.ethereum) { box.innerHTML = `<div class="out no">No wallet detected in this browser.</div>`; return; }
+  const ref = $("note").value.trim();
+  if (!ref) {
+    box.innerHTML = `<div class="out no">Enter your field-note reference first — a verdict with
+      nothing behind it is not worth recording.</div>`;
+    return;
+  }
+  const btns = [$("confirm"), $("dispute")];
+  btns.forEach((b) => (b.disabled = true));
+  box.innerHTML = `<div class="out">Confirm in your wallet…</div>`;
+  try {
+    const [from] = await window.ethereum.request({ method: "eth_requestAccounts" });
+    // The note reference is HASHED: a dispute can name a person, and this is a
+    // ledger everyone on the chain can read.
+    const data = new ethers.Interface(ATTEST_ABI)
+      .encodeFunctionData("attest", [current.head.observationId, confirm, ethers.id(ref)]);
+    const tx = await window.ethereum.request({
+      method: "eth_sendTransaction",
+      params: [{ from, to: anchorAddress, data }],
+    });
+    box.innerHTML = `<div class="out ${confirm ? "yes" : "no"}">
+      ${confirm ? "✓ Confirmation" : "✗ Dispute"} recorded — <span class="addr">${esc(tx.slice(0, 20))}…</span><br>
+      <span class="note">${confirm
+        ? "This record now counts toward verification, and your licence is behind it."
+        : "Verification is withheld while this stands, whatever confirmations exist."}</span></div>`;
+    setTimeout(() => lookup(current.plotName), 3000);
+  } catch (e) {
+    box.innerHTML = e?.code === 4001
+      ? `<div class="out info">Cancelled in the wallet — nothing was recorded.</div>`
+      : `<div class="out no">${esc(String(e?.message ?? e))}<br><span class="note">Usual causes: no current
+         licence, no active KYC attestation, this address is not on the transaction allow list, or you
+         already attested to this record.</span></div>`;
+  }
+  btns.forEach((b) => (b.disabled = false));
+}
+
+$("plot-go").onclick = () => {
+  const name = $("plot").value.trim();
+  if (name) lookup(name);
+};
+$("plot").addEventListener("keydown", (e) => { if (e.key === "Enter") $("plot-go").click(); });
+$("confirm").onclick = () => attest(true);
+$("dispute").onclick = () => attest(false);
+
+// A deep link from a garden app, or a QR code at the gate.
+const q = new URLSearchParams(location.search);
+if (q.get("plot")) { $("plot").value = q.get("plot"); lookup(q.get("plot")); }
+
+if (window.ethereum?.on) window.ethereum.on("accountsChanged", refreshGate);
+</script>
+</body>
+</html>

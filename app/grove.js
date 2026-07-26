@@ -46,9 +46,11 @@ const SEL = {
   milestoneCount: "0x72ebb42a", // milestoneCount(uint256)
   milestoneOf: "0xfc4064a6", // milestoneOf(uint256,uint32)
   attesterOf: "0x7d26aaa6", // attesterOf(address)
+  canAnchor: "0xa924fda6", // canAnchor(address)
   canAttest: "0x37c716f1", // canAttest(address,bytes32)
   canClaim: "0xe1cb1cab", // canClaim(uint256,uint32,bytes32)
   totalSupply: "0x18160ddd", // totalSupply()
+  balanceOf: "0x70a08231", // balanceOf(address)
   name: "0x06fdde03", // name()
   symbol: "0x95d89b41", // symbol()
 };
@@ -436,6 +438,12 @@ async function groveCheck(rpcUrl, deployments, { kase, address, observationId, p
   const d = deployments ?? {};
   const c = caller(makeRpc(rpcUrl));
 
+  if (kase === "anchor") {
+    if (!d.contracts?.GroveAnchor) return { error: "GroveAnchor is not deployed on this chain" };
+    if (!/^0x[0-9a-fA-F]{40}$/.test(String(address ?? ""))) return { error: "that is not an address" };
+    return decodeBoolString(await c(d.contracts.GroveAnchor, SEL.canAnchor + pad32(address)));
+  }
+
   if (kase === "attest") {
     if (!d.contracts?.GroveAnchor) return { error: "GroveAnchor is not deployed on this chain" };
     if (!/^0x[0-9a-fA-F]{40}$/.test(String(address ?? ""))) return { error: "that is not an address" };
@@ -458,6 +466,83 @@ async function groveCheck(rpcUrl, deployments, { kase, address, observationId, p
   }
 
   return { error: "unknown check" };
+}
+
+/**
+ * Every registered grove title, and what one address holds of each.
+ *
+ * Same line the asset viewer draws: this reports what EXISTS (public — a
+ * registry of issued titles is meant to be checkable) plus the holdings of an
+ * address the CALLER already knows. It cannot enumerate holders. A page that
+ * let anyone browse who owns which grove would work around the read-privacy the
+ * chain exists to provide, and a grove's holder is a farmer.
+ */
+async function groveTitles(rpcUrl, deployments, { address } = {}) {
+  const d = deployments ?? {};
+  const registryAddr = d.contracts?.GroveTitleRegistry;
+  if (!registryAddr) return { available: false, reason: "GroveTitleRegistry is not deployed on this chain" };
+
+  const c = caller(makeRpc(rpcUrl));
+  const who = /^0x[0-9a-fA-F]{40}$/.test(String(address ?? "")) ? String(address) : null;
+  const count = countIn(await c(registryAddr, SEL.groveCount));
+
+  const groves = [];
+  for (let i = 0; i < count; i++) {
+    const plotId = await c(registryAddr, SEL.plotIdAt + padNum(i));
+    if (!plotId || word(plotId, 0) === ZERO32) continue;
+    const key = bytes32(word(plotId, 0));
+
+    const raw = await c(registryAddr, SEL.groveOf + key);
+    // Grove { bytes32 plotId; address token; address steward; string location;
+    //         uint64 registeredAt; uint32 lastSyncedCount; uint64 lastSyncedAt; bool active }
+    const base = raw ? offsetIn(raw, word(raw, 0)) : null;
+    if (base === null) continue;
+    const head = (j) => word(raw, base / 32 + j);
+    const token = addrFromWord(head(1));
+    if (!token || token === ZERO_ADDR) continue;
+
+    const locOff = offsetIn(raw, head(3));
+    const [name, symbol, supply, status] = await Promise.all([
+      c(token, SEL.name),
+      c(token, SEL.symbol),
+      c(token, SEL.totalSupply),
+      c(registryAddr, SEL.supplyStatus + key),
+    ]);
+    const reasonOff = status ? offsetIn(status, word(status, 3)) : null;
+
+    const g = {
+      plot: "0x" + key,
+      token,
+      name: decodeString(name),
+      symbol: decodeString(symbol),
+      location: locOff === null ? "" : strAt(raw, base + locOff),
+      steward: addrFromWord(head(2)),
+      registeredAt: Number(hexToBig(head(4))),
+      lastSyncedCount: Number(hexToBig(head(5))),
+      active: hexToBig(head(7)) !== 0n,
+      // One share per verified living tree — the count a licensed verifier
+      // confirmed, not the count anybody typed in.
+      supply: Number(hexToBig(supply)),
+      verifiedCount: status ? Number(hexToBig(word(status, 1))) : 0,
+      inSync: status ? hexToBig(word(status, 2)) !== 0n : false,
+      driftReason: reasonOff === null ? "" : strAt(status, reasonOff),
+    };
+    if (who) {
+      const bal = await c(token, SEL.balanceOf + pad32(who));
+      g.balance = Number(hexToBig(bal));
+    }
+    groves.push(g);
+  }
+
+  return {
+    available: true,
+    registry: registryAddr,
+    address: who,
+    groves,
+    note:
+      "One share is one living tree a licensed verifier confirmed. Supply is minted AND burned " +
+      "to that count, so a grove token falls when the trees do. Not a carbon credit.",
+  };
 }
 
 /** Chain-wide headline numbers, for a "what is out there" panel. */
@@ -493,4 +578,4 @@ async function cached(key, fn) {
   return value;
 }
 
-module.exports = { grovePlot, groveStats, groveDemo, groveCheck, cached };
+module.exports = { grovePlot, groveStats, groveDemo, groveCheck, groveTitles, cached };
