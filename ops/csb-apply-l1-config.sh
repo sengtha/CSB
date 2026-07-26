@@ -3,6 +3,16 @@
 #
 #     bash ops/csb-apply-l1-config.sh
 #
+# RUN THIS BEFORE STARTING THE CLUSTER. It only writes a file; the node reads it
+# at startup. Applying it to an already-running cluster leaves the setting
+# written but NOT in effect, and the only way to activate it is another
+# stop/start — so the recovery order is:
+#
+#     bash ops/csb-apply-l1-config.sh          # write it first
+#     avalanche node local start <cluster>     # then start
+#     bash ops/csb-wait-ready.sh
+#     node ops/csb-patch-chain-config.js --show   # confirm it took
+#
 # Why not edit the node's config.json directly (ops/csb-patch-chain-config.js):
 # avalanche-cli regenerates the L1's chain config from the blockchain's stored
 # settings every time the cluster starts. A per-node edit to the L1 entry is
