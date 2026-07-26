@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Anchor a garden record — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .lead { font-size: 14px; line-height: 1.7; color: var(--ink); }
+    .note { font-size: 12.5px; color: var(--muted); line-height: 1.65; }
+    .addr { font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all; }
+    table.kv { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
+    table.kv th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
+                  width: 40%; padding: 8px 10px 8px 0; vertical-align: top; }
+    table.kv td { padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .out { border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-top: 10px; line-height: 1.5; }
+    .out.yes { background: #e6f6ec; border: 1px solid #bfe5cd; color: #14532d; }
+    .out.no  { background: #fdecec; border: 1px solid #f5c2c2; color: #8f1d1d; }
+    .out.info{ background: #f2f6ff; border: 1px solid #cfdcf8; color: #1c3a70; }
+    textarea { width: 100%; min-height: 88px; font-family: ui-monospace, Menlo, monospace;
+               font-size: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 8px;
+               box-sizing: border-box; }
+    .caveat { border-left: 3px solid var(--warn); background: #fffaf2; padding: 10px 14px;
+              border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.65; margin-top: 12px; }
+    .foot { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0 24px; line-height: 1.6; }
+  </style>
+  <script src="shell.js" defer></script>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🌳 Anchor a garden record</h1>
+    <span class="sub">sign it with your own wallet — the record stays on your phone</span>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="wallet.html">Wallet</a>
+      <a href="explorer.html">Explorer</a>
+      <a href="fund.html">Fund</a>
+      <a href="assets.html">Tokens &amp; NFTs</a>
+      <a href="use-cases.html">Use cases</a>
+      <a href="anchor.html" class="active">Anchor</a>
+      <a href="kyc-request.html">Get verified</a>
+      <a href="validator.html">Validators</a>
+      <a href="node.html">Node info</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="card">
+      <p class="lead">
+        Your phone recorded and <strong>signed</strong> a plant in your garden. This
+        page commits its <strong>hash</strong> to CSB, so the date stops being your
+        phone's word for it and a licensed field verifier has somewhere to put
+        their name.
+      </p>
+      <p class="note" style="margin-top:10px">
+        Only the hash travels. Not the plot's name, not the photo, not your
+        location, not your device key — the chain cannot learn where your garden
+        is from anything on this page. You sign with your own wallet; nobody here
+        can send it for you.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>1 · Paste the calldata from your garden app</h2>
+      <p class="note">In iAny, open <span class="addr">/garden</span> → <strong>Anchor on CSB</strong> → <strong>Copy</strong>.
+        Or follow the “Sign on CSB” link, which fills this in for you.</p>
+      <textarea id="data" spellcheck="false" placeholder="0x764b5886…"></textarea>
+      <div id="decoded"></div>
+    </div>
+
+    <div class="card">
+      <h2>2 · Check you are allowed to anchor</h2>
+      <p class="note">Three separate gates, and they fail in ways that look nothing alike.
+        Better to read them here than to watch a transaction revert.</p>
+      <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+        <input id="who" placeholder="your address 0x…" spellcheck="false" style="flex:1 1 240px;margin:0" />
+        <button id="who-go" style="margin:0">Check</button>
+      </div>
+      <div id="who-out"></div>
+    </div>
+
+    <div class="card">
+      <h2>3 · Sign it</h2>
+      <p class="note">Gas on CSB is free, so anchoring costs a signature and nothing else.</p>
+      <button id="send" disabled>Anchor this record</button>
+      <div id="send-out"></div>
+      <table class="kv" id="contracts"></table>
+
+      <div class="caveat">
+        <strong>Anchoring is not verification.</strong> It records that this exact
+        record existed by this date, and nothing more. Whether the plants are
+        really there is a separate question, answered by a licensed field verifier
+        going to look — which is the only thing that lets a title be issued or a
+        sponsor's money move. CSB records <strong>trees</strong>, not carbon;
+        nothing here is a carbon credit.
+      </div>
+    </div>
+
+    <p class="foot">
+      Illustrative demonstration on a test network. “Licensed field verifier” and
+      every other institutional role here is a hypothetical placeholder. No real
+      grove, licence or programme is represented.
+    </p>
+  </main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ZERO32 = "0x" + "0".repeat(64);
+
+// anchor(bytes32,bytes32,bytes32,uint32,bytes32) — the only call this page will
+// send. Pinning the selector is the whole safety story here: a visitor pasting
+// hex from anywhere must not be able to turn this into a signing surface for an
+// arbitrary transaction, so anything that is not this exact call is refused.
+const ANCHOR_SELECTOR = "0x764b5886";
+let anchorAddress = null;
+let decoded = null;
+
+/** Argument word `i`, counted past "0x" AND past the 4-byte selector. */
+const word = (hex, i) => hex.slice(2 + 8 + i * 64, 2 + 8 + (i + 1) * 64);
+/** A bytes32 tag back to the text it was made from (species). */
+function fromTag(w) {
+  const bytes = (w.match(/../g) || []).map((h) => parseInt(h, 16));
+  return bytes.map((b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : "")).join("").trim();
+}
+
+/**
+ * Decode the calldata and say, in words, what signing it would commit.
+ *
+ * Nobody should sign 330 characters of hex on trust. Everything shown here is
+ * derived from the bytes in the box, so the page cannot describe one thing and
+ * send another.
+ */
+function decode() {
+  const raw = $("data").value.trim().replace(/\s+/g, "");
+  $("send").disabled = true;
+  decoded = null;
+  if (!raw) { $("decoded").innerHTML = ""; return; }
+
+  if (!/^0x[0-9a-fA-F]+$/.test(raw)) {
+    $("decoded").innerHTML = `<div class="out no">That is not hex. Copy the whole value, starting <span class="addr">0x</span>.</div>`;
+    return;
+  }
+  if (!raw.toLowerCase().startsWith(ANCHOR_SELECTOR)) {
+    $("decoded").innerHTML = `<div class="out no">✗ <strong>This is not an anchor call.</strong>
+      This page signs exactly one kind of transaction — <span class="addr">anchor(...)</span> on GroveAnchor —
+      and refuses anything else, so it can never become a way to get you to sign something arbitrary.</div>`;
+    return;
+  }
+  if (raw.length !== 2 + 8 + 5 * 64) {
+    $("decoded").innerHTML = `<div class="out no">✗ Wrong length for an anchor call — the copy looks truncated.</div>`;
+    return;
+  }
+
+  const d = {
+    observationId: "0x" + word(raw, 0),
+    plotId: "0x" + word(raw, 1),
+    prevId: "0x" + word(raw, 2),
+    liveCount: parseInt(word(raw, 3), 16),
+    species: fromTag(word(raw, 4)),
+    data: raw,
+  };
+  decoded = d;
+  $("decoded").innerHTML = `
+    <div class="out info">Signing this commits the following, and nothing else.</div>
+    <table class="kv">
+      <tr><th>Living plants in this plot</th><td><strong>${d.liveCount}</strong></td></tr>
+      <tr><th>Species</th><td>${esc(d.species || "—")}</td></tr>
+      <tr><th>Record hash <span style="font-weight:400">— the record itself stays on your phone</span></th>
+          <td class="addr">${esc(d.observationId)}</td></tr>
+      <tr><th>Plot <span style="font-weight:400">— a hash; the chain never learns its name</span></th>
+          <td class="addr">${esc(d.plotId)}</td></tr>
+      <tr><th>Follows</th><td>${d.prevId === ZERO32
+        ? "nothing — this opens the plot's history, and makes you its steward"
+        : `<span class="addr">${esc(d.prevId)}</span>`}</td></tr>
+    </table>`;
+  if (anchorAddress) $("send").disabled = false;
+}
+$("data").addEventListener("input", decode);
+
+// A deep link from the garden app: /anchor.html?data=0x…
+const fromLink = new URLSearchParams(location.search).get("data");
+if (fromLink) { $("data").value = fromLink; }
+
+// Which GroveAnchor to send to — read from the chain's own deployment record
+// rather than written into this page, so it cannot go stale after a redeploy.
+fetch("/node-info").then((r) => r.json()).then((d) => {
+  anchorAddress = d.contracts?.GroveAnchor ?? null;
+  $("contracts").innerHTML = anchorAddress
+    ? `<tr><th>GroveAnchor <br><span style="font-weight:400">the contract this page sends to</span></th>`
+      + `<td class="addr">${esc(anchorAddress)}</td></tr>`
+    : `<tr><th colspan="2" class="note">GroveAnchor is not deployed on this chain yet.</th></tr>`;
+  if (fromLink) decode();
+  if (!anchorAddress) $("send").disabled = true;
+}).catch(() => { /* the page still explains itself without it */ });
+
+// --- 2. the three gates ---------------------------------------------------
+// canAnchor() is a view the contract exposes so a wallet can explain a refusal
+// in words instead of surfacing it as a failed transaction.
+$("who-go").onclick = async () => {
+  const who = $("who").value.trim();
+  const out = $("who-out");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(who)) { out.innerHTML = `<div class="out no">That is not an address.</div>`; return; }
+  if (!anchorAddress) { out.innerHTML = `<div class="out no">GroveAnchor is not deployed on this chain.</div>`; return; }
+  out.innerHTML = `<div class="out">Asking the chain…</div>`;
+  try {
+    const res = await fetch("/grove/check?case=anchor&address=" + encodeURIComponent(who)).then((r) => r.json());
+    out.innerHTML = res.ok
+      ? `<div class="out yes">✓ <strong>This address may anchor a record.</strong></div>`
+      : `<div class="out no">✗ <strong>Not yet.</strong> <span class="note">${esc(res.reason || res.error || "")}</span></div>`;
+  } catch (e) {
+    out.innerHTML = `<div class="out no">Could not ask the chain: ${esc(e.message)}</div>`;
+  }
+};
+// Prefill from a connected wallet, so most people never type an address.
+if (window.ethereum) {
+  window.ethereum.request({ method: "eth_accounts" })
+    .then((a) => { if (a?.[0] && !$("who").value) $("who").value = a[0]; })
+    .catch(() => {});
+}
+
+// --- 3. sign --------------------------------------------------------------
+$("send").onclick = async () => {
+  const out = $("send-out");
+  if (!decoded || !anchorAddress) return;
+  if (!window.ethereum) {
+    out.innerHTML = `<div class="out no">No wallet detected in this browser. Open this page in a wallet browser,
+      or use the address you already hold a key for.</div>`;
+    return;
+  }
+  $("send").disabled = true;
+  $("send").textContent = "Confirm in your wallet…";
+  try {
+    const [from] = await window.ethereum.request({ method: "eth_requestAccounts" });
+    const tx = await window.ethereum.request({
+      method: "eth_sendTransaction",
+      params: [{ from, to: anchorAddress, data: decoded.data }],
+    });
+    out.innerHTML = `<div class="out yes">✓ <strong>Sent.</strong>
+      <span class="addr">${esc(tx.slice(0, 20))}…</span><br>
+      <span class="note">It settles in a second or two. Anyone can now check this plot, with no login:<br>
+      <span class="addr">/grove?plot=${esc(decoded.plotId)}</span><br>
+      Next, a licensed field verifier has to go and look — anchoring alone confirms nothing.</span></div>`;
+  } catch (e) {
+    const m = String(e?.message ?? e);
+    if (e?.code === 4001) {
+      out.innerHTML = `<div class="out info">Cancelled in the wallet — nothing was sent.</div>`;
+    } else {
+      out.innerHTML = `<div class="out no">${esc(m)}<br><span class="note">On a permissioned chain the usual causes are:
+        this address is not on the transaction allow list, it holds no tRIEL for gas, it has no active KYC attestation,
+        or this plot already has a steward and it is not you.</span></div>`;
+    }
+  }
+  $("send").disabled = false;
+  $("send").textContent = "Anchor this record";
+};
+</script>
+</body>
+</html>

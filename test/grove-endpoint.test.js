@@ -191,8 +191,27 @@ describe("grove endpoint", function () {
       }
     });
 
+    it("answers canAnchor for the address the anchoring page asks about", async function () {
+      const reason = "this address has no active KYC attestation on CSB";
+      const hexReason = Buffer.from(reason, "utf8").toString("hex").padEnd(128, "0");
+      const restore = stubFetch(
+        "0x" + word("0") + word("40") + BigInt(reason.length).toString(16).padStart(64, "0") + hexReason,
+      );
+      try {
+        const r = await groveCheck(RPC, DEPLOYMENTS, { kase: "anchor", address: "0x" + "aa".repeat(20) });
+        expect(r.ok).to.equal(false);
+        expect(r.reason).to.contain("KYC");
+        // A pasted non-address must not reach the chain.
+        expect((await groveCheck(RPC, DEPLOYMENTS, { kase: "anchor", address: "me" })).error)
+          .to.contain("not an address");
+      } finally {
+        restore();
+      }
+    });
+
     it("says so when the contracts are not on this chain", async function () {
       const empty = { contracts: {} };
+      expect((await groveCheck(RPC, empty, { kase: "anchor" })).error).to.contain("not deployed");
       expect((await groveCheck(RPC, empty, { kase: "attest" })).error).to.contain("not deployed");
       expect((await groveCheck(RPC, empty, { kase: "claim" })).error).to.contain("not deployed");
     });

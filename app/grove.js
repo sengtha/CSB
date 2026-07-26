@@ -46,6 +46,7 @@ const SEL = {
   milestoneCount: "0x72ebb42a", // milestoneCount(uint256)
   milestoneOf: "0xfc4064a6", // milestoneOf(uint256,uint32)
   attesterOf: "0x7d26aaa6", // attesterOf(address)
+  canAnchor: "0xa924fda6", // canAnchor(address)
   canAttest: "0x37c716f1", // canAttest(address,bytes32)
   canClaim: "0xe1cb1cab", // canClaim(uint256,uint32,bytes32)
   totalSupply: "0x18160ddd", // totalSupply()
@@ -435,6 +436,12 @@ async function groveDemo(rpcUrl, deployments) {
 async function groveCheck(rpcUrl, deployments, { kase, address, observationId, pledgeId, milestone } = {}) {
   const d = deployments ?? {};
   const c = caller(makeRpc(rpcUrl));
+
+  if (kase === "anchor") {
+    if (!d.contracts?.GroveAnchor) return { error: "GroveAnchor is not deployed on this chain" };
+    if (!/^0x[0-9a-fA-F]{40}$/.test(String(address ?? ""))) return { error: "that is not an address" };
+    return decodeBoolString(await c(d.contracts.GroveAnchor, SEL.canAnchor + pad32(address)));
+  }
 
   if (kase === "attest") {
     if (!d.contracts?.GroveAnchor) return { error: "GroveAnchor is not deployed on this chain" };
