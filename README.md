@@ -8,7 +8,7 @@ Full design rationale: [`docs/architecture.md`](docs/architecture.md). License: 
 
 ## Status
 
-**v0 prototype.** Core contract suite implemented and tested (24 tests), including the production **ICTT bridge adapter**. The application — citizen wallet, gated explorer, and institutional admin console — runs against the live chain behind an access-gated server (`docker-compose.app.yml`); participating institutions run validators via `docker-compose.validator.yml`. Cloud-VM tooling stands the whole stack up on a single Ubuntu VM ([`docs/cloud-deployment.md`](docs/cloud-deployment.md)); the real-egress path to Fuji C-Chain is documented in [`docs/fuji-ictt.md`](docs/fuji-ictt.md).
+**v0 prototype.** Core contract suite implemented and tested (181 tests), including the production **ICTT bridge adapter**. The application — citizen wallet, gated explorer, and institutional admin console — runs against the live chain behind an access-gated server (`docker-compose.app.yml`); participating institutions run validators via `docker-compose.validator.yml`. Cloud-VM tooling stands the whole stack up on a single Ubuntu VM ([`docs/cloud-deployment.md`](docs/cloud-deployment.md)); the real-egress path to Fuji C-Chain is documented in [`docs/fuji-ictt.md`](docs/fuji-ictt.md).
 
 ## Repository layout
 
@@ -28,6 +28,18 @@ contracts/
   payments/RielPay.sol               Native-tRIEL payments (usable before KHRt);
                                      optional off-by-default public-good levy to a
                                      council-set public fund, with exemptions
+  grove/AttesterRegistry.sol         Licensed field verifiers (commune officer,
+                                     agronomist, NGO…) — a licence they can lose
+  grove/GroveAnchor.sol              Grove observation hashes, block-timestamped;
+                                     confirmations counted only from licensed,
+                                     KYC'd, unfrozen verifiers; plots cannot fork
+  grove/GroveTitle.sol               One grove as a permissioned token —
+                                     one share = one verified living tree
+  grove/GroveTitleRegistry.sol       Issues titles; syncSupply() mints AND burns
+                                     to the anchored, attested count
+  grove/GrovePledge.sol              Survival-based finance: riel released only
+                                     against a fresh, licensed-verified record;
+                                     the verifier is a named payee
   egress/EgressGateway.sol           The sovereign boundary: token allowlist,
                                      min tiers, daily caps, circuit breaker
   egress/IBridgeAdapter.sol          Transport abstraction (policy/transport split)
@@ -48,11 +60,16 @@ infra/setup-vm.sh              Cloud VM bootstrap (Ubuntu, any provider)
 infra/deploy-l1.sh             Create + deploy the Avalanche L1 on the VM
 infra/Caddyfile                Caddy reverse proxy for HTTPS (custom domain)
 scripts/deploy.js              Deploys and wires the suite (multisig-aware)
+scripts/demo-grove.js          Grove end-to-end: plant, anchor, verify, tokenize,
+                               and get paid for survival
 scripts/seed-accounts.js       Seeds pilot identities, balances, egress policy
-test/                          24 tests: KYC lifecycle, separation of powers,
-                               compliance gating, egress policy, ICTT adapter
+test/                          181 tests: KYC lifecycle, separation of powers,
+                               compliance gating, egress policy, ICTT adapter,
+                               grove anchoring / licensed attestation / pledges
 docs/deployment-status.md      LIVE Fuji testnet: IDs, contract addresses, ops
 docs/architecture.md           Architecture v0
+docs/grove.md                  Grove: a verified digital twin, and money that
+                               only moves when the tree is still alive
 docs/chain-config.md           Chain rules reference: genesis, gas/fee settings,
                                precompiles, what Docker does NOT configure
 docs/create-testnet.md         Coordinator guide: create the Fuji testnet chain

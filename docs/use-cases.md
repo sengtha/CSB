@@ -9,7 +9,9 @@
 > valueless tokens.
 
 Three worked examples of things a permissioned chain with a national identity
-layer can do that a public chain structurally cannot.
+layer can do that a public chain structurally cannot. A fourth — a verified
+digital twin of a real grove, and money that only moves when the tree is still
+alive — has its own document: [`docs/grove.md`](./grove.md).
 
 **Try them.** The `use-cases.html` page carries a *Try it* panel per case, open
 to anyone with no login and no wallet. Each one calls the contract's own

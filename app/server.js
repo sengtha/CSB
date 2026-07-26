@@ -23,6 +23,7 @@ const { fundReport } = require("./fund");
 const { nodeInfo } = require("./node-info");
 const { assets } = require("./assets");
 const { useCases, useCaseCheck } = require("./use-cases");
+const grove = require("./grove");
 const kyc = require("./kyc-requests");
 
 const RPC_URL = process.env.CSB_RPC_URL ?? "http://127.0.0.1:8545";
@@ -228,6 +229,32 @@ const server = http.createServer(async (req, res) => {
       }));
     } catch (e) {
       send(res, 502, { error: e.message });
+    }
+    return;
+  }
+
+  // Grove: the chain's half of a verified digital twin, for CamboVerse and
+  // anyone else rendering one.
+  //
+  // Public, read-only, and CORS-open on purpose. A "verified" badge in a virtual
+  // grove is worth nothing if the only way to check it is to ask the project
+  // that drew it — the point is that a stranger with curl gets the same answer.
+  // Everything here is an eth_call a reader could make against the RPC node
+  // directly; this server computes nothing and signs nothing.
+  //
+  // The plot is a 32-byte hash, never the Grove plot string: a garden's name is
+  // often its owner's name, and this chain is readable by a whole country.
+  if (url.pathname === "/grove" || url.pathname === "/grove/plot") {
+    const cors = { "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=6" };
+    if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
+    try {
+      const plot = url.searchParams.get("plot");
+      const body = plot
+        ? await grove.cached(`plot:${plot}`, () => grove.grovePlot(RPC_URL, loadDeployments(), plot))
+        : await grove.cached("stats", () => grove.groveStats(RPC_URL, loadDeployments()));
+      send(res, body?.error ? 400 : 200, body, cors);
+    } catch (e) {
+      send(res, e.code === "NO_DEPLOYMENT" ? 404 : 502, { error: e.message }, cors);
     }
     return;
   }
