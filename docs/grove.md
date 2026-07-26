@@ -258,17 +258,29 @@ An empty `AttesterRegistry` means every record anchors fine and none of them eve
 becomes verified — no title can be issued, and no pledge can ever pay out. This
 is the step that is easy to forget and looks like a bug:
 
-```js
-// classes bitmask: agronomist 1 · commune 2 · school 4 · cooperative 8 · ngo 16 · auditor 32
-await attesters.licenseAttester(
-  officerAddress, 2, ethers.id("licence/agri-officer/2026-0042"),
-  "Commune agriculture officer, Sangkat Example",
-);
+```bash
+ATTESTER_ADDR=0x… ATTESTER_CLASSES=commune \
+ATTESTER_LABEL="Commune agriculture officer, Sangkat Example" \
+  npx hardhat run scripts/license-attester.js --network csbRemote
 ```
 
-A verifier also needs an **active KYC attestation** and, on this chain, to be on
-the **txAllowList** — the licence alone is not enough, and the three failures
-look nothing alike.
+A verifier has to pass **three independent gates**, and a licence alone satisfies
+only one of them:
+
+| Gate | Failure |
+|---|---|
+| Licence (`AttesterRegistry`) | `NotLicensedAttester` |
+| Active KYC (`IdentityRegistry`) | `NotVerifiedIdentity` |
+| `txAllowList` (the chain itself) | rejected before any contract runs — a bare `execution reverted` with no data to decode |
+
+The script does all three and reports each, because handing someone a licence and
+stopping there produces an officer who is licensed on paper and cannot attest to
+anything — the worst of the three to debug. Re-running updates their classes and
+label. To withdraw a licence use `setSuspended(addr, true)`, never
+`removeAttester`: the record of who was licensed *when* is what a dispute over a
+past attestation has to be settled against.
+
+Label the **role**, not the person. This is a ledger a whole country can read.
 
 ### Restart the app server
 

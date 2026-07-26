@@ -62,6 +62,8 @@ infra/Caddyfile                Caddy reverse proxy for HTTPS (custom domain)
 scripts/deploy.js              Deploys and wires the suite (multisig-aware)
 scripts/deploy-grove.js        Adds the Grove suite to a chain that already has
                                CSB on it (idempotent; wires roles + allowlists)
+scripts/license-attester.js    Licenses a field verifier and clears all three
+                               gates (licence, KYC, txAllowList)
 scripts/demo-grove.js          Grove end-to-end: plant, anchor, verify, tokenize,
                                and get paid for survival
 scripts/seed-accounts.js       Seeds pilot identities, balances, egress policy
