@@ -93,6 +93,18 @@ const ABI = {
     "error PrevNotHead(bytes32 plotId, bytes32 head, bytes32 given)",
     "error AlreadyAnchored(bytes32 observationId)",
   ],
+  GroveTitleRegistry: [
+    "function registerGrove(tuple(bytes32 plotId, string name, string symbol, string location, string groveURI, uint8 minimumTier, address steward) p) returns (address)",
+    "function syncSupply(bytes32 plotId) returns (uint32)",
+    "function setGroveActive(bytes32 plotId, bool active, bytes32 reason)",
+    "function groveOf(bytes32 plotId) view returns (tuple(bytes32 plotId, address token, address steward, string location, uint64 registeredAt, uint32 lastSyncedCount, uint64 lastSyncedAt, bool active))",
+    "function groveCount() view returns (uint256)",
+    "function supplyStatus(bytes32 plotId) view returns (uint256 supply, uint32 verifiedCount, bool inSync, string reason)",
+    "error NoVerifiedRecord(bytes32 plotId)",
+    "error NotThePlotSteward(bytes32 plotId, address given, address actual)",
+    "error GroveAlreadyRegistered(bytes32 plotId, address token)",
+    "error SupplyDriftUnresolved(bytes32 plotId, uint256 shortfall, uint256 stewardBalance)",
+  ],
   AttesterRegistry: [
     "function licenseAttester(address attester, uint32 classes, bytes32 licenceRef, string label)",
     "function setSuspended(address attester, bool suspended)",
@@ -252,6 +264,8 @@ async function getContracts(runner) {
     // Grove: present only on chains where scripts/deploy-grove.js has run.
     groveAnchor: cfg.contracts.GroveAnchor
       ? new ethers.Contract(cfg.contracts.GroveAnchor, ABI.GroveAnchor, r) : null,
+    groveTitles: cfg.contracts.GroveTitleRegistry
+      ? new ethers.Contract(cfg.contracts.GroveTitleRegistry, ABI.GroveTitleRegistry, r) : null,
     attesters: cfg.contracts.AttesterRegistry
       ? new ethers.Contract(cfg.contracts.AttesterRegistry, ABI.AttesterRegistry, r) : null,
   };

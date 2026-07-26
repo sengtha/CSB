@@ -91,6 +91,26 @@
 
             <h2 style="margin-top:18px">Licensed verifiers</h2>
             <table class="tbl" id="grv-list"></table>
+
+            <h2 style="margin-top:18px">Issue a grove title</h2>
+            <p class="small">One share per verified living tree. You cannot choose the
+              supply — it is read from the anchored record a licensed verifier confirmed,
+              so a grove with nothing verified cannot be titled at all. The steward must
+              be the address that actually opened the plot's chain.</p>
+            <label>Plot name (hashed — must match the grower's exactly)</label>
+            <input id="gt-plot" placeholder="home-garden-01" spellcheck="false" />
+            <button id="gt-check" class="ghost">Check what would be issued</button>
+            <div id="gt-status" class="small" style="margin-top:8px"></div>
+            <label style="margin-top:10px">Token name</label>
+            <input id="gt-name" placeholder="Peam Krasop Mangrove Grove" />
+            <label>Symbol</label>
+            <input id="gt-symbol" placeholder="GROVE01" />
+            <label>Location — commune level, never a coordinate</label>
+            <input id="gt-loc" placeholder="Peam Krasop, Koh Kong" />
+            <label>Minimum KYC tier to hold shares</label>
+            <input id="gt-tier" value="1" />
+            <button id="gt-issue">Issue title</button>
+            <button id="gt-sync" class="ghost">Sync supply to the verified count</button>
           </div>
         </div>
       </div>
@@ -457,6 +477,76 @@ async function refreshStatus() {
     }
   }
   loadVerifiers();
+
+  // --- Grove authority (issuing titles)
+  //
+  // The registrar does NOT choose the supply. registerGrove reads the verified
+  // living-tree count out of GroveAnchor and mints exactly that, and there is no
+  // path in the contract that mints a share against a tree nobody looked at. So
+  // the useful thing this form can do before anyone signs is say what the chain
+  // would issue, and why it would refuse.
+  document.getElementById("gt-check").onclick = () => run(async () => {
+    const { groveTitles, groveAnchor } = await getContracts();
+    if (!groveTitles || !groveAnchor) throw new Error("Grove is not deployed — run scripts/deploy-grove.js.");
+    const plot = val("gt-plot");
+    if (!plot) throw new Error("Enter the plot name.");
+    const key = ethers.id(plot);
+    const existing = await groveTitles.groveOf(key);
+    if (existing.token !== ethers.ZeroAddress) {
+      const [supply, verified, inSync, reason] = await groveTitles.supplyStatus(key);
+      document.getElementById("gt-status").innerHTML =
+        `Already titled: <span class="mono">${short(existing.token)}</span> · ${supply} shares issued, `
+        + `${verified} verified${inSync ? " · in sync" : ` · <b>${reason}</b>`}`;
+      return `"${plot}" already has a title.`;
+    }
+    const steward = await groveAnchor.plotSteward(key);
+    const verified = await groveAnchor.verifiedCountOf(key);
+    document.getElementById("gt-status").innerHTML = steward === ethers.ZeroAddress
+      ? `Nothing anchored for "${plot}" — the grower has to anchor a record first.`
+      : `Steward <span class="mono">${short(steward)}</span> · `
+        + (verified > 0n
+          ? `<b>${verified}</b> trees confirmed — that is what would be minted.`
+          : `<b>nothing verified yet</b> — a licensed verifier has to confirm the latest record before a title can exist.`);
+    return `Checked "${plot}".`;
+  });
+
+  document.getElementById("gt-issue").onclick = () => run(async () => {
+    const { groveTitles, groveAnchor } = await getContracts(signer());
+    if (!groveTitles) throw new Error("GroveTitleRegistry is not deployed on this chain.");
+    const plot = val("gt-plot");
+    if (!plot) throw new Error("Enter the plot name.");
+    const key = ethers.id(plot);
+    // The steward is read from the chain, never typed: the contract requires it
+    // to be the address that actually opened the plot's chain, and letting a
+    // registrar type one in is how a title ends up issued around somebody
+    // else's records.
+    const steward = await groveAnchor.plotSteward(key);
+    if (steward === ethers.ZeroAddress) throw new Error(`Nothing is anchored for "${plot}" yet.`);
+    const tx = await groveTitles.registerGrove({
+      plotId: key,
+      name: val("gt-name") || plot,
+      symbol: val("gt-symbol") || "GROVE",
+      location: val("gt-loc"),
+      groveURI: `grove://${plot}`,
+      minimumTier: Number(val("gt-tier") || 1),
+      steward,
+    }, await feeOverrides());
+    await tx.wait();
+    const g = await groveTitles.groveOf(key);
+    const [supply] = await groveTitles.supplyStatus(key);
+    return `Titled "${plot}" — ${supply} shares to ${short(steward)}, token ${short(g.token)}. `
+      + `The grower sees it on the Tokens page.`;
+  });
+
+  document.getElementById("gt-sync").onclick = () => run(async () => {
+    const { groveTitles } = await getContracts(signer());
+    if (!groveTitles) throw new Error("GroveTitleRegistry is not deployed on this chain.");
+    const key = ethers.id(val("gt-plot"));
+    await (await groveTitles.syncSupply(key, await feeOverrides())).wait();
+    const [supply, verified] = await groveTitles.supplyStatus(key);
+    return `Supply is now ${supply}, matching the ${verified} trees last verified. `
+      + `Anyone can call this — it is a correction toward what was checked, not a privilege.`;
+  });
 
   // --- Council
   document.getElementById("cnl-pause").onclick = () => run(async () => {

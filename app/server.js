@@ -271,6 +271,22 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Registered grove titles, and what one address holds of each. Public in the
+  // same shape as /assets: what EXISTS is checkable by anyone, holdings only for
+  // an address the caller already knows.
+  if (url.pathname === "/grove/titles") {
+    const cors = { "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=6" };
+    if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
+    try {
+      const addr = url.searchParams.get("address");
+      send(res, 200, await grove.cached(`titles:${addr ?? ""}`,
+        () => grove.groveTitles(RPC_URL, loadDeployments(), { address: addr })), cors);
+    } catch (e) {
+      send(res, 502, { error: e.message }, cors);
+    }
+    return;
+  }
+
   // One canX() question for the page's "Try it" panel. Read-only: these are the
   // same views a wallet calls to explain a refusal before anyone signs, so the
   // answer is the chain's, not this server's. Nothing moves.

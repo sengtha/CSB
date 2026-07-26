@@ -71,7 +71,8 @@ Anchoring is additive, and an unanchored garden is a normal garden.
 | Public page | **Use cases → 4** on the app server — live state, and two `canX()` checks anyone can run |
 | Grower | **`/anchor.html`** — decode the calldata, check the gates, sign with your own wallet |
 | Verifier | **`/verify.html`** — look a grove up by name, confirm or dispute it. No login. |
-| Registrar | **Admin → Grove verifiers** — issue and withdraw licences |
+| Registrar | **Admin → Grove verifiers** — issue and withdraw licences, and issue a grove title |
+| Grower's shares | **`/assets.html`** (Tokens) — grove titles and the holder's shares |
 
 ### 3.1 `AttesterRegistry` — a licence somebody can lose
 
