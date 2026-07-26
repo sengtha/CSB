@@ -68,6 +68,7 @@ Anchoring is additive, and an unanchored garden is a normal garden.
 | Demo | `npx hardhat run scripts/demo-grove.js --network csbRemote` |
 | Tests | `test/grove.test.js` (53) |
 | Read API | `GET /grove?plot=<keccak256(plot)>` — public, CORS-open, no key |
+| Public page | **Use cases → 4** on the app server — live state, and two `canX()` checks anyone can run |
 
 ### 3.1 `AttesterRegistry` — a licence somebody can lose
 

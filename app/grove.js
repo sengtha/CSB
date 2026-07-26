@@ -46,6 +46,8 @@ const SEL = {
   milestoneCount: "0x72ebb42a", // milestoneCount(uint256)
   milestoneOf: "0xfc4064a6", // milestoneOf(uint256,uint32)
   attesterOf: "0x7d26aaa6", // attesterOf(address)
+  canAttest: "0x37c716f1", // canAttest(address,bytes32)
+  canClaim: "0xe1cb1cab", // canClaim(uint256,uint32,bytes32)
   totalSupply: "0x18160ddd", // totalSupply()
   name: "0x06fdde03", // name()
   symbol: "0x95d89b41", // symbol()
@@ -349,6 +351,115 @@ async function grovePlot(rpcUrl, deployments, plotIdHex) {
   return out;
 }
 
+/** Decode `(bool, string)` — the shape every canX() view returns. */
+function decodeBoolString(hex) {
+  if (!hex) return { ok: false, reason: "could not read the chain" };
+  return { ok: hexToBig(word(hex, 0)) !== 0n, reason: strAt(hex, offsetIn(hex, word(hex, 1))) };
+}
+
+/**
+ * The demo grove, for the public use-cases page — live, not a screenshot.
+ *
+ * Reads the ids `scripts/demo-grove.js` recorded and resolves them against the
+ * chain right now. Assembled field by field from an explicit list: the demo
+ * casts' private keys sit in the same file, and a response built by copying an
+ * object and deleting from it is one careless edit away from serving them.
+ */
+async function groveDemo(rpcUrl, deployments) {
+  const d = deployments ?? {};
+  const demo = d.pilot?.grove?.demo;
+  if (!demo?.plotId || !d.contracts?.GroveAnchor) return null;
+
+  const plot = await grovePlot(rpcUrl, d, demo.plotId);
+  if (!plot?.available || !plot.anchored) return null;
+
+  const c = caller(makeRpc(rpcUrl));
+  // Which candidate proofs exist on chain, so the page never offers one that
+  // was never anchored — a "no such record" refusal teaches nothing.
+  const observations = [];
+  for (const o of (demo.observations ?? []).slice(0, MAX_ITEMS)) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(String(o?.id ?? ""))) continue;
+    const a = decodeAnchor(await c(d.contracts.GroveAnchor, SEL.anchorOf + bytes32(o.id)));
+    if (!a) continue;
+    observations.push({
+      id: o.id,
+      label: String(o.label ?? ""),
+      liveCount: a.liveCount,
+      anchoredAt: a.anchoredAt,
+      samePlot: a.plotId.toLowerCase() === String(demo.plotId).toLowerCase(),
+      verified: a.disputes === 0 && a.confirms >= (plot.requiredConfirmations ?? 1),
+    });
+  }
+
+  const attesters = [];
+  for (const p of (demo.attesters ?? []).slice(0, MAX_ITEMS)) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(String(p?.address ?? ""))) continue;
+    attesters.push({ address: p.address, label: String(p.label ?? "") });
+  }
+
+  // A record nobody has confirmed yet, kept deliberately unattested so "who may
+  // verify this?" stays a live question. Asking it about the main grove's head
+  // would only ever answer "somebody already did", which demonstrates nothing.
+  let showcase = null;
+  if (/^0x[0-9a-fA-F]{64}$/.test(String(demo.showcase?.observationId ?? ""))) {
+    const a = decodeAnchor(await c(d.contracts.GroveAnchor, SEL.anchorOf + bytes32(demo.showcase.observationId)));
+    if (a) {
+      showcase = {
+        observationId: demo.showcase.observationId,
+        liveCount: a.liveCount,
+        anchoredAt: a.anchoredAt,
+        confirms: a.confirms,
+        disputes: a.disputes,
+      };
+    }
+  }
+
+  return {
+    showcase,
+    plotRef: String(demo.plotRef ?? ""),
+    plotId: demo.plotId,
+    pledgeId: Number(demo.pledgeId ?? 0) || null,
+    milestone: Number(demo.milestone ?? 0),
+    observations,
+    attesters,
+    plot,
+  };
+}
+
+/**
+ * A single canX() question, for the page's "Try it" panel.
+ *
+ * Read-only and public, like `/use-cases/check`: these are the same views a
+ * wallet calls to explain a refusal before anyone signs. Nothing moves.
+ */
+async function groveCheck(rpcUrl, deployments, { kase, address, observationId, pledgeId, milestone } = {}) {
+  const d = deployments ?? {};
+  const c = caller(makeRpc(rpcUrl));
+
+  if (kase === "attest") {
+    if (!d.contracts?.GroveAnchor) return { error: "GroveAnchor is not deployed on this chain" };
+    if (!/^0x[0-9a-fA-F]{40}$/.test(String(address ?? ""))) return { error: "that is not an address" };
+    if (!/^0x[0-9a-fA-F]{64}$/.test(String(observationId ?? ""))) return { error: "that is not an observation id" };
+    return decodeBoolString(
+      await c(d.contracts.GroveAnchor, SEL.canAttest + pad32(address) + bytes32(observationId)),
+    );
+  }
+
+  if (kase === "claim") {
+    if (!d.contracts?.GrovePledge) return { error: "GrovePledge is not deployed on this chain" };
+    if (!/^0x[0-9a-fA-F]{64}$/.test(String(observationId ?? ""))) return { error: "that is not an observation id" };
+    const id = Number(pledgeId);
+    const idx = Number(milestone ?? 0);
+    if (!Number.isInteger(id) || id <= 0) return { error: "no pledge to check" };
+    if (!Number.isInteger(idx) || idx < 0 || idx > 255) return { error: "no such milestone" };
+    return decodeBoolString(
+      await c(d.contracts.GrovePledge, SEL.canClaim + padNum(id) + padNum(idx) + bytes32(observationId)),
+    );
+  }
+
+  return { error: "unknown check" };
+}
+
 /** Chain-wide headline numbers, for a "what is out there" panel. */
 async function groveStats(rpcUrl, deployments) {
   const d = deployments ?? {};
@@ -382,4 +493,4 @@ async function cached(key, fn) {
   return value;
 }
 
-module.exports = { grovePlot, groveStats, cached };
+module.exports = { grovePlot, groveStats, groveDemo, groveCheck, cached };

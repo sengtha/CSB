@@ -1,5 +1,5 @@
 const { expect } = require("chai");
-const { grovePlot, groveStats } = require("../app/grove");
+const { grovePlot, groveStats, groveDemo, groveCheck } = require("../app/grove");
 
 /**
  * The grove endpoint is PUBLIC, CORS-open, and reads from deployments.json — the
@@ -29,6 +29,19 @@ const DEPLOYMENTS = {
     grove: {
       farmer: { address: "0x" + "aa".repeat(20), key: FARMER_KEY, label: "Farmer" },
       officer: { address: "0x" + "bb".repeat(20), key: OFFICER_KEY, label: "Officer" },
+      demo: {
+        plotRef: "demo-grove-1",
+        plotId: "0x" + "cd".repeat(32),
+        pledgeId: 2,
+        milestone: 0,
+        showcase: { observationId: "0x" + "ee".repeat(32), liveCount: 120 },
+        observations: [{ id: "0x" + "12".repeat(32), label: "This year's record" }],
+        // The cast entries carry keys, and the demo block sits beside them —
+        // which is exactly why the assertions below exist.
+        attesters: [
+          { address: "0x" + "bb".repeat(20), label: "Officer", key: OFFICER_KEY },
+        ],
+      },
     },
   },
 };
@@ -112,6 +125,77 @@ describe("grove endpoint", function () {
     } finally {
       restore();
     }
+  });
+
+  it("keeps keys out of the demo response, which sits beside them in the file", async function () {
+    const restore = stubFetch("0x" + "11".repeat(32 * 12));
+    try {
+      const json = JSON.stringify(await groveDemo(RPC, DEPLOYMENTS));
+      expect(json).to.not.contain("9e".repeat(32));
+      expect(json).to.not.contain("7f".repeat(32));
+      expect(json.toLowerCase()).to.not.contain('"key"');
+    } finally {
+      restore();
+    }
+  });
+
+  it("reports no demo rather than throwing when one was never run", async function () {
+    const restore = stubFetch("0x" + word("0"));
+    try {
+      expect(await groveDemo(RPC, { contracts: DEPLOYMENTS.contracts })).to.equal(null);
+      // Deployed contracts, but the plot has never been anchored.
+      expect(await groveDemo(RPC, DEPLOYMENTS)).to.equal(null);
+    } finally {
+      restore();
+    }
+  });
+
+  describe("check", function () {
+    it("refuses a malformed address or observation without asking the chain", async function () {
+      let called = false;
+      const original = global.fetch;
+      global.fetch = async () => { called = true; return { json: async () => ({}) }; };
+      try {
+        const obs = "0x" + "12".repeat(32);
+        expect((await groveCheck(RPC, DEPLOYMENTS, { kase: "attest", address: "nope", observationId: obs })).error)
+          .to.contain("not an address");
+        expect((await groveCheck(RPC, DEPLOYMENTS, { kase: "attest", address: "0x" + "aa".repeat(20), observationId: "x" })).error)
+          .to.contain("not an observation id");
+        expect((await groveCheck(RPC, DEPLOYMENTS, { kase: "claim", observationId: obs, pledgeId: "0" })).error)
+          .to.contain("no pledge");
+        expect((await groveCheck(RPC, DEPLOYMENTS, { kase: "claim", observationId: obs, pledgeId: "1", milestone: "99999" })).error)
+          .to.contain("no such milestone");
+        expect((await groveCheck(RPC, DEPLOYMENTS, { kase: "wat" })).error).to.contain("unknown check");
+        expect(called).to.equal(false);
+      } finally {
+        global.fetch = original;
+      }
+    });
+
+    it("returns the chain's own verdict and reason", async function () {
+      // (bool ok, string reason) with ok=false and a reason — the shape every
+      // canX() view returns, and the one the page renders as a refusal.
+      const reason = "this address holds no current field-verifier licence";
+      const hexReason = Buffer.from(reason, "utf8").toString("hex").padEnd(128, "0");
+      const restore = stubFetch(
+        "0x" + word("0") + word("40") + BigInt(reason.length).toString(16).padStart(64, "0") + hexReason,
+      );
+      try {
+        const r = await groveCheck(RPC, DEPLOYMENTS, {
+          kase: "attest", address: "0x" + "aa".repeat(20), observationId: "0x" + "12".repeat(32),
+        });
+        expect(r.ok).to.equal(false);
+        expect(r.reason).to.equal(reason);
+      } finally {
+        restore();
+      }
+    });
+
+    it("says so when the contracts are not on this chain", async function () {
+      const empty = { contracts: {} };
+      expect((await groveCheck(RPC, empty, { kase: "attest" })).error).to.contain("not deployed");
+      expect((await groveCheck(RPC, empty, { kase: "claim" })).error).to.contain("not deployed");
+    });
   });
 
   it("survives a node that returns nothing at all", async function () {
