@@ -180,12 +180,14 @@ fi
 
 frozen=0
 last=$first
+rpc_dead=0
 for _ in $(seq 1 "$STALL_CHECKS"); do
   sleep "$PROBE_GAP"
   now=$(height)
   if [ -z "$now" ]; then
     log "RPC stopped answering mid-probe (was at height $last)"
     frozen=$STALL_CHECKS
+    rpc_dead=1
     break
   fi
   if [ "$now" -gt "$last" ]; then
@@ -220,7 +222,32 @@ if [ "$unhealthy" -eq 0 ]; then
   esac
 fi
 
-log "STALLED: height flat at $last across $frozen probes" \
+# A node that is ANSWERING is not a node to stop.
+#
+# This is the rule that cost a working chain twice. The health endpoint returning
+# nothing means it did not answer within the timeout — which is exactly what a
+# node does while it is busy, for instance serving the block-log scans a wallet
+# page fires right after a payment. The old logic read that as "wedged" and ran
+# `avalanche node local stop`, and the node's own log recorded the result
+# honestly: "shutting down node {exitCode: 0}" — a clean, deliberate shutdown of
+# a chain that was working, 19 seconds after it finished bootstrapping.
+#
+# Restarting is now reserved for the one case where it cannot make things worse:
+# the RPC is not answering at all. Being slow, or being flagged unhealthy while
+# still serving blocks, is reported and left alone. An operator can act on a
+# report; nobody can act on a chain that has been stopped for them.
+if [ "$rpc_dead" -eq 0 ]; then
+  log "height flat at $last across $frozen probes, mempool $waiting," \
+      "node $([ "$unhealthy" -eq 1 ] && echo 'reporting UNHEALTHY' || echo healthy)."
+  if [ "$unhealthy" -eq 1 ]; then
+    log "NOT restarting: the RPC is still answering, so the chain is serving. A slow or"
+    log "unhealthy-but-responsive node recovers on its own far more often than it survives"
+    log "being stopped. Investigate with: avalanche node local status $CLUSTER"
+  fi
+  exit 0
+fi
+
+log "STALLED: RPC stopped answering; height was $last across $frozen probes" \
     "(mempool: $waiting; node: $([ "$unhealthy" -eq 1 ] && echo UNHEALTHY || echo healthy))."
 if [ -x "$AVALANCHE" ]; then
   "$AVALANCHE" node local list 2>&1 | clean | sed 's/^/    /'

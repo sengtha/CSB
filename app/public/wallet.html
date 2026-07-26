@@ -138,17 +138,22 @@ async function refreshAccount() {
   await refreshActivity();
 }
 
+// Runs after EVERY payment (run() -> refreshAccount() -> here), so its cost is
+// paid at the exact moment the node is already busy sealing that transaction.
+// Three concurrent 5000-block log scans was enough to make the node miss health
+// checks — and a node that misses health checks gets restarted. So the window is
+// small, and the three scans are sequential rather than racing each other.
+const ACTIVITY_BLOCKS = 400;
+
 async function refreshActivity() {
   const { khr, gateway } = await getContracts();
   const latest = await getProvider().getBlockNumber();
-  const from = Math.max(0, latest - 5000);
+  const from = Math.max(0, latest - ACTIVITY_BLOCKS);
   const me = wallet.address;
   const rows = [];
-  const [sent, recv, eg] = await Promise.all([
-    khr.queryFilter(khr.filters.Transfer(me), from),
-    khr.queryFilter(khr.filters.Transfer(null, me), from),
-    gateway.queryFilter(gateway.filters.EgressInitiated(me), from),
-  ]);
+  const sent = await khr.queryFilter(khr.filters.Transfer(me), from);
+  const recv = await khr.queryFilter(khr.filters.Transfer(null, me), from);
+  const eg = await gateway.queryFilter(gateway.filters.EgressInitiated(me), from);
   for (const ev of sent) rows.push([ev.blockNumber, "Sent", `${fmtKHR(ev.args[2])} KHRt → ${short(ev.args[1])}`]);
   for (const ev of recv) if (ev.args[0] !== me) rows.push([ev.blockNumber, "Received", `${fmtKHR(ev.args[2])} KHRt ← ${short(ev.args[0])}`]);
   for (const ev of eg) rows.push([ev.blockNumber, "Egress", `${fmtKHR(ev.args[2])} KHRt bridged out`]);
