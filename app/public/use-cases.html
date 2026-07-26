@@ -66,9 +66,10 @@
   <main>
     <div class="card">
       <p class="lead">
-        Three worked examples of things a chain with a <strong>national identity layer</strong>
-        can do that a public chain structurally cannot. All three run on this testnet,
-        and all three are demonstrations rather than products.
+        Four worked examples of things a chain with a <strong>national identity layer</strong>
+        can do that a public chain structurally cannot — ending with one that ties a
+        real tree to its twin in a virtual world. All four run on this testnet,
+        and all four are demonstrations rather than products.
       </p>
     </div>
 
@@ -255,6 +256,81 @@ Customer pays           20,000.00 KHRt   ← agreed before paying</code></pre>
       </p>
     </div>
 
+    <!-- ================= Grove ================= -->
+    <div class="card">
+      <h2>4 · A tree you can walk to, and the same tree in a virtual world</h2>
+      <p class="lead">
+        A farmer plants 500 mangroves. A sponsor on the other side of the world
+        wants to pay for them and has no way to know whether they are still
+        standing in a year. So the money arrives on planting day — which is why
+        there are so many photographs of people planting trees, and so few of the
+        same trees eighteen months later.
+      </p>
+      <p class="lead" style="margin-top:10px">
+        <strong>CSB does not tokenize the carbon.</strong> Nothing here mints a
+        tonne of CO₂, because nobody can walk outside and check one. It records
+        <strong>trees</strong> — the largest claim this can honestly support — and
+        releases the money only when somebody with a licence to lose has gone and
+        confirmed they are still alive.
+      </p>
+
+      <div class="flow">
+        <div class="step"><div class="n">1</div><div class="t">The farmer measures a plant on her phone. The record is <strong>signed on the device</strong>; only its hash comes here — no location, no photo, no name.</div></div>
+        <div class="step"><div class="n">2</div><div class="t">The hash is <strong>anchored</strong>. The chain stamps it with a block time agreed by validators who have never met her — her phone's clock is a claim, this is not.</div></div>
+        <div class="step"><div class="n">3</div><div class="t">A <strong>licensed commune agriculture officer</strong> visits and confirms it. Anyone can generate a thousand keys; only a licence someone can lose counts here.</div></div>
+        <div class="step"><div class="n">4</div><div class="t">The grove becomes a token whose supply <strong>is</strong> the verified living-tree count — and a sponsor's pledge pays out against a fresh confirmed record.</div></div>
+        <div class="step"><div class="n">5</div><div class="t">A virtual world reads the same record and grows the <strong>same grove</strong>, carrying the verifier's licence with it.</div></div>
+      </div>
+
+      <div class="out yes">✓ <strong>The digital twin is the same object as the payment.</strong> The grove you walk through in the metaverse and the riel that reached the farmer are two readings of one record, not two systems that agree.</div>
+      <div class="out no">✗ <strong>Last year's healthy photograph will not pay this year's survival check.</strong> The proof has to be anchored <em>after</em> the milestone opened, measured in block time.</div>
+      <div class="out no">✗ <strong>You cannot verify your own trees</strong> — and neither can an address with no licence, however many keys it holds.</div>
+      <div class="out yes">✓ <strong>The token shrinks when the trees die.</strong> Supply is minted <em>and burned</em> to the verified count, and anyone at all can force that correction.</div>
+
+      <!-- Try it. canAttest() and canClaim() are the same views a wallet calls
+           before it lets anyone sign, so these are the chain's own answers. -->
+      <div class="try" id="grove-try">
+        <h3>Try it — ask the chain who may confirm a grove, and what pays</h3>
+        <p class="note">Live on this testnet, read-only. The refusals are the point:
+          this is where a virtual tree stops being a picture somebody drew.</p>
+        <div class="live" id="grove-live"></div>
+
+        <p class="note" style="margin-top:12px" id="grove-who-note"><strong>Who may confirm a grove?</strong>
+          Pick a party, or paste any address — including your own.</p>
+        <div class="row">
+          <select id="grove-who"></select>
+          <input id="grove-who-custom" placeholder="or paste an address 0x…" spellcheck="false" />
+          <button id="grove-who-go">Check</button>
+        </div>
+        <div id="grove-who-out"></div>
+
+        <p class="note" style="margin-top:14px"><strong>Which proof releases the money?</strong>
+          Three records exist on this chain. Only one of them pays.</p>
+        <div class="row">
+          <select id="grove-proof"></select>
+          <button id="grove-proof-go">Check</button>
+        </div>
+        <div id="grove-proof-out"></div>
+      </div>
+
+      <table class="kv" id="grove-contracts"></table>
+
+      <div class="caveat">
+        <strong>The oracle problem is not solved here, and cannot be.</strong> A
+        licensed officer can be lied to, be lazy, or be paid off; a photograph can
+        be of a different grove. What changes is the price of cheating: it now
+        takes a licensed professional putting their registration behind a false
+        statement, on a record with a timestamp they cannot backdate, for a
+        payment the sponsor can see. That is not proof — it is a much worse deal
+        for a fraudster than a spreadsheet, and that is the whole claim.
+      </div>
+      <p class="note" style="margin-top:10px">
+        <a href="https://github.com/sengtha/CSB/blob/main/docs/grove.md" target="_blank" rel="noopener">Full write-up ↗</a>
+        · <a href="https://github.com/sengtha/iAny/tree/main/grove" target="_blank" rel="noopener">Grove — the phone side ↗</a>
+        · <a href="https://github.com/camboversecenter/CamboVerse" target="_blank" rel="noopener">CamboVerse — the virtual side ↗</a>
+      </p>
+    </div>
+
     <!-- ================= Build ================= -->
     <div class="card">
       <h2>Build on this — deploy your own contract</h2>
@@ -294,9 +370,11 @@ networks: {
 
     <p class="foot" id="disclaimer">
       Illustrative demonstrations on a test network. Every institutional role here —
-      licensing registrar, social-policy authority, land authority, lender — is a
-      hypothetical placeholder. No real programme, ministry, cadastre, parcel or
-      beneficiary is represented, and no affiliation or endorsement is implied.
+      licensing registrar, social-policy authority, land authority, lender, grove
+      authority, commune agriculture officer — is a hypothetical placeholder. No real
+      programme, ministry, cadastre, parcel, grove, licence or beneficiary is
+      represented, and no affiliation or endorsement is implied. Tree counts are
+      counts, and carbon figures are estimates; nothing here is a carbon credit.
     </p>
   </main>
 
@@ -317,6 +395,12 @@ const GROUPS = {
   ],
   "escrow-contracts": [
     ["PaymentEscrow", "Holds the buyer's payment and settles the split atomically"],
+  ],
+  "grove-contracts": [
+    ["AttesterRegistry", "Who holds a field-verifier licence, and can lose it"],
+    ["GroveAnchor", "Record hashes, block-timestamped; confirmations from licensed verifiers only"],
+    ["GroveTitleRegistry", "Issues grove titles; supply is the verified living-tree count"],
+    ["GrovePledge", "Money released only against a fresh, confirmed record"],
   ],
 };
 
@@ -455,6 +539,86 @@ fetch("/use-cases").then((r) => (r.ok ? r.json() : null)).then((d) => {
   for (const id of ["idpoor-try", "land-try", "escrow-try"]) {
     $(id).innerHTML = `<p class="note">Live data is not available on this chain — the write-up below still applies.</p>`;
   }
+});
+
+// --- 4. grove -------------------------------------------------------------
+// Its own endpoint rather than a fourth branch of /use-cases: the grove answer
+// is assembled from four contracts and is the one thing on this page a virtual
+// world also reads, so it stays a surface of its own that anyone can call.
+const day = (secs) => (secs ? new Date(secs * 1000).toISOString().slice(0, 10) : "—");
+
+async function groveCheck(params, outEl, subject) {
+  const el = $(outEl);
+  el.innerHTML = `<div class="out">Asking the chain…</div>`;
+  try {
+    const r = await (await fetch(`/grove/check?${new URLSearchParams(params)}`)).json();
+    if (r.error) { el.innerHTML = `<div class="out no">Could not ask the chain: ${esc(r.error)}</div>`; return; }
+    el.innerHTML = r.ok
+      ? `<div class="out yes">✓ <strong>${esc(subject.yes)}</strong>`
+        + `<span class="why">Read live from the contract — the same check made before anyone signs.</span></div>`
+      : `<div class="out no">✗ <strong>${esc(subject.no)}</strong>`
+        + `<span class="why">${esc(r.reason || "no reason given")} — this is not a warning an app could override.</span></div>`;
+  } catch (e) {
+    el.innerHTML = `<div class="out no">Could not ask the chain: ${esc(e.message)}</div>`;
+  }
+}
+
+fetch("/grove/demo").then((r) => (r.ok ? r.json() : null)).then((g) => {
+  if (!g?.plot?.anchored) throw new Error("no grove");
+  const p = g.plot;
+  const head = p.head ?? {};
+  // The proof question needs a milestone still waiting for one. A settled
+  // pledge answers "this pledge is closed" to everything, which is true and
+  // demonstrates nothing.
+  const openPledge = (p.pledges ?? []).find((pl) => pl.status === "funded");
+
+  $("grove-live").innerHTML = `
+    <b>Grove</b> <span class="mono">${esc(g.plotRef || p.plot)}</span><br>
+    <b>On chain</b> ${p.records} record${p.records === 1 ? "" : "s"}, newest anchored ${day(head.anchoredAt)}
+      <span class="pill ${head.verified ? "ok" : "no"}">${head.verified ? "confirmed in the field" : "awaiting a verifier"}</span><br>
+    <b>Living trees</b> ${p.verifiedCount ? `<strong>${p.verifiedCount}</strong> confirmed` : "none confirmed yet"}
+      ${head.liveCount && head.liveCount !== p.verifiedCount ? `<span class="why" style="color:var(--muted)">(${head.liveCount} claimed in the newest record)</span>` : ""}<br>
+    ${p.verifier ? `<b>Verified by</b> ${esc(p.verifier.label || p.verifier.classes.join(", "))}
+      <span class="why" style="color:var(--muted)">licence ${esc(String(p.verifier.licenceRef).slice(0, 10))}… · ${p.verifier.confirmations} checks made</span><br>` : ""}
+    ${p.title ? `<b>Grove title</b> ${p.title.supply} ${esc(p.title.symbol)} — one share per verified living tree
+      <span class="pill ${p.title.inSync ? "ok" : "no"}">${p.title.inSync ? "in sync" : "drifted"}</span><br>` : ""}
+    ${(p.pledges ?? []).map((pl) => `<b>Pledge #${pl.id}</b> ${money(pl.total)} KHRt
+      <span class="pill ${pl.status === "funded" ? "ok" : ""}">${esc(pl.status)}</span>
+      ${pl.milestones.map((m) => `<br>&nbsp;&nbsp;→ ${m.requiredCount} trees standing by ${day(m.deadline)} ·
+        ${money(m.growerAmount)} to the grower + ${money(m.verifierAmount)} to the verifier
+        <span class="pill ${m.status === "paid" ? "ok" : ""}">${esc(m.status)}</span>`).join("")}`).join("<br>")}`;
+
+  // Who may confirm — asked about a record NOBODY has confirmed yet. Asking it
+  // about the grove above would only ever answer "somebody already did".
+  const subject = g.showcase?.observationId ?? head.observationId;
+  if (g.showcase) {
+    $("grove-who-note").innerHTML = `A neighbouring grove was recorded on the same phone
+      — <strong>${g.showcase.liveCount} plants, anchored ${day(g.showcase.anchoredAt)}, nobody has been to look yet</strong>.
+      Who does the chain accept a confirmation from?`;
+  }
+  fillParties($("grove-who"), (g.attesters ?? []).map((a) => ({ address: a.address, label: a.label })));
+  $("grove-who-go").onclick = () => groveCheck(
+    { case: "attest", address: chosen("grove-who", "grove-who-custom"), observation: subject },
+    "grove-who-out",
+    { yes: "This address may confirm it — the licence is current.", no: "The chain will not accept this confirmation." },
+  );
+
+  // Which proof pays. Only offered when a milestone is actually waiting.
+  if (openPledge && g.pledgeId) {
+    $("grove-proof").innerHTML = (g.observations ?? []).map((o) =>
+      `<option value="${esc(o.id)}">${esc(o.label)}</option>`).join("");
+    $("grove-proof-go").onclick = () => groveCheck(
+      { case: "claim", observation: $("grove-proof").value, pledge: g.pledgeId, milestone: g.milestone },
+      "grove-proof-out",
+      { yes: "This proof releases the money.", no: "This proof does not release the money." },
+    );
+  } else {
+    $("grove-proof").parentElement.style.display = "none";
+    $("grove-proof-out").innerHTML = `<p class="note">No pledge on this grove yet — the survival check needs one.</p>`;
+  }
+}).catch(() => {
+  $("grove-try").innerHTML = `<p class="note">This demonstration has not been run on this chain yet
+    — <span class="mono">scripts/demo-grove.js</span> sets it up. The write-up below still applies.</p>`;
 });
 </script>
 </body>

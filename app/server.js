@@ -259,6 +259,38 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // The demo grove behind the use-cases page — live state, not a screenshot.
+  if (url.pathname === "/grove/demo") {
+    const cors = { "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=6" };
+    if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
+    try {
+      send(res, 200, await grove.cached("demo", () => grove.groveDemo(RPC_URL, loadDeployments())) ?? null, cors);
+    } catch (e) {
+      send(res, 502, { error: e.message }, cors);
+    }
+    return;
+  }
+
+  // One canX() question for the page's "Try it" panel. Read-only: these are the
+  // same views a wallet calls to explain a refusal before anyone signs, so the
+  // answer is the chain's, not this server's. Nothing moves.
+  if (url.pathname === "/grove/check") {
+    const cors = { "Access-Control-Allow-Origin": "*" };
+    if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
+    try {
+      send(res, 200, await grove.groveCheck(RPC_URL, loadDeployments(), {
+        kase: url.searchParams.get("case"),
+        address: url.searchParams.get("address"),
+        observationId: url.searchParams.get("observation"),
+        pledgeId: url.searchParams.get("pledge"),
+        milestone: url.searchParams.get("milestone"),
+      }), cors);
+    } catch (e) {
+      send(res, 502, { error: e.message }, cors);
+    }
+    return;
+  }
+
   // KYC requests. The SUBMIT side is public on purpose: someone who is not yet
   // verified cannot hold a passcode, so requiring one would mean only insiders
   // could ask. A wallet signature stands in for the login — it proves the

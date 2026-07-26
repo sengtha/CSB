@@ -68,6 +68,7 @@ Anchoring is additive, and an unanchored garden is a normal garden.
 | Demo | `npx hardhat run scripts/demo-grove.js --network csbRemote` |
 | Tests | `test/grove.test.js` (53) |
 | Read API | `GET /grove?plot=<keccak256(plot)>` — public, CORS-open, no key |
+| Public page | **Use cases → 4** on the app server — live state, and two `canX()` checks anyone can run |
 
 ### 3.1 `AttesterRegistry` — a licence somebody can lose
 
@@ -211,31 +212,116 @@ that drew the badge.
 CamboVerse consumes exactly this ([`src/grove/csb.ts`](https://github.com/camboversecenter/CamboVerse/blob/main/src/grove/csb.ts)),
 computing `keccak256(plot)` locally so the plot's name never leaves the browser.
 
-## 6. Running it
+## 6. Deploying it onto a chain that already exists
+
+**Do not run `scripts/deploy.js`.** That builds the whole suite from nothing and
+would redeploy `IdentityRegistry` and `KHRStablecoin` with it — abandoning every
+KYC attestation and balance already on the chain. The Grove suite has its own
+additive deployer:
+
+```bash
+cd /opt/csb
+git fetch origin && git checkout <branch> && npm install
+source ops/csb-env.sh          # RPC, chain id, gas price, deployer key
+npx hardhat compile
+npx hardhat run scripts/deploy-grove.js --network csbRemote
+```
+
+It deploys only what is missing, wires the three permissions below, writes the
+addresses into `app/deployments.json` beside the existing ones, and is safe to
+re-run — a half-finished run is fixed by running it again.
+
+Role holders default to the deployer. For anything beyond a pilot, give each its
+own multisig, because the separation is the argument:
+
+| Env var | Holds |
+|---|---|
+| `COUNCIL_ADDR` | verification threshold, minimum tier |
+| `ATTESTER_REGISTRAR_ADDR` | licenses and suspends field verifiers |
+| `GROVE_AUTHORITY_ADDR` | registers groves, issues titles |
+| `PLEDGE_ARBITER_ADDR` | resolves disputed milestones |
+
+### The three wirings, and what breaks without each
+
+| Wiring | If missing |
+|---|---|
+| `AttesterRegistry.grantRole(RECORDER_ROLE, GroveAnchor)` | Verification still works; verifier **reputation silently stops accruing**. `GroveAnchor` swallows the failure on purpose — a registry misconfiguration must not block confirmation of real work in the field. |
+| `GroveTitleRegistry` on the **`contractDeployerAllowList`** | `registerGrove` reverts **with no reason string at all** — the registry deploys a `GroveTitle` per grove, and that create is performed by the registry's own address. The least debuggable failure on this chain. |
+| `KHRStablecoin.setSystemContract(GrovePledge, true)` | Every `fund()` reverts: the pledge custodies KHRt and has no personal identity to KYC, so it needs vetting exactly as the escrow and bridge adapter do. |
+
+The script performs all three when the deployer holds the necessary role, and
+prints an explicit `! COUNCIL ACTION NEEDED:` line with the exact call when it
+does not — which is what you want once the roles are real multisigs.
+
+### Then license a verifier, or nothing can ever be verified
+
+An empty `AttesterRegistry` means every record anchors fine and none of them ever
+becomes verified — no title can be issued, and no pledge can ever pay out. This
+is the step that is easy to forget and looks like a bug:
+
+```bash
+ATTESTER_ADDR=0x… ATTESTER_CLASSES=commune \
+ATTESTER_LABEL="Commune agriculture officer, Sangkat Example" \
+  npx hardhat run scripts/license-attester.js --network csbRemote
+```
+
+A verifier has to pass **three independent gates**, and a licence alone satisfies
+only one of them:
+
+| Gate | Failure |
+|---|---|
+| Licence (`AttesterRegistry`) | `NotLicensedAttester` |
+| Active KYC (`IdentityRegistry`) | `NotVerifiedIdentity` |
+| `txAllowList` (the chain itself) | rejected before any contract runs — a bare `execution reverted` with no data to decode |
+
+The script does all three and reports each, because handing someone a licence and
+stopping there produces an officer who is licensed on paper and cannot attest to
+anything — the worst of the three to debug. Re-running updates their classes and
+label. To withdraw a licence use `setSuspended(addr, true)`, never
+`removeAttester`: the record of who was licensed *when* is what a dispute over a
+past attestation has to be settled against.
+
+Label the **role**, not the person. This is a ledger a whole country can read.
+
+### Restart the app server
+
+`/grove` reads `app/deployments.json` at request time, but the server caches it;
+restart so the new addresses are picked up.
+
+```bash
+sudo systemctl restart csb-app     # or however the app is supervised
+curl -s "https://<host>/grove" | jq   # headline stats, no passcode
+```
+
+`/grove` is deliberately **public and CORS-open**, sitting above the passcode
+gate with `/use-cases`. That is the point: a "verified" badge in a virtual grove
+is worth nothing if the only way to check it is to ask the project that drew it.
+It exposes nothing a reader could not obtain from an `eth_call`, and the demo
+casts' private keys — which live in the same `deployments.json` — are kept out by
+building every response field by field, asserted in `test/grove-endpoint.test.js`.
+
+## 7. Running the demo
 
 ```bash
 cd /opt/csb && source ops/csb-env.sh
 npx hardhat run scripts/demo-grove.js --network csbRemote
 ```
 
-It deploys the four contracts on first run, records them in `app/deployments.json`,
-creates and KYCs its cast, licenses the officer, and plays the whole story
-through. `CSB_PLEDGE_WINDOW` (default 60s) compresses the survival year so the
-demo finishes in one sitting — nothing in the contracts knows the difference
-between a minute and a year.
+It self-deploys anything missing, creates and KYCs its cast, licenses the
+officer, and plays the whole story through. `CSB_PLEDGE_WINDOW` (default 60s)
+compresses the survival year so the demo finishes in one sitting — nothing in the
+contracts knows the difference between a minute and a year. `CSB_PLOT_REF` names
+the plot if you want a fresh one.
 
-Two notes specific to this demo:
+One thing worth knowing before it confuses you:
 
-- **`GroveTitleRegistry` must be on the `contractDeployerAllowList`.** It deploys
-  a `GroveTitle` per grove, and that create is performed by the registry's own
-  address. Missing it reverts with no reason string at all. The script enables it
-  on every run.
 - **Chain time is not wall-clock time.** Subnet-EVM produces a block when there
-  is something to put in it, so a quiet chain's `block.timestamp` stops. The
-  demo sends a zero-value transaction while it waits, because the milestone
-  windows are checked against block time and that is the clock that matters.
+  is something to put in it, so a quiet chain's `block.timestamp` stops
+  advancing and a script waiting on it waits forever. The demo sends a
+  zero-value transaction on each poll, because milestone windows are checked
+  against block time and that is the clock that matters.
 
-## 7. What is still honest to say about it
+## 8. What is still honest to say about it
 
 The oracle problem is not solved here and cannot be. A licensed officer can be
 lied to, can be lazy, or can be paid off; a photograph can be of a different

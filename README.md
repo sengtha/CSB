@@ -8,7 +8,7 @@ Full design rationale: [`docs/architecture.md`](docs/architecture.md). License: 
 
 ## Status
 
-**v0 prototype.** Core contract suite implemented and tested (181 tests), including the production **ICTT bridge adapter**. The application — citizen wallet, gated explorer, and institutional admin console — runs against the live chain behind an access-gated server (`docker-compose.app.yml`); participating institutions run validators via `docker-compose.validator.yml`. Cloud-VM tooling stands the whole stack up on a single Ubuntu VM ([`docs/cloud-deployment.md`](docs/cloud-deployment.md)); the real-egress path to Fuji C-Chain is documented in [`docs/fuji-ictt.md`](docs/fuji-ictt.md).
+**v0 prototype.** Core contract suite implemented and tested (186 tests), including the production **ICTT bridge adapter**. The application — citizen wallet, gated explorer, and institutional admin console — runs against the live chain behind an access-gated server (`docker-compose.app.yml`); participating institutions run validators via `docker-compose.validator.yml`. Cloud-VM tooling stands the whole stack up on a single Ubuntu VM ([`docs/cloud-deployment.md`](docs/cloud-deployment.md)); the real-egress path to Fuji C-Chain is documented in [`docs/fuji-ictt.md`](docs/fuji-ictt.md).
 
 ## Repository layout
 
@@ -60,10 +60,14 @@ infra/setup-vm.sh              Cloud VM bootstrap (Ubuntu, any provider)
 infra/deploy-l1.sh             Create + deploy the Avalanche L1 on the VM
 infra/Caddyfile                Caddy reverse proxy for HTTPS (custom domain)
 scripts/deploy.js              Deploys and wires the suite (multisig-aware)
+scripts/deploy-grove.js        Adds the Grove suite to a chain that already has
+                               CSB on it (idempotent; wires roles + allowlists)
+scripts/license-attester.js    Licenses a field verifier and clears all three
+                               gates (licence, KYC, txAllowList)
 scripts/demo-grove.js          Grove end-to-end: plant, anchor, verify, tokenize,
                                and get paid for survival
 scripts/seed-accounts.js       Seeds pilot identities, balances, egress policy
-test/                          181 tests: KYC lifecycle, separation of powers,
+test/                          186 tests: KYC lifecycle, separation of powers,
                                compliance gating, egress policy, ICTT adapter,
                                grove anchoring / licensed attestation / pledges
 docs/deployment-status.md      LIVE Fuji testnet: IDs, contract addresses, ops

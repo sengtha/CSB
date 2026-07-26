@@ -242,6 +242,75 @@ async function main() {
   console.log(`  farmer  +${fmt((await khr.balanceOf(farmer.address)) - growerBefore)} KHRt`);
   console.log(`  officer +${fmt((await khr.balanceOf(officer.address)) - officerBefore)} KHRt  ← paid for the visit, on chain`);
 
+  // --- leave a live demonstration behind ----------------------------------
+  // The story above consumes itself. Its head record is confirmed and its
+  // milestone is paid, so every question the use-cases page could ask about
+  // them answers "already attested" or "this pledge is closed" — true, and it
+  // teaches nothing. So it also leaves two things standing: a record nobody has
+  // confirmed, and a milestone nobody has claimed.
+  console.log(`\n─── 12. Leaving something for the public page to refuse ───`);
+
+  const showcasePlot = ethers.id(`${plotRef}/neighbour`);
+  const showcaseObs = ethers.id(`${plotRef}/neighbour/1`);
+  if (!(await anchor.isAnchored(showcaseObs))) {
+    await (await anchor.connect(farmerW).anchor(showcaseObs, showcasePlot, ethers.ZeroHash, 120, tag("mangifera"))).wait();
+  }
+  console.log(`  a neighbouring grove, recorded and not yet visited by anyone`);
+
+  // A second pledge whose window is ALREADY open and whose milestone is left
+  // unclaimed. notBefore sits between the two records deliberately: the survival
+  // record qualifies, last year's planting record is too old, and somebody
+  // else's grove belongs to another plot. Three answers, one of them yes.
+  const openNotBefore = Number(a1.anchoredAt) + 1;
+  await (await pledge.createPledge(
+    plotId, farmer.address, khr.target,
+    "500 mangroves — open survival milestone (illustrative)",
+    [{
+      notBefore: openNotBefore,
+      deadline: (await ethers.provider.getBlock("latest")).timestamp + YEAR,
+      requiredCount: 400,
+      growerAmount,
+      verifierAmount,
+    }],
+  )).wait();
+  const openPledgeId = await pledge.pledgeCount();
+  const openTotal = (await pledge.pledgeOf(openPledgeId)).total;
+  if ((await khr.balanceOf(deployer.address)) < openTotal) {
+    await (await khr.issue(deployer.address, openTotal)).wait();
+  }
+  await (await khr.approve(pledge.target, openTotal)).wait();
+  await (await pledge.fund(openPledgeId)).wait();
+  console.log(`  pledge #${openPledgeId}: ${fmt(openTotal)} KHRt funded and unclaimed, window open`);
+
+  // Record what this run created, so the public use-cases page can show a LIVE
+  // grove instead of a screenshot. Ids only — no keys, and the plot string is
+  // already public in the Grove feed, so nothing here is newly disclosed.
+  cast.demo = {
+    plotRef,
+    plotId,
+    otherPlotId: otherPlot,
+    titleToken: titleAddr,
+    // The OPEN pledge, not the one the story settled — the page needs a
+    // question the chain still has an interesting answer to.
+    pledgeId: Number(openPledgeId),
+    milestone: 0,
+    settledPledgeId: Number(pledgeId),
+    // A record nobody has confirmed, so "who may verify this?" is still a live
+    // question rather than "somebody already did".
+    showcase: { plotId: showcasePlot, observationId: showcaseObs, liveCount: 120 },
+    observations: [
+      { id: obs2, label: "This year's record — 430 standing, confirmed in the field" },
+      { id: obs1, label: "Last year's planting record — 500, healthy" },
+      { id: otherObs, label: "Somebody else's 900-tree grove" },
+    ],
+    attesters: [
+      { address: officer.address, label: "The licensed commune agriculture officer" },
+      { address: farmer.address, label: "The farmer who recorded it herself" },
+    ],
+  };
+  d.pilot.grove = cast;
+  fs.writeFileSync(file, JSON.stringify(d, null, 2));
+
   console.log(`\n─── 11. The twin follows the real grove — downwards ───`);
   await (await registry.syncSupply(plotId)).wait();
   console.log(`  supply was 500, is now ${await title.totalSupply()} — because 70 trees died and the ledger says so`);
