@@ -1,14 +1,19 @@
 [Unit]
-Description=CSB chain liveness watchdog (one-shot, driven by csb-watchdog.timer)
+Description=CSB chain health report (one-shot, driven by csb-watchdog.timer)
 After=network-online.target
 
 [Service]
 Type=oneshot
 User=root
 Environment=HOME=/root
-# Point at the current chain. Update CSB_RPC_URL if the L1 is redeployed.
+# Point at the current chain. Update these if the L1 is redeployed.
 Environment=CSB_RPC_URL=http://127.0.0.1:9650/ext/bc/299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW/rpc
-Environment=CSB_CLUSTER=csb-local-node-fuji
-# Set to 0 to log stalls without touching the cluster.
-Environment=CSB_WATCHDOG_RESTART=1
+Environment=CSB_HEALTH_PORT=9650
+Environment=CSB_SUBNET_ID=fgNiKVRTRJFZbCzSUPJMix6YdG2HfpXGf1LP9rQ58b5TU9mJL
+# Warn when a validator's P-Chain fee balance drops below this many AVAX.
+Environment=CSB_MIN_VALIDATOR_BALANCE=0.25
 ExecStart=/usr/local/bin/csb-watchdog
+
+# There is deliberately no restart switch. This unit reports and exits; a
+# non-zero exit marks the service failed, which is what journal alerting reads.
+# See the header of ops/csb-watchdog.sh for why automatic restarts were removed.

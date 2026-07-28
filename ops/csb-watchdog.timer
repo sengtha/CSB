@@ -1,10 +1,13 @@
 [Unit]
-Description=Run the CSB chain liveness watchdog every 5 minutes
+Description=Run the CSB chain health report every 15 minutes
 
 [Timer]
 OnBootSec=3min
-OnUnitActiveSec=5min
-AccuracySec=30s
+# 15 minutes, not 5. Nothing here reacts to anything, so a tighter interval only
+# adds journal noise. The signal it exists to catch — a validator's P-Chain fee
+# balance draining — moves over days.
+OnUnitActiveSec=15min
+AccuracySec=1min
 Unit=csb-watchdog.service
 
 [Install]

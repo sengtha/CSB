@@ -1,278 +1,212 @@
 #!/usr/bin/env bash
-# CSB chain watchdog.
-#
-# Earlier CSB deployments stopped producing blocks silently: the RPC kept
-# answering, but eth_blockNumber never advanced and no transaction ever mined.
-# Nothing surfaced that until someone tried to use the wallet. This checks
-# liveness on a timer and restarts the validator cluster when the chain is
-# genuinely stuck.
-#
-# "Stuck" here means: the height did not move across STALL_CHECKS consecutive
-# probes SPACED apart, *and* there is pending work. A quiet chain with an empty
-# mempool legitimately produces no blocks — Subnet-EVM only builds a block when
-# there is something to include — so height alone would false-positive every
-# idle night. We only act when transactions are waiting and still nothing moves.
+# CSB chain watchdog — REPORTS, never restarts.
 #
 # Install (on the VM, as root):
 #   install -m 755 ops/csb-watchdog.sh /usr/local/bin/csb-watchdog
 #   cp ops/csb-watchdog.service ops/csb-watchdog.timer /etc/systemd/system/
 #   systemctl daemon-reload && systemctl enable --now csb-watchdog.timer
 #
-# Check on it:
+# Read it:
+#   journalctl -u csb-watchdog -n 60
 #   systemctl list-timers csb-watchdog.timer
-#   journalctl -u csb-watchdog -n 50
 #
-# If you ever suspect the watchdog itself, turn it off before debugging the node:
-#   systemctl stop csb-watchdog.timer
-# It has taken a healthy cluster down before (see the notes on locking and on
-# node_unhealthy below), so rule it out first rather than last.
+# WHY THIS NO LONGER RESTARTS ANYTHING
+#
+# Every earlier version could stop and start the cluster, and every CSB outage
+# to date was either caused by it doing so or prolonged by it. The last one is
+# worth writing down in full, because the bug was subtle and the damage was not.
+#
+# The L1's single validator ran out of P-Chain balance. Under ACP-77 a validator
+# pays a continuous fee from a balance held on the P-Chain, and at zero it is
+# deactivated: still listed in the validator set, contributing no stake. The
+# chain then reported "not connected to enough stake: connected to 0.000000%",
+# never finished bootstrapping, and answered every RPC call with
+#
+#     API call rejected because chain is not done bootstrapping
+#
+# That is a well-formed HTTP 200 with an error body. The old height() looked for
+# '"result":"0x..."', found none, and returned empty — which this script read as
+# "the RPC is not answering at all", its one restart-worthy condition. So it
+# stopped and started a node that was alive, answering, and completely unable to
+# benefit from a restart, roughly every fifteen minutes, for hours. The node's
+# own log recorded it honestly: shutting down node {"exitCode": 0}.
+#
+# Two lessons are baked in below:
+#
+#   1. A REPLY IS NOT A RESULT, AND NEITHER IS SILENCE A DIAGNOSIS. An error
+#      body means the node is up and telling you what is wrong. It is the most
+#      useful thing the node can say, and it must never be flattened into the
+#      same bucket as an unreachable socket.
+#   2. RESTARTS DO NOT FIX ROOT CAUSES, AND THIS ONE HAD A CLEAN SIGNAL DAYS IN
+#      ADVANCE. The validator's balance falls monotonically and visibly. Nothing
+#      about a stop/start puts AVAX on the P-Chain. An operator reading "3 days
+#      of validator runway left" fixes it in a minute; an automatic restarter
+#      converts it into a mystery outage.
+#
+# So: this script diagnoses and exits. Exit 1 means "a human should look",
+# which systemd records as a service failure and any journal alerting will pick
+# up. It never touches the cluster.
 set -uo pipefail
 
 RPC="${CSB_RPC_URL:-http://127.0.0.1:9650/ext/bc/299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW/rpc}"
-CLUSTER="${CSB_CLUSTER:-csb-local-node-fuji}"
-AVALANCHE="${AVALANCHE_BIN:-$HOME/bin/avalanche}"
-HEALTH_PORT="${CSB_HEALTH_PORT:-9650}"  # node API port serving /ext/health
-STALL_CHECKS="${CSB_STALL_CHECKS:-3}"   # consecutive frozen probes before acting
-PROBE_GAP="${CSB_PROBE_GAP:-20}"        # seconds between probes
-RESTART="${CSB_WATCHDOG_RESTART:-1}"    # 0 = alert only, never restart
+HEALTH_PORT="${CSB_HEALTH_PORT:-9650}"
+PCHAIN="${CSB_PCHAIN_URL:-http://127.0.0.1:${HEALTH_PORT}/ext/bc/P}"
+SUBNET_ID="${CSB_SUBNET_ID:-fgNiKVRTRJFZbCzSUPJMix6YdG2HfpXGf1LP9rQ58b5TU9mJL}"
+CHAIN_ID="${CSB_CHAIN_ALIAS:-299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW}"
+
+# Warn below this many AVAX of validator balance. The fee accrues per second per
+# validator, so this is runway, not a cliff — the point is to be told while
+# topping up is still a one-line command.
+MIN_BALANCE="${CSB_MIN_VALIDATOR_BALANCE:-0.25}"
 
 log() { echo "[$(date -u +%FT%TZ)] $*"; }
 
-# avalanche-cli writes progress with ANSI escapes and other non-printable bytes.
-# Piped into the journal those become "[8B blob data]" lines that hide whatever
-# the CLI actually said — exactly when something has gone wrong and you need it.
-clean() { tr -cd '\11\12\15\40-\176'; }
+problems=0
+note() { log "!! $*"; problems=$((problems + 1)); }
 
-# Only one run at a time. The timer fires every 5 minutes; a node that is
-# bootstrapping takes longer than that, so without a lock each firing launches
-# ANOTHER `avalanche node local start` against a cluster that is already
-# starting. Competing starts are how a cluster ends up Stopped and staying
-# Stopped — the failure this watchdog exists to prevent, caused by the watchdog.
-exec 9>/run/csb-watchdog.lock
-if ! flock -n 9; then
-  log "another watchdog run is still in progress — skipping this firing."
-  exit 0
-fi
+# --- validator balance ------------------------------------------------------
+# Checked FIRST and unconditionally, because it is the only signal here that
+# leads the failure rather than trailing it. Everything else in this script
+# tells you the chain is already down.
+check_validators() {
+  local body
+  body=$(curl -s --max-time 15 -X POST -H 'content-type:application/json' \
+    --data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"platform.getCurrentValidators\",\"params\":{\"subnetID\":\"$SUBNET_ID\"}}" \
+    "$PCHAIN")
 
-# Is the cluster already up? Starting one that is running fails with
-# "node is already running", and starting one that is mid-bootstrap is worse.
-cluster_running() {
-  [ -x "$AVALANCHE" ] || return 1
-  "$AVALANCHE" node local status "$CLUSTER" 2>/dev/null | clean | grep -q 'Running'
-}
-
-# Bring the cluster up and WAIT for it, instead of firing a start and reporting
-# failure while it boots.
-start_and_wait() {
-  if cluster_running; then
-    log "cluster reports Running already — not issuing a second start."
-  else
-    log "starting cluster $CLUSTER"
-    "$AVALANCHE" node local start "$CLUSTER" 2>&1 | clean | sed 's/^/    /'
-  fi
-  local i h
-  for i in $(seq 1 "${CSB_START_WAIT_PROBES:-20}"); do
-    sleep 15
-    h=$(height)
-    if [ -n "$h" ]; then
-      log "RPC answering again at height $h after $((i * 15))s."
-      return 0
-    fi
-  done
-  log "still no RPC after $(( ${CSB_START_WAIT_PROBES:-20} * 15 ))s — a bootstrapping L1 can"
-  log "legitimately take longer than this; the next firing will check again rather than restart."
-  return 1
-}
-
-rpc() {
-  curl -s --max-time 10 -X POST -H 'content-type:application/json' \
-    --data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":${2:-[]}}" "$RPC"
-}
-
-# Hex quantity out of a JSON-RPC result, as decimal. Empty on failure.
-hexnum() {
-  local raw
-  raw=$(printf '%s' "$1" | grep -o '"result":"0x[0-9a-fA-F]*"' | grep -o '0x[0-9a-fA-F]*')
-  [ -n "$raw" ] && printf '%d' "$raw"
-}
-
-height() { hexnum "$(rpc eth_blockNumber)"; }
-
-# Transactions waiting in the mempool (pending + queued), or "unknown" if the
-# txpool API is not exposed on this RPC — Subnet-EVM does not enable it unless
-# "internal-txpool" is in eth-apis. Distinguishing unknown from zero matters: if
-# we collapsed them, a node without the txpool API would look permanently idle
-# and the watchdog would never restart anything.
-pending_txs() {
-  local body p q
-  body=$(rpc txpool_status)
-  p=$(printf '%s' "$body" | grep -o '"pending":"0x[0-9a-fA-F]*"' | grep -o '0x[0-9a-fA-F]*')
-  q=$(printf '%s' "$body" | grep -o '"queued":"0x[0-9a-fA-F]*"'  | grep -o '0x[0-9a-fA-F]*')
-  if [ -n "$p" ] || [ -n "$q" ]; then
-    echo $(( $(printf '%d' "${p:-0x0}") + $(printf '%d' "${q:-0x0}") ))
+  if [ -z "$body" ]; then
+    note "P-Chain did not answer at $PCHAIN — cannot check validator balances."
     return
   fi
-  pending_txs_via_block   # txpool API not exposed — fall back
+
+  MIN_BALANCE="$MIN_BALANCE" python3 - "$body" <<'PY'
+import json, os, sys
+
+min_balance = float(os.environ["MIN_BALANCE"])
+try:
+    vals = json.loads(sys.argv[1])["result"]["validators"]
+except Exception as e:
+    print(f"!! could not parse the P-Chain validator response: {e}")
+    sys.exit(2)
+
+if not vals:
+    print("!! the L1 has NO registered validators. It cannot finalise anything.")
+    sys.exit(2)
+
+bad = []
+for v in vals:
+    # nAVAX. Absent means the P-Chain did not report one, which is not zero —
+    # conflating the two is the same mistake that caused the outage this script
+    # was rewritten after.
+    raw = v.get("balance")
+    node = v.get("nodeID", "?")
+    if raw is None:
+        print(f"   {node}  balance: not reported by this node")
+        continue
+    avax = int(raw) / 1e9
+    if avax <= 0:
+        print(f"!! {node}  balance: 0 — DEACTIVATED. This validator contributes no stake.")
+        bad.append(v)
+    elif avax < min_balance:
+        print(f"!! {node}  balance: {avax:.4f} AVAX — below {min_balance} AVAX, top up soon.")
+        bad.append(v)
+    else:
+        print(f"   {node}  balance: {avax:.4f} AVAX  weight {v.get('weight','?')}")
+
+for v in bad:
+    print("   fix: avalanche validator increaseBalance --fuji --key csb-deployer \\")
+    print(f"          --validation-id {v.get('validationID','<validationID>')} --balance 1")
+
+sys.exit(2 if bad else 0)
+PY
+  [ $? -eq 0 ] || problems=$((problems + 1))
 }
 
-# Fallback when txpool_status is unavailable: count transactions in the "pending"
-# block, which the default eth-apis set does expose.
-#
-# The catch: on some builds the "pending" tag simply aliases the latest block. If
-# it did and we trusted it, a chain that had just mined a busy block would look
-# like it had a backlog, and the watchdog would restart a perfectly healthy
-# cluster. So we only trust the answer when the pending block's number is
-# actually ahead of the latest block; otherwise we report unknown and stay put.
-pending_txs_via_block() {
-  local body num pend_h latest_h count
-  body=$(rpc eth_getBlockByNumber '["pending",false]')
-  num=$(printf '%s' "$body" | grep -o '"number":"0x[0-9a-fA-F]*"' | head -1 | grep -o '0x[0-9a-fA-F]*')
-  if [ -z "$num" ]; then echo unknown; return; fi
-  pend_h=$(printf '%d' "$num")
-  latest_h=$(height)
-  if [ -z "$latest_h" ] || [ "$pend_h" -le "$latest_h" ]; then
-    echo unknown   # "pending" is aliasing latest — tells us nothing about the mempool
+# --- RPC --------------------------------------------------------------------
+# Returns one of: HEIGHT:<n> | ERROR:<message> | UNREACHABLE
+# These are three different situations and the old script had only two.
+probe_rpc() {
+  local body rc
+  body=$(curl -s --max-time 10 -X POST -H 'content-type:application/json' \
+    --data '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' "$RPC")
+  rc=$?
+  if [ $rc -ne 0 ] || [ -z "$body" ]; then
+    echo "UNREACHABLE"
     return
   fi
-  # Count tx hashes in the pending block's transactions array.
-  count=$(printf '%s' "$body" \
-    | sed 's/.*"transactions":\[//; s/\].*//' \
-    | grep -o '0x[0-9a-fA-F]\{64\}' | wc -l)
-  echo "$count"
+  # Whitespace-tolerant on purpose. A pattern that demanded '"result":"0x..'
+  # with no space read a perfectly good height as an error the first time this
+  # was tested against pretty-printed JSON. Nothing guarantees a node's
+  # formatting, and the cost of being strict here is a false alarm about a
+  # healthy chain.
+  local hex
+  hex=$(printf '%s' "$body" \
+    | grep -oE '"result"[[:space:]]*:[[:space:]]*"0x[0-9a-fA-F]+"' \
+    | grep -oE '0x[0-9a-fA-F]+')
+  if [ -n "$hex" ]; then
+    echo "HEIGHT:$(printf '%d' "$hex")"
+    return
+  fi
+  # A reply we could not read a height from. Pass the node's own words through
+  # rather than inventing a diagnosis — "chain is not done bootstrapping" names
+  # the problem far better than anything this script could infer.
+  echo "ERROR:$(printf '%s' "$body" | tr -d '\n' | cut -c1-200)"
 }
 
-# Is every node in the cluster reporting healthy? The health endpoint catches
-# problems a height probe cannot distinguish from an idle chain — notably
-# "not connected to enough stake", which is what a wedged L1 looks like.
-#
-# RETRIED, because this decides whether to stop a running cluster. A single
-# curl timeout under load used to be enough to report "unhealthy" and trigger a
-# stop/start of a node that was fine — the watchdog causing the outage it was
-# installed to catch. Three failures in a row is a signal; one is noise.
-node_unhealthy() {
-  local i body
-  for i in 1 2 3; do
-    body=$(curl -s --max-time 10 "http://127.0.0.1:${1}/ext/health")
-    printf '%s' "$body" | grep -q '"healthy":true' && return 1
-    [ "$i" -lt 3 ] && sleep 5
-  done
-  log "health endpoint did not report healthy in 3 attempts"
-  return 0
+# --- health -----------------------------------------------------------------
+check_health() {
+  local body
+  body=$(curl -s --max-time 10 "http://127.0.0.1:${HEALTH_PORT}/ext/health")
+  if [ -z "$body" ]; then
+    note "health endpoint at :${HEALTH_PORT} did not answer."
+    return
+  fi
+  CHAIN_ID="$CHAIN_ID" python3 - "$body" <<'PY'
+import json, os, sys
+try:
+    h = json.loads(sys.argv[1])
+except Exception:
+    print("!! health endpoint returned something that is not JSON")
+    sys.exit(2)
+checks = h.get("checks", {})
+failed = [(n, c.get("error")) for n, c in checks.items() if c.get("error")]
+if not failed:
+    print("   node health: all checks passing")
+    sys.exit(0)
+for name, err in failed:
+    print(f"!! health check {name[:28]}: {str(err)[:140]}")
+sys.exit(2)
+PY
+  [ $? -eq 0 ] || problems=$((problems + 1))
 }
 
-first=$(height)
-if [ -z "$first" ]; then
-  log "RPC not answering at $RPC — chain down, not merely stalled."
-  if [ ! -x "$AVALANCHE" ]; then
-    log "avalanche CLI not found at $AVALANCHE (set AVALANCHE_BIN) — cannot restart."
-    exit 1
-  fi
-  if [ "$RESTART" != "1" ]; then
-    log "CSB_WATCHDOG_RESTART=0 — alerting only."
-    exit 1
-  fi
-  # Exit 0 when the recovery WORKED. The old code exited 1 unconditionally, so
-  # a successful recovery was still recorded as a service failure — which made
-  # the journal useless for telling "it fixed itself" from "it is still broken".
-  if start_and_wait; then exit 0; fi
-  exit 1
-fi
+# ---------------------------------------------------------------------------
+log "checking CSB"
 
-frozen=0
-last=$first
-rpc_dead=0
-for _ in $(seq 1 "$STALL_CHECKS"); do
-  sleep "$PROBE_GAP"
-  now=$(height)
-  if [ -z "$now" ]; then
-    log "RPC stopped answering mid-probe (was at height $last)"
-    frozen=$STALL_CHECKS
-    rpc_dead=1
-    break
-  fi
-  if [ "$now" -gt "$last" ]; then
-    log "healthy — height $first → $now"
-    exit 0
-  fi
-  frozen=$((frozen + 1))
-  last=$now
-done
+check_validators
+check_health
 
-# Height being flat is not proof of a stall: Subnet-EVM only builds a block when
-# there is something to include, so an idle chain legitimately sits still. Decide
-# using the two signals that CAN tell idle from wedged.
-waiting=$(pending_txs)
-unhealthy=0
-if node_unhealthy "$HEALTH_PORT"; then unhealthy=1; fi
+state=$(probe_rpc)
+case "$state" in
+  HEIGHT:*)
+    log "   RPC height ${state#HEIGHT:}"
+    ;;
+  ERROR:*)
+    note "the RPC answered but returned no height. The node is UP and reporting a problem:"
+    log "      ${state#ERROR:}"
+    log "      This is not a restart. Read the message above and the validator balances."
+    ;;
+  UNREACHABLE)
+    note "no reply at all from $RPC — the node process or its API is down."
+    log "      Check: pgrep -af avalanchego ; avalanche node local status \${CSB_CLUSTER:-csb-local-node-fuji}"
+    ;;
+esac
 
-if [ "$unhealthy" -eq 0 ]; then
-  case "$waiting" in
-    unknown)
-      log "height flat at $last across $frozen probes; node healthy, but neither the txpool"
-      log "API nor a usable 'pending' block is available, so idle cannot be told from stuck."
-      log "Treating as idle — the watchdog still covers RPC-down and unhealthy-node, but NOT"
-      log "a wedged chain. Closing that gap needs a txpool API this Subnet-EVM build does"
-      log "not expose under the name tried so far; see ops/csb-apply-l1-config.sh."
-      exit 0
-      ;;
-    0)
-      log "height flat at $last across $frozen probes, node healthy, mempool empty — idle, not stuck."
-      exit 0
-      ;;
-  esac
-fi
-
-# A node that is ANSWERING is not a node to stop.
-#
-# This is the rule that cost a working chain twice. The health endpoint returning
-# nothing means it did not answer within the timeout — which is exactly what a
-# node does while it is busy, for instance serving the block-log scans a wallet
-# page fires right after a payment. The old logic read that as "wedged" and ran
-# `avalanche node local stop`, and the node's own log recorded the result
-# honestly: "shutting down node {exitCode: 0}" — a clean, deliberate shutdown of
-# a chain that was working, 19 seconds after it finished bootstrapping.
-#
-# Restarting is now reserved for the one case where it cannot make things worse:
-# the RPC is not answering at all. Being slow, or being flagged unhealthy while
-# still serving blocks, is reported and left alone. An operator can act on a
-# report; nobody can act on a chain that has been stopped for them.
-if [ "$rpc_dead" -eq 0 ]; then
-  log "height flat at $last across $frozen probes, mempool $waiting," \
-      "node $([ "$unhealthy" -eq 1 ] && echo 'reporting UNHEALTHY' || echo healthy)."
-  if [ "$unhealthy" -eq 1 ]; then
-    log "NOT restarting: the RPC is still answering, so the chain is serving. A slow or"
-    log "unhealthy-but-responsive node recovers on its own far more often than it survives"
-    log "being stopped. Investigate with: avalanche node local status $CLUSTER"
-  fi
+if [ "$problems" -eq 0 ]; then
+  log "OK"
   exit 0
 fi
 
-log "STALLED: RPC stopped answering; height was $last across $frozen probes" \
-    "(mempool: $waiting; node: $([ "$unhealthy" -eq 1 ] && echo UNHEALTHY || echo healthy))."
-if [ -x "$AVALANCHE" ]; then
-  "$AVALANCHE" node local list 2>&1 | clean | sed 's/^/    /'
-else
-  log "note: avalanche CLI not found at $AVALANCHE (set AVALANCHE_BIN) — cannot inspect or restart."
-  exit 1
-fi
-
-if [ "$RESTART" != "1" ]; then
-  log "CSB_WATCHDOG_RESTART=0 — alerting only, leaving the cluster alone."
-  exit 1
-fi
-
-log "restarting cluster $CLUSTER"
-"$AVALANCHE" node local stop "$CLUSTER"  2>&1 | clean | sed 's/^/    /'
-sleep 5
-start_and_wait || true
-
-after=$(height)
-if [ -n "$after" ] && [ "$after" -gt "$last" ]; then
-  log "recovered — height now $after"
-  exit 0
-fi
-
-log "STILL STUCK at ${after:-unreachable} after restart. A wedged CSB chain has never"
-log "recovered from a restart before; expect to redeploy with >=3 validators."
-log "See the 'Block height frozen' section of docs/deployment-status.md."
+log "$problems problem(s) reported. This watchdog does not restart anything —"
+log "every CSB outage so far was caused or prolonged by automatic restarts."
 exit 1
