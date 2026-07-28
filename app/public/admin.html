@@ -345,7 +345,19 @@ async function run(fn) {
   if (btn) { btn.disabled = true; btn.textContent = "Working…"; }
   msg.className = "banner";
   try {
-    banner(msg, "ok", await fn());
+    // Bound the wait. An unmined transaction otherwise leaves the button saying
+    // "Working…" with no end and nothing to act on; a hash and a plain
+    // explanation is something an operator can actually chase.
+    banner(msg, "ok", await Promise.race([
+      fn(),
+      new Promise((_, reject) => setTimeout(
+        () => reject(new Error(
+          "No confirmation after 90 seconds. The transaction was sent but has not been "
+          + "mined — usually the chain is not producing blocks, or the transaction is "
+          + "priced below the fee floor. Check the chain before retrying; re-clicking "
+          + "will queue another one behind it."
+        )), 90000)),
+    ]));
     refreshStatus();
   } catch (e) {
     banner(msg, "err", explainError(e));

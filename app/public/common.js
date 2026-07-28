@@ -281,18 +281,37 @@ function allInterfaces() {
 // hangs — which makes a button look "stuck". Overpaying is harmless: the node only
 // charges the real base fee. Pass the result as the last arg to a contract call.
 async function feeOverrides() {
-  const block = await getProvider().getBlock("latest");
-  const baseFee = block?.baseFeePerGas ?? 0n;
-  // Free-gas chain (minBaseFee 0): send a zero-priced tx so no tRIEL balance is
-  // needed for gas at all. Otherwise price well above the base fee so the tx
-  // can't get stuck under-priced.
-  if (baseFee === 0n) {
-    return { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n };
+  const provider = getProvider();
+  const [block, feeData] = await Promise.all([
+    provider.getBlock("latest"),
+    provider.getFeeData().catch(() => ({})),
+  ]);
+  // UNKNOWN IS NOT ZERO. This previously read `baseFeePerGas ?? 0n`, so a block
+  // that did not report a base fee produced a ZERO-priced transaction — which
+  // on a chain with a 47,619 gwei floor can never be mined. It is accepted,
+  // sits in the mempool forever, and the UI waits on it forever: a button that
+  // says "Working…" and never finishes. Free gas is a real configuration, but
+  // only when the chain actually says the base fee is zero.
+  const baseFee = block?.baseFeePerGas;
+  const suggested = feeData?.gasPrice ?? feeData?.maxFeePerGas ?? null;
+
+  if (baseFee === 0n && (suggested === null || suggested === 0n)) {
+    return { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }; // genuinely free
   }
-  return {
-    maxFeePerGas: baseFee * 3n + ethers.parseUnits("500", "gwei"),
-    maxPriorityFeePerGas: ethers.parseUnits("2", "gwei"),
-  };
+
+  // Price well above the floor: overpaying is harmless because the node only
+  // charges the real base fee, while underpaying is an invisible hang.
+  const fromBase = baseFee != null ? baseFee * 3n + ethers.parseUnits("500", "gwei") : 0n;
+  const fromSuggested = suggested != null ? suggested * 2n : 0n;
+  const maxFeePerGas = fromBase > fromSuggested ? fromBase : fromSuggested;
+
+  if (maxFeePerGas === 0n) {
+    throw new Error(
+      "Could not read a gas price from the node, so this transaction would be sent "
+      + "priced at zero and would never be mined. Check the chain is serving."
+    );
+  }
+  return { maxFeePerGas, maxPriorityFeePerGas: ethers.parseUnits("2", "gwei") };
 }
 
 function explainError(e) {
