@@ -84,6 +84,10 @@ async function main() {
   console.log(`Replacing each queued nonce with a no-op self-transfer`
     + (gasPrice ? ` at ${ethers.formatUnits(gasPrice, "gwei")} gwei.\n` : `.\n`));
 
+  // What "mined" was when replacement began. Everything below compares against
+  // this, because the node's mempool nonce and the MINED nonce are different
+  // numbers and confusing them inverts the diagnosis.
+  const minedAtStart = mined;
   let consumed = 0;
   for (let n = mined; n < pending; n++) {
     // Re-read every iteration: the chain may start moving mid-run, and sending
@@ -110,8 +114,25 @@ async function main() {
     } catch (e) {
       const msg = String(e.shortMessage ?? e.message ?? e);
       if (/nonce too low/i.test(msg)) {
-        console.log(`  nonce ${n} was consumed while sending — skipping`);
-        continue;
+        // CAREFUL. "nonce too low" means the node's MEMPOOL has moved past this
+        // nonce — which happens both when the transaction mined and when the
+        // pool is simply holding one it has not included. Those are opposite
+        // diagnoses, and only the mined nonce can tell them apart. Reporting
+        // this as "consumed" without checking said a stalled chain was healthy.
+        const nowMined = await provider.getTransactionCount(deployer.address, "latest");
+        if (nowMined > minedAtStart) {
+          console.log(`  nonce ${n} has mined — skipping`);
+          continue;
+        }
+        console.log(`  nonce ${n}: the mempool holds a transaction here, but NOTHING has mined`);
+        console.log(`  (still at ${nowMined}). The queue is not being included in blocks.`);
+        console.log("\n  This is a chain that accepts transactions and does not build blocks.");
+        console.log("  Replacing nonces cannot fix that. Restart the cluster — it clears the");
+        console.log("  mempool and restarts consensus:");
+        console.log("    avalanche node local stop csb-local-node-fuji");
+        console.log("    avalanche node local start csb-local-node-fuji");
+        console.log("    bash ops/csb-wait-ready.sh && bash ops/csb-apply-l1-config.sh");
+        return;
       }
       // Match what nodes ACTUALLY say. Hardhat answers "Known transaction:",
       // geth-family "already known" or "replacement transaction underpriced" —
