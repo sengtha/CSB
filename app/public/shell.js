@@ -89,11 +89,19 @@
       // header still says where you are once you are one level down.
       const active = entry.items.some(([href]) => isCurrent(href));
 
-      const btn = document.createElement("button");
-      btn.type = "button";
+      // A <span>, not a <button>. A button's content box does not centre text
+      // the way an anchor's does — measured, the group labels sat exactly 6px
+      // below Home and Admin no matter how the flex alignment was expressed,
+      // which is the ragged row people notice. Making the trigger the same kind
+      // of element as the links makes them lay out identically by construction.
+      // role/tabindex/keydown restore everything the button gave us.
+      const btn = document.createElement("span");
       btn.className = "nav-group-btn" + (active ? " active" : "");
+      btn.setAttribute("role", "button");
+      btn.setAttribute("tabindex", "0");
       btn.setAttribute("aria-expanded", "false");
-      btn.innerHTML = `${entry.label}<span class="caret" aria-hidden="true">▾</span>`;
+      btn.innerHTML = `<span class="lbl"></span><span class="caret" aria-hidden="true">▾</span>`;
+      btn.querySelector(".lbl").textContent = entry.label;
 
       const panel = document.createElement("div");
       panel.className = "nav-menu";
@@ -110,6 +118,9 @@
         panel.appendChild(a);
       }
 
+      btn.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); btn.click(); }
+      });
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const open = group.classList.contains("open");

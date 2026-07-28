@@ -117,6 +117,19 @@ async function main() {
   // Record the destination so the wallet page offers it.
   d.pilot = d.pilot ?? {};
   d.pilot.destinationChain = { label: "Avalanche C-Chain (Fuji)", id: destKey };
+
+  // Record the ICTT pair itself. Without this nothing in the browser can find
+  // the bridge: the return path (Fuji -> CSB) has to call send() on the REMOTE
+  // contract, and the address only ever existed in the deploy output and in
+  // whichever terminal was open at the time.
+  d.ictt = {
+    tokenHome,                 // ERC20TokenHome, on CSB — holds the collateral
+    tokenRemote,               // ERC20TokenRemote, on the destination chain
+    destBlockchainId: destId,  // destination chain, 32-byte hex
+    destLabel,
+    destGas: Number(destGas),
+    destKey,                   // the gateway's logical destination id
+  };
   fs.writeFileSync(file, JSON.stringify(d, null, 2));
 
   const policy = await gateway.policies(khr.target);

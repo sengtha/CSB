@@ -82,6 +82,35 @@
 
     <div id="msg" class="banner"></div>
 
+    <div class="card" id="back-card">
+      <h2>Bring tokens back (Fuji → CSB)</h2>
+      <p class="small" style="line-height:1.75">
+        The token on Fuji is not KHRt — it is a <b>bridged</b> token minted when
+        your KHRt was locked here. Sending it back burns it on Fuji and releases
+        the original KHRt on CSB. This runs on the Fuji C-Chain, so your wallet
+        will be asked to switch networks and then switch back.
+      </p>
+      <div id="back-body">
+        <div class="grid2">
+          <div>
+            <label>Recipient on CSB</label>
+            <input id="bk-to" placeholder="0x…" />
+            <label>Amount</label>
+            <input id="bk-amount" placeholder="e.g. 25.00" />
+            <button id="bk-send">Switch to Fuji &amp; send back</button>
+          </div>
+          <div id="bk-info" class="kv"><span class="small">Checking the bridge…</span></div>
+        </div>
+        <p class="small" style="margin-top:10px;line-height:1.7">
+          <b>The recipient must be KYC-active on CSB.</b> KHRt enforces compliance
+          on every transfer, and releasing the collateral is a transfer — so an
+          unverified recipient means the Fuji burn succeeds and the CSB delivery
+          reverts. Nothing is lost, but the failure lands on the other chain from
+          the one you sent on. This checks before burning.
+        </p>
+      </div>
+    </div>
+
     <div class="card">
       <h2>Recent crossings</h2>
       <table id="egress-log"><tr><th>Block</th><th>From</th><th>Amount</th><th>Recipient</th></tr></table>
@@ -215,6 +244,53 @@ async function run(fn) {
   }
 }
 
+// --- return path: Fuji -> CSB ----------------------------------------------
+const FUJI = {
+  chainIdHex: "0xa869",                                   // 43113
+  rpc: "https://api.avax-test.network/ext/bc/C/rpc",
+  name: "Avalanche Fuji C-Chain",
+  explorer: "https://testnet.snowtrace.io",
+};
+const REMOTE_ABI = [
+  "function balanceOf(address) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+  "function send((bytes32 destinationBlockchainID, address destinationTokenTransferrerAddress, address recipient, address primaryFeeTokenAddress, uint256 primaryFee, uint256 secondaryFee, uint256 requiredGasLimit, address multiHopFallback) input, uint256 amount)",
+];
+
+// CSB's own blockchain ID, read from the Warp precompile rather than hardcoded —
+// it changes whenever the chain is rebuilt, and a stale one would send the
+// tokens to a chain that does not exist.
+async function csbBlockchainId() {
+  const r = await getProvider().call({
+    to: "0x0200000000000000000000000000000000000005", data: "0x4213cf78",
+  });
+  return r;
+}
+
+async function refreshBack(cfg) {
+  const box = document.getElementById("bk-info");
+  const ictt = cfg.ictt;
+  if (!ictt?.tokenRemote) {
+    document.getElementById("back-body").innerHTML =
+      '<p class="small">No bridge is wired on this chain yet. Run '
+      + '<span class="mono">scripts/wire-ictt.js</span>, which records the pair so this page can find it.</p>';
+    return;
+  }
+  const fuji = new ethers.JsonRpcProvider(FUJI.rpc);
+  const remote = new ethers.Contract(ictt.tokenRemote, REMOTE_ABI, fuji);
+  const addr = await currentAddress();
+  const [dec, bal] = await Promise.all([
+    remote.decimals().then(Number).catch(() => 2),
+    addr ? remote.balanceOf(addr).catch(() => 0n) : Promise.resolve(0n),
+  ]);
+  box.innerHTML = `
+    <b>Bridged token</b> <span class="mono">${short(ictt.tokenRemote)}</span>
+      <a href="${FUJI.explorer}/token/${ictt.tokenRemote}" target="_blank" rel="noopener">view</a><br/>
+    <b>On</b> ${FUJI.name}<br/>
+    <b>Your balance</b> ${addr ? ethers.formatUnits(bal, dec) : "—"} <span class="small">(decimals ${dec})</span><br/>
+    <b>Collateral held on CSB</b> <span class="mono">${short(ictt.tokenHome)}</span>`;
+}
+
 (async () => {
   await ensureSession();
   const cfg = await loadConfig();
@@ -232,6 +308,74 @@ async function run(fn) {
   document.getElementById("me-check").onclick = () => run(async () => {
     await refreshMe(true);
     return "Checked. Anything marked red below has to be fixed before you can bridge.";
+  });
+
+  await refreshBack(cfg);
+
+  document.getElementById("bk-send").onclick = () => run(async () => {
+    const ictt = cfg.ictt;
+    if (!ictt?.tokenRemote) throw new Error("No bridge is wired on this chain.");
+    if (!window.ethereum) throw new Error("No wallet detected in this browser.");
+
+    const to = document.getElementById("bk-to").value.trim();
+    if (!ethers.isAddress(to)) throw new Error("Enter a valid CSB recipient address.");
+
+    // Check on CSB BEFORE burning on Fuji. Getting this wrong means a successful
+    // burn and a reverted delivery, on two different chains.
+    const s = await kycSummary(to);
+    if (s.status !== "active") throw new Error(`${short(to)} is not KYC-active on CSB — it cannot receive KHRt.`);
+    if (s.frozen) throw new Error(`${short(to)} is frozen on CSB.`);
+
+    const homeId = await csbBlockchainId();
+
+    // Switch the wallet to Fuji, adding the network if it does not know it.
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain", params: [{ chainId: FUJI.chainIdHex }],
+      });
+    } catch (e) {
+      if (e?.code === 4902) {
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: FUJI.chainIdHex, chainName: FUJI.name,
+            rpcUrls: [FUJI.rpc], blockExplorerUrls: [FUJI.explorer],
+            nativeCurrency: { name: "AVAX", symbol: "AVAX", decimals: 18 },
+          }],
+        });
+      } else throw e;
+    }
+
+    try {
+      const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
+      const remote = new ethers.Contract(ictt.tokenRemote, REMOTE_ABI, signer);
+      const dec = Number(await remote.decimals());
+      const amount = ethers.parseUnits(document.getElementById("bk-amount").value.trim() || "0", dec);
+      if (amount === 0n) throw new Error("Enter an amount.");
+      const bal = await remote.balanceOf(await signer.getAddress());
+      if (bal < amount) throw new Error(`You hold ${ethers.formatUnits(bal, dec)} of the bridged token.`);
+
+      const tx = await remote.send({
+        destinationBlockchainID: homeId,
+        destinationTokenTransferrerAddress: ictt.tokenHome,
+        recipient: to,
+        primaryFeeTokenAddress: ethers.ZeroAddress,
+        primaryFee: 0n, secondaryFee: 0n,
+        requiredGasLimit: BigInt(ictt.destGas || 250000),
+        multiHopFallback: ethers.ZeroAddress,
+      }, amount);
+      await tx.wait();
+      return `Burned ${ethers.formatUnits(amount, dec)} on Fuji and sent it home. `
+        + `The KHRt appears at ${short(to)} once a relayer delivers the message — usually under a minute. `
+        + `Tx ${shortHash(tx.hash)}`;
+    } finally {
+      // Always come back, even if the send failed, or the user is left on the
+      // wrong network with no obvious way to tell.
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: "0x" + Number(cfg.chainId || 8555).toString(16) }],
+      }).catch(() => {});
+    }
   });
 
   document.getElementById("eg-send").onclick = () => run(async () => {
