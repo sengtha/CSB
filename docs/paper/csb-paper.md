@@ -4,12 +4,11 @@
 Assistant Professor, National University of Management, Phnom Penh, Cambodia
 Correspondence: sengtha@num.edu.kh
 
-> **Draft status.** This is a revision of the initial draft, correcting claims
-> that did not match the implementation and adding the operational findings from
-> the first working deployment. Items still outstanding before submission are
-> listed in `docs/paper/TODO.md`. Verify the affiliation line: the email domain
-> `num.edu.kh` is the National University of Management — correct it if the
-> intended affiliation differs.
+> **Draft status.** Not ready to submit. The reference list below is a stub, and
+> a manuscript citing author-year keys with no bibliography is rejected before
+> review — that is the one blocking gap. There are also no figures. Verify the
+> affiliation line before sending: the email domain `num.edu.kh` is the National
+> University of Management.
 
 **Article type:** Original Research
 **Keywords:** sovereign blockchain, regulated DeFi, hybrid permissioned ledger, digital currency design, emerging markets, Cambodia, Avalanche L1, identity-based compliance, egress gateway
@@ -153,7 +152,14 @@ concludes.
 
 ## 2 Related Work
 
-*(To be expanded with full citations — see `docs/paper/TODO.md`.)*
+*Stub. Every citation below is an author-year key with no entry in a reference
+list, which no editor will accept. Works to draw on include the BIS and IMF CBDC
+literature, the National Bank of Cambodia's own Bakong system (essential — it is
+the strongest evidence Cambodia can run national ledger infrastructure, and the
+clearest illustration of what a closed design forgoes), Hyperledger Fabric and
+Corda, the DeFi regulation literature, ERC-3643 as the closest prior art, and
+Avalanche's ACP-77 specification for §6.2. Bibliographic details must be checked
+against the publishers rather than taken from memory.*
 
 ### 2.1 Central Bank Digital Currencies
 
