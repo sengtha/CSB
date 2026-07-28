@@ -485,7 +485,7 @@ pooled KHRt.
 On the live chain the recipient's position is starker than the local test could
 show. The same address, in the same block:
 
-| | |
+| Property of the holding address | Value |
 |---|---|
 | KYC attestation | **none** |
 | `txAllowList` role | **`none` — cannot submit any transaction** |
@@ -767,3 +767,47 @@ This research received no external funding.
 
 Source code, tests, documentation, and deployment scripts are available at
 https://github.com/sengtha/CSB under the MIT licence.
+
+## Appendix A — Deployed artifacts
+
+Everything below is on CSB (chain ID 8555) or the Avalanche Fuji C-Chain and can
+be inspected independently. Addresses are specific to this deployment and change
+if the chain is rebuilt.
+
+**The DeFi experiment (§5.2, §5.3), on CSB:**
+
+| What | Address |
+|---|---|
+| `UniswapV2Factory`, unmodified upstream bytecode | `0x00472802F4417c6cDAC8b689Be9166965Ea83A00` |
+| KHRt / test-token pool | `0xeA263bb4334d256B92081685103AeB0cB2694A14` |
+| Test ERC-20 (compliance-free counterparty asset) | `0x2EC38A65D8C6f4fA4CBedA36165E7Dd6589267df` |
+| The unverified LP-token holder | `0x05aC5e237e28B310f27BF5072dAc8eFb4643f45b` |
+
+The last address is the finding of §5.2 in one line: no KYC attestation, an
+allow-list role of `none`, a KHRt balance of zero, and a non-zero claim on the
+pool's KHRt.
+
+**The bridge (§5.1):**
+
+| What | Chain | Address |
+|---|---|---|
+| `ERC20TokenHome` | CSB | `0x0f2E03fFcb14874413a2dd0F132a248eb3b9E6E1` |
+| `ERC20TokenRemote` | Fuji C-Chain | `0xB0a67c27B31ed58a28dBce75aD8E441216257594` |
+| ICM registry | CSB | `0x22C75bE6Cbe94050c16D5944a08144a81a54ED35` |
+| ICM messenger | both | `0x253b2784c75e510dD0fF1da844684a1aC0aa5fcf` |
+| ICM deterministic deployer (§6.1) | CSB | `0x618FEdD9A45a8C456812ecAAE70C671c6249DfaC` |
+
+**Chain identifiers**, CB58 and 32-byte hex:
+
+| Chain | CB58 | hex |
+|---|---|---|
+| CSB | `299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW` | `0x9633e7227257f4de7dcd8e595bfafdd8cf6f88918926dd1d4e2ddfff46978a61` |
+| Fuji C-Chain | `yH8D7ThNJkxmtkuv2jgBa4P1Rn3Qpr4pPr7QYNfcdoS6k6HWp` | `0x7fc93d85c6d62c5b2ac0b519c87010ea5294012d1e407030d6acd0021cac10d5` |
+
+**The L1 validator whose fee-balance exhaustion is described in §6.2:**
+`NodeID-BoRS383b4Z9ZdsJSVUcnrXNCXh5Qj93ux`, validation ID
+`2rrjPnaiB3PnatWdkZH37yJqFHBePUupuC5cFPsLXXZja6EBrh`.
+
+**Reproducing the experiments.** `test/defi-unmodified.test.js` runs §5.2 against
+a local instance; `scripts/defi-experiment.js` runs it against a live chain and
+prints the cost table of §5.3.

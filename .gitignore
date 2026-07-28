@@ -16,3 +16,6 @@ app/kyc-requests.json
 
 # operator-local overrides (may contain secrets)
 ops/*.local.sh
+
+# Generated paper builds (PDF/markdown deliverables, rebuilt on demand)
+paper-out/
