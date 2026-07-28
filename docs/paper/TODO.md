@@ -46,20 +46,32 @@ citing** — they are listed from memory and the details may be wrong.
 fraud. Needs World Bank / IMF / NBC sources with real figures; §1 currently
 asserts these without support and a reviewer will ask.
 
-## 2. The missing experiment
+## 2. The experiment — DONE, and it is now the paper's spine
 
-P2 claims unmodified DeFi contracts run while every human stays KYC'd. **Nothing
-in the paper tests this.** It is the most novel claim and the most checkable.
+`test/defi-unmodified.test.js` deploys unmodified Uniswap V2 (published upstream
+artifacts, unrecompiled) against KHRt. Written up as §5.2. Four results:
 
-Deploy an unmodified Uniswap V2 (or similar) to CSB and report:
-- does it deploy without source changes? which precompile grants were needed?
-- does swapping work between two KYC'd, allowlisted accounts?
-- what happens when a non-allowlisted address attempts to interact?
-- does the pool contract need `setSystemContract` to hold KHRt, and what does
-  that imply about the KYC perimeter's edges?
+1. It runs. No source change needed.
+2. The pool must be marked a system contract, and cannot be marked before
+   `createPair()` — a council action inside what a front-end shows as one user
+   step.
+3. Compliance holds at the pool edge: swapping out to an unverified address
+   reverts.
+4. **LP tokens are an unrestricted derivative of a restricted asset.** Pool
+   shares transfer freely to addresses with no attestation. Redemption stays
+   blocked, so the asset never leaves — the *exposure* does.
 
-Whatever the outcome — including partial failure — this is the paper's strongest
-result. A negative result here is more valuable than the current absence.
+Result 4 is the paper's contribution. It reframes the whole thing: the design
+secures custody, not exposure, and no base-layer mechanism can close that gap.
+
+**Still to do here:**
+- Run the same experiment against the **live chain**, not just the local suite,
+  so the txAllowList precompile is genuinely in the loop rather than mocked.
+  Report which allowlist grants the factory and pools actually needed.
+- Extend to a lending protocol (Aave V2 or Compound) — receipt tokens should
+  leak identically and more visibly, since they accrue yield.
+- Try the mitigations and report what they cost: permissioned factory, and a
+  compliance-aware fork of `UniswapV2ERC20`.
 
 ## 3. Figures
 

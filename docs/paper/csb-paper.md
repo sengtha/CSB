@@ -48,25 +48,33 @@ egress gateway enforcing token allowlists, identity-tier requirements, daily
 volume caps, and a circuit breaker.
 
 We instantiate the design as a permissioned Avalanche Layer-1 prototype, the
-Cambodia Sovereign Blockchain (CSB): 29 Solidity contracts covered by 192
+Cambodia Sovereign Blockchain (CSB): 29 Solidity contracts covered by 197
 automated tests, a working Avalanche Interchain Token Transfer (ICTT) bridge to
 the Fuji C-Chain, and citizen and institutional interfaces.
 
-Beyond the architecture, we report two operational findings from deploying it
-that we believe are novel and generalizable. First, a sovereign chain's fee
-policy can be *structurally incompatible* with standard interoperability
-tooling: Avalanche's Interchain Messaging deploys via a transaction pre-signed at
-a fixed 2500 gwei to obtain a deterministic contract address, so any chain whose
-minimum base fee exceeds that value cannot install it without temporarily
-abandoning its own fee policy. Second, an Avalanche L1 under ACP-77 halts
-*silently* when a validator's parent-chain fee balance is exhausted — accepting
-transactions and finalizing none — a liveness failure mode with no local
-diagnostic signal, which we observed for approximately fourteen hours.
+We then test the design's central claim by deploying **unmodified** Uniswap V2 —
+the published upstream artifacts, unrecompiled — against the compliance-gated
+stablecoin. It runs. But the perimeter leaks in a way the architecture did not
+anticipate: liquidity-provider tokens are ordinary ERC-20s with no compliance
+hooks, so a *transferable claim on pooled regulated assets* circulates freely to
+addresses holding no identity attestation. Redemption remains blocked, so no
+regulated asset escapes; what escapes is the economic exposure. We argue this
+generalizes to any composable protocol that wraps a gated asset, and that
+base-layer transaction gating is structurally unable to prevent it.
 
-We argue that this hybrid pattern offers a more realistic path to regulated DeFi
-than either fully permissionless public chains or closed CBDC silos, and that the
-operational failure modes of contained external dependencies deserve more
-attention than the literature currently gives them.
+We further report two operational findings. A sovereign chain's fee policy can be
+*structurally incompatible* with standard interoperability tooling: Avalanche's
+Interchain Messaging deploys via a transaction pre-signed at a fixed 2500 gwei to
+obtain a deterministic contract address, so any chain whose minimum base fee
+exceeds that value cannot install it without temporarily abandoning its own fee
+policy. And an Avalanche L1 under ACP-77 halts *silently* when a validator's
+parent-chain fee balance is exhausted — accepting transactions and finalizing
+none — a liveness failure mode with no local diagnostic signal, observed here for
+approximately fourteen hours.
+
+We argue this hybrid pattern offers a more realistic path to regulated DeFi than
+either fully permissionless chains or closed CBDC silos, while showing that
+"compliance at the base layer" secures the asset without securing exposure to it.
 
 ---
 
@@ -105,11 +113,29 @@ Blockchain (CSB). Cambodia presents a useful design case: a heavily dollarized
 economy, high mobile penetration, a young population, significant MSME activity,
 and persistent digital-fraud exposure.
 
-**Contributions.** (i) An architecture for base-layer compliance that leaves the
-application layer unmodified, with a single governed egress boundary. (ii) A
-working implementation, publicly available, with a bridge to a public chain.
-(iii) Two operational findings about permissioned-chain and parent-chain
-interaction that we have not found documented elsewhere, reported in §6.
+**Contributions.**
+
+(i) An architecture for base-layer compliance that leaves the application layer
+unmodified, with a single governed egress boundary, implemented and publicly
+available.
+
+(ii) **An empirical test of that architecture's central claim, with a negative
+result.** Deploying unmodified Uniswap V2 against the gated stablecoin shows the
+protocol runs without source changes, but that pool shares form an unrestricted
+derivative of a restricted asset. We characterize the leak precisely: the asset
+never leaves the perimeter, the *exposure* does, and no base-layer mechanism can
+close it because the derivative is a token that was never told the perimeter
+exists (§5.2).
+
+(iii) Two operational findings about sovereign-chain and parent-chain interaction
+that we have not found documented elsewhere: a fee policy that forecloses
+standard interoperability tooling, and a silent liveness failure driven by
+validator fee-balance exhaustion (§6).
+
+The second contribution is, we think, the most useful. Proposals for compliant
+chains routinely assert that enforcing identity below the application layer lets
+regulated assets meet open DeFi safely. That assertion is testable, and it is
+only partly true.
 
 The remainder is organized as follows. §2 reviews related work. §3 states the
 design principles. §4 presents the architecture. §5 describes the implementation.
@@ -374,9 +400,11 @@ of gas.
 
 ---
 
-## 5 Implementation
+## 5 Implementation and Experiment
 
-29 Solidity contracts, covered by 192 automated tests exercising the KYC
+### 5.1 Implementation
+
+29 Solidity contracts, covered by 197 automated tests exercising the KYC
 lifecycle, separation-of-powers invariants, compliance-gated transfers and
 confiscation, egress policy (allowlist, tiers, caps, circuit breaker), the ICTT
 bridge adapter, and the Grove and land-title flows.
@@ -397,9 +425,81 @@ Source code, tests, and documentation are available under MIT licence at
 https://github.com/sengtha/CSB.
 
 **What has not been done.** Formal verification, independent security audit,
-performance measurement under load, and any real institutional pilot. No
-unmodified third-party DeFi protocol has yet been deployed to the chain — the
-experiment that would directly substantiate P2 (see `TODO.md`).
+performance measurement under load, and any real institutional pilot.
+
+### 5.2 Experiment: an unmodified AMM against a compliance-gated asset
+
+P2 claims that enforcing identity below the contract layer lets standard DeFi
+protocols deploy unmodified while every human participant stays known. We tested
+it directly. Method and results are reproducible as
+`test/defi-unmodified.test.js`.
+
+**Method.** We deploy Uniswap V2 from the **published upstream artifacts**
+(`@uniswap/v2-core@1.0.1`, `@uniswap/v2-periphery@1.1.0-beta.0`) with no
+recompilation and no source modification. The pair init-code hash of the
+published core equals the value hardcoded in the published router
+(`0x96e8ac42…845f`), confirming the two halves are the genuine upstream pair
+rather than a locally rebuilt approximation. We pair KHRt against a plain
+compliance-free ERC-20, isolating KHRt's rules as the only variable, and drive
+the pool through creation, liquidity provision, swaps, and redemption with both
+KYC-verified and unverified counterparties.
+
+**Result 1 — it runs.** The factory, pair, and router deploy unchanged. No source
+modification was required at any point. To this extent P2 holds.
+
+**Result 2 — the pool must be whitelisted, and cannot be whitelisted in
+advance.** `createPair()` succeeds because it moves no tokens and therefore
+triggers no compliance check. The *first transfer into the pool* reverts with
+`NotKycActive`: the pool holds no attestation and cannot hold KHRt. The council
+must mark the pool address a system contract, which is only possible after
+creation, since the address is determined by CREATE2 at `createPair()` time.
+
+This is a governance step in the middle of what a DeFi front-end presents as a
+single user action. Between pool creation and council approval the pool exists
+and is unusable, and an ordinary interface would report an unexplained failure.
+Any real deployment needs either a permissioned factory or an automated approval
+path — and an automated path is a standing delegation of a council power, which
+the separation-of-powers design (P3) exists to avoid.
+
+**Result 3 — compliance holds at the pool edge.** A swap directing KHRt to an
+address without an active attestation reverts. The AMM knows nothing about KYC;
+KHRt's own transfer hook stops it. Regulated value cannot be swapped out of the
+perimeter.
+
+**Result 4 — but LP tokens are an unrestricted derivative of a restricted
+asset.** `UniswapV2ERC20`, the pool share, is a plain ERC-20 with no compliance
+hooks. A liquidity provider can transfer pool shares to an address that holds no
+identity attestation and could not receive one riel of KHRt directly. That
+transfer succeeds. The recipient then holds a transferable, divisible claim on
+pooled KHRt.
+
+Redemption is still blocked — burning to an unverified address reverts, because
+that is a KHRt transfer — so no regulated asset leaves the perimeter. What leaves
+is *economic exposure to it*: the holder bears the price risk, can sell the claim
+onward, and can realize value through any counterparty willing to buy it, without
+ever appearing in the identity registry.
+
+**Why base-layer gating cannot fix this.** `txAllowList` governs who may submit a
+transaction, not who may hold a claim. Even if every address touching the pool
+share is allowlisted, allowlisting is a far weaker condition than an active,
+tiered, unfrozen KYC attestation — and the pool share is indifferent to tier and
+to freezes, because it is a contract that was never told the identity registry
+exists. The perimeter is enforced by the *asset*, and a composable protocol's
+output is a new asset that inherits none of it.
+
+We expect this to generalize to any protocol that issues a claim against a gated
+asset — lending receipts, vault shares, wrapped positions, derivatives — and to
+be sharper, not milder, in protocols with more expressive outputs. The mitigation
+space is uncomfortable: permissioned factories (which forfeit composability, the
+property the design was purchased for), compliance-aware forks (which forfeit
+"unmodified", the property P2 asserts), or accepting that the perimeter governs
+assets rather than exposure and regulating the derivative layer separately.
+
+**Interpretation.** P2 is half right, and the half that fails is the half that
+matters for regulators. "Standard DeFi runs unmodified" is true. "Every human
+participant remains known" is true of anyone touching the *asset* and false of
+anyone touching a *claim on* the asset. We think proposals for compliant chains
+should state which of the two they mean.
 
 ---
 
@@ -518,13 +618,38 @@ two-tier local-currency money, single governed egress, and coded separation of
 powers applies to other emerging economies facing the same tension between
 inclusion, innovation, and regulatory control.
 
-### 7.5 Limitations
+### 7.5 What the perimeter actually secures
+
+§5.2 forces a narrower statement of the design's guarantee than P2 implies. The
+architecture secures **custody of the asset**: KHRt cannot rest in an address
+without an active attestation, cannot leave except through the governed gateway,
+and can be frozen or confiscated with an order reference. It does not secure
+**exposure to the asset**: any composable protocol can mint a claim that carries
+the economics and none of the rules.
+
+This is not a bug in the implementation and we could not find a base-layer fix.
+It follows from combining two properties the design deliberately wants — assets
+that enforce their own rules, and a contract layer open enough to run unmodified
+protocols. A chain that closes the leak by permissioning deployment has given up
+the openness that distinguishes it from a CBDC; a chain that closes it by
+requiring compliance-aware forks has given up "unmodified".
+
+The honest framing for a regulator is therefore: this design makes the regulated
+instrument controllable and auditable, and it makes derivative exposure *visible*
+— every pool, every share, every transfer is on a ledger the state can read — but
+it does not make derivative exposure *permissioned*. Visibility without control
+may be the right trade; it is not the trade the architecture originally claimed.
+
+### 7.6 Limitations
 
 Non-citizen access tiers are an unresolved policy question. Post-quantum
 migration requires the smart accounts that P4 describes and the prototype does
 not implement. Native tRIEL has no recovery path. Ingress is ungated. The system
 has not been formally verified or audited, has no performance data under load,
-and has never carried a real transaction. Institutional adoption depends on legal
+and has never carried a real transaction. The AMM experiment used a single
+protocol on a local instance of the contract suite; testing lending, vaults, and
+derivative protocols against the same perimeter is future work, and we expect the
+leak to widen rather than close. Institutional adoption depends on legal
 instruments, operational capacity, and political will entirely outside the
 technical design.
 
@@ -535,14 +660,26 @@ technical design.
 Regulated DeFi at national scale is more likely to emerge from hybrid
 architectures that keep the ledger open and composable inside a jurisdiction
 while enforcing identity and monetary boundaries at the base layer and routing
-external connectivity through a single governed policy point.
+external connectivity through a single governed policy point. The CSB prototype
+demonstrates one realization of this idea, and testing it produced a result we
+did not expect to have to report.
 
-The CSB prototype demonstrates one realization of this idea and, in the process,
-two failure modes that the architecture literature does not discuss: a fee policy
-that forecloses standard interoperability tooling, and a parent-chain fee balance
-whose exhaustion halts the chain invisibly. We suggest that papers proposing
+Enforcing compliance beneath the contract layer does let unmodified DeFi run.
+It does not keep every participant known. An unmodified automated market maker
+turns a compliance-gated asset into an unrestricted claim on that asset, and no
+base-layer mechanism closes the gap, because the claim is a contract that was
+never told the perimeter exists. The perimeter governs custody; composability
+governs exposure. Designs in this family should say which one they are promising.
+
+We also report two operational failure modes the architecture literature does not
+discuss: a sovereign fee policy that forecloses standard interoperability
+tooling, and a parent-chain fee balance whose exhaustion halts the chain
+invisibly while every local signal reads healthy. We suggest that proposals for
 sovereign L1s treat the operational economics of their external dependencies as a
 first-class part of the design rather than a deployment detail.
+
+None of this argues against the approach. It argues for describing it accurately,
+which is the only basis on which a regulator could reasonably adopt it.
 
 ---
 
