@@ -39,6 +39,7 @@
       label: "DeFi",
       items: [
         ["defi.html", "Liquidity pool", "Unmodified Uniswap V2 on CSB"],
+        ["lend.html", "Lending", "Unmodified Aave V3 — supply, borrow, repay"],
         ["wallet.html#swap", "Swap KHRt ⇄ tRIEL", "The governed converter"],
       ],
     },

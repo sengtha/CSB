@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { loadFixture } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 const { deploySuite, ID_ALICE, ID_BOB } = require("./fixtures");
-const { deployAaveMarket } = require("./helpers/aave");
+const { deployAaveMarket } = require("../scripts/lib/aave");
 
 /**
  * A second unmodified protocol, this time a lending market.

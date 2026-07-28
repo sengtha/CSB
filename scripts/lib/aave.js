@@ -30,6 +30,7 @@ const path = require("path");
  * the safety of the resulting market.
  */
 const B = path.join(__dirname, "..", "..", "node_modules", "@aave", "core-v3", "artifacts", "contracts");
+// (scripts/lib -> repo root is two levels up, same as the old test/helpers path.)
 
 const A = {
   SupplyLogic: "/protocol/libraries/logic/SupplyLogic.sol/SupplyLogic.json",
