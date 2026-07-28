@@ -89,14 +89,14 @@ Wizard answers, in the order the prompts appear — `<ADMIN>` is your deployer's
 | Token symbol | `tRIEL` |
 | Initial token allocation | **Define a custom allocation** → `<ADMIN>` → e.g. `1000000` |
 | Allow minting new native tokens? | **Yes** (Native Minter ON) → allow list: Add → **Admin** → `<ADMIN>` → Confirm |
-| Fee configuration | **Low block size / Low throughput** (proven default; go zero-fee later via feeManager) |
+| Fee configuration | **Low block size / Low throughput** (proven default; set the fee floor later via feeManager) |
 | Dynamic fees? | **No, constant gas prices** (anti-spam lives in the identity layer) |
 | Fees adjustable without upgrade? | **Yes** (Fee Manager ON) → Admin → `<ADMIN>` → Confirm |
 | Anyone can issue txs & deploy contracts? | **No** |
 | Anyone can issue transactions? | **No** (Transaction Allow List ON) → Admin → `<ADMIN>` → Confirm |
 | Anyone can deploy contracts? | **No** (Deployer Allow List ON) → Admin → `<ADMIN>` → Confirm |
 
-This expresses all four CSB precompiles inside the CLI's known-good genesis (pre-deployed Validator Manager, correct warp/timestamps). Fees start non-zero: after launch, the feeManager admin sets `minBaseFee` to 0 for the free-gas model — deliberately a runtime change, not a genesis experiment. `chain/genesis.example.json` remains in the repo as a **reference for what the resulting config should contain**, not as a deploy input.
+This expresses all four CSB precompiles inside the CLI's known-good genesis (pre-deployed Validator Manager, correct warp/timestamps). Fees start non-zero, and stay non-zero: after launch the feeManager admin sets `minBaseFee` to **47,619 gwei**, which prices an ordinary payment at about 1 riel (`scripts/set-gas-price.js`). Deliberately a runtime change rather than a genesis experiment. Earlier drafts of this document said to set it to 0 for free gas; that was the original design and was replaced by the 1-riel policy, with the proceeds routed to a public-good fund. `chain/genesis.example.json` remains in the repo as a **reference for what the resulting config should contain**, not as a deploy input.
 
 Sanity-check before spending AVAX:
 

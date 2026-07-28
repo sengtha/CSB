@@ -19,7 +19,7 @@ Installs Node 22, avalanche-cli, project dependencies, and configures ufw (SSH +
 bash infra/deploy-l1.sh
 ```
 
-Creates the `csb` blockchain from `chain/genesis.example.json` (zero fees, txAllowList/deployer-allowlist/feeManager/nativeMinter precompiles) and deploys a multi-node local Avalanche network on the VM. The CLI prints the RPC URL and the funded devnet key for the genesis admin address.
+Creates the `csb` blockchain from `chain/genesis.example.json` (txAllowList/deployer-allowlist/feeManager/nativeMinter precompiles) and deploys a multi-node local Avalanche network on the VM. The CLI prints the RPC URL and the funded devnet key for the genesis admin address.
 
 Two genesis notes before creating:
 
@@ -72,7 +72,7 @@ npx hardhat run scripts/seed-accounts.js --network localhost
 EXPLORER_PASSCODE=csb-demo node app/server.js         # defaults to :8545 upstream
 ```
 
-Same UIs, same flows; only the chain-level allowlist/zero-fee behavior needs the real L1.
+Same UIs, same flows; only the chain-level allowlist and fee behaviour needs the real L1.
 
 ## Security posture (pilot vs production)
 

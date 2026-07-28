@@ -2,7 +2,8 @@
 
 > ⚠️ **Personal experiment — read [DISCLAIMER.md](DISCLAIMER.md) first.** This is an independent, personal proposal and working prototype. It is **not** affiliated with, endorsed by, or developed for any government, ministry, central bank, or institution — all institutional roles in this repository are hypothetical placeholders — and nothing here promises or predicts adoption. All tokens are valueless test artifacts.
 
-An exploration of a **sovereign hybrid blockchain** concept — *public within a country, private to the world* — using Cambodia as the design case study. Built as a permissioned Avalanche L1 with identity-authority-issued on-chain KYC, a tokenized-riel test asset (KHRt) with a pluggable issuer slot, free gas, and a single governed **egress gateway** through which only permitted tokens route to global public blockchains.
+An exploration of a **sovereign hybrid blockchain** concept — *public within a country, private to the world* — using Cambodia as the design case study. Built as a permissioned Avalanche L1 with identity-authority-issued on-chain KYC, a tokenized-riel test asset (KHRt) with a pluggable issuer slot, gas priced at about 1 riel per
+transaction and routed to a public-good fund, and a single governed **egress gateway** through which only permitted tokens route to global public blockchains.
 
 Full design rationale: [`docs/architecture.md`](docs/architecture.md). License: [MIT](LICENSE).
 
@@ -13,7 +14,7 @@ Full design rationale: [`docs/architecture.md`](docs/architecture.md). License: 
 ## Repository layout
 
 ```
-chain/genesis.example.json     Subnet-EVM genesis: zero fees, txAllowList,
+chain/genesis.example.json     Subnet-EVM genesis: txAllowList,
                                deployer allowlist, feeManager, nativeMinter
 contracts/
   identity/IdentityRegistry.sol      Identity Authority-issued KYC attestations, tiers,
@@ -48,7 +49,7 @@ contracts/
   egress/MockBridgeAdapter.sol       Devnet transport stand-in
 app/
   server.js                    Gated app server: static UIs + authenticated RPC proxy
-  public/wallet.html           Citizen wallet: zero-fee payments, egress requests
+  public/wallet.html           Citizen wallet: ~1-riel payments, egress requests
   public/explorer.html         Whitelisted explorer: stats, decoded events,
                                address inspector, access log
   public/anchor.html           Anchor a garden record: decodes the calldata,

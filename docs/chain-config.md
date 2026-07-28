@@ -16,13 +16,26 @@ The EVM chain identifier (wallet networks, tx signing). Chosen as a CSB-specific
 
 ### Gas & fees — `feeConfig`
 
-This is where "free gas" is actually implemented:
+This is where the fee policy is implemented.
+
+**CSB does not have free gas.** It once did — `minBaseFee` was 0 during early
+development — and the decision was taken to price gas at **about 1 riel per
+ordinary payment** and route it to a public-good fund rather than burn it. The
+floor is set so that a 21,000-gas transfer costs almost exactly 1 tRIEL:
+
+    47,619 gwei x 21,000 gas = 0.9999 tRIEL
+
+A contract deployment runs to roughly 100 tRIEL. Anything that assumes gas is
+free — a fixed `gasPrice` below the floor, a transaction priced at zero — is
+accepted by the node and then never mined, which presents as a hang rather than
+an error. `scripts/set-gas-free.js` still exists and still works, but it is NOT
+the current policy.
 
 | Field | Value | Meaning |
 |---|---|---|
 | `gasLimit` | 20,000,000 | Max gas per block (~20M ≈ hundreds of transfers per block) |
 | `targetBlockRate` | 2 | Target seconds between blocks when there's traffic |
-| `minBaseFee` | **0** | Floor of the dynamic base fee. **Zero = transactions cost nothing.** On a normal chain this is e.g. 25 gwei; CSB sets 0 and relies on identity-layer anti-spam |
+| `minBaseFee` | **47,619 gwei** | Floor of the dynamic base fee, chosen so an ordinary 21,000-gas payment costs ~1 tRIEL. Setting it to 0 gives free gas — that was the original design and is no longer the policy |
 | `targetGas` | 100,000,000 | Gas per ~10s window the fee algorithm treats as "normal load"; above it the base fee rises (from 0, it stays 0 unless raised via feeManager) |
 | `baseFeeChangeDenominator` | 48 | How gently the base fee adjusts (higher = slower changes) |
 | `minBlockGasCost` / `maxBlockGasCost` | 0 / 10,000,000 | Bounds of the block-production gas cost mechanism |
@@ -57,7 +70,7 @@ Everything operational is changed by transactions, not by editing files or redep
 Inspect the live values at any time:
 
 ```bash
-# current base fee (0x0 = free gas)
+# current base fee — expect ~0x2b46c2b2c00 (47,619 gwei); 0x0 would mean free gas
 curl -s -X POST -H 'content-type:application/json' \
   --data '{"jsonrpc":"2.0","id":1,"method":"eth_gasPrice","params":[]}' $CSB_RPC_URL
 

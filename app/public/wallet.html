@@ -13,7 +13,7 @@
 <body>
   <header class="site">
     <h1>🇰🇭 CSB Wallet</h1>
-    <span class="sub">citizen wallet — zero fees, KYC-bound accounts</span>
+    <span class="sub">citizen wallet — about 1 riel per payment, KYC-bound accounts</span>
     <nav>
       <a href="index.html">Home</a>
       <a href="wallet.html" class="active">Wallet</a>
@@ -70,7 +70,7 @@
 
     <div class="card">
       <h2>Pay in tRIEL (native riel)</h2>
-      <p class="small" style="margin-bottom:8px">Usable even before KHRt is licensed — tRIEL <i>is</i> the riel. Zero fee unless the council enables a public-good levy.</p>
+      <p class="small" style="margin-bottom:8px">Usable even before KHRt is licensed — tRIEL <i>is</i> the riel. Gas is about <b>1 riel</b> per payment and goes to the <a href="fund.html">public-good fund</a>, not to a validator and not burned.</p>
       <div class="grid2">
         <div>
           <label>Recipient</label>
@@ -200,6 +200,15 @@ function quoteSwap() {
     : `You burn <b>${amt} tRIEL</b> and receive <b>${amt} KHRt</b>.`;
 }
 
+/** What a confirmed transaction actually cost, from its receipt. */
+function gasCost(receipt) {
+  try {
+    const wei = receipt.gasUsed * (receipt.gasPrice ?? receipt.effectiveGasPrice ?? 0n);
+    const riel = Number(ethers.formatEther(wei));
+    return riel === 0 ? "0 tRIEL" : `${riel.toLocaleString("en-US", { maximumFractionDigits: 4 })} tRIEL`;
+  } catch (_) { return "unknown"; }
+}
+
 async function run(fn) {
   const msg = document.getElementById("msg");
   msg.className = "banner";
@@ -263,9 +272,13 @@ async function run(fn) {
     const amount = parseKHR(document.getElementById("pay-amount").value);
     const levy = await khr.transferLevy();
     const tx = await khr.transfer(to, amount, await feeOverrides());
-    await tx.wait();
+    const rc = await tx.wait();
     const donation = levy > 0n ? ` — ${fmtKHR(levy)} KHRt donated to the public fund` : "";
-    return `Paid ${fmtKHR(amount)} KHRt to ${short(to)} (gas 0)${donation}. Tx ${shortHash(tx.hash)}`;
+    // Report what it ACTUALLY cost, read from the receipt. This used to say
+    // "(gas 0)" from the days of a zero fee floor, and kept saying it long
+    // after gas was priced at a riel — a number stated with confidence and no
+    // basis is worse than no number.
+    return `Paid ${fmtKHR(amount)} KHRt to ${short(to)} (gas ${gasCost(rc)})${donation}. Tx ${shortHash(tx.hash)}`;
   });
 
   // Native tRIEL payment — works with or without KHRt. Routes through RielPay
@@ -281,9 +294,9 @@ async function run(fn) {
     const tx = rielPay
       ? await rielPay.pay(to, ethers.ZeroHash, { value, ...overrides })
       : await wallet.sendTransaction({ to, value, ...overrides });
-    await tx.wait();
+    const rc = await tx.wait();
     const amt = Number(ethers.formatEther(value)).toLocaleString("en-US");
-    return `Sent ${amt} tRIEL to ${short(to)}${rielPay ? "" : " (direct)"}. Tx ${shortHash(tx.hash)}`;
+    return `Sent ${amt} tRIEL to ${short(to)}${rielPay ? "" : " (direct)"} (gas ${gasCost(rc)}). Tx ${shortHash(tx.hash)}`;
   });
 
   // Swap card — only on deployments that carry a converter.

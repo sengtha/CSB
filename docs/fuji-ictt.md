@@ -58,5 +58,5 @@ Policy lives in the gateway (ours); transport is audited ICTT + ICM infrastructu
 
 - **The boundary, made visible:** the recipient balance on Fuji is visible in any public explorer — this is the boundary where sovereign-private becomes world-public, by council-governed exception only.
 - Return path (Fuji → CSB): TokenRemote's `send()` back to the TokenHome unlocks collateral. v1 can leave ingress ungated (funds re-enter the KYC'd perimeter; the recipient must still be KYC'd to receive KHRt — non-KYC'd returns will revert unless sent to a system contract or an `IngressGateway` escrow, which is future work).
-- Fees: ICTT primary/secondary fees are set to zero (state-run relayer needs no fee incentive).
+- Fees: ICTT primary/secondary fees are set to zero (state-run relayer needs no fee incentive). This is the BRIDGE's own fee, and is separate from CSB gas — the transaction still costs about 1 riel like any other.
 - The `SendTokensInput` struct in `contracts/egress/interfaces/IERC20TokenTransferrer.sol` mirrors `icm-contracts`; re-verify the layout against the pinned icm-contracts release before production.

@@ -93,7 +93,7 @@ So KHRt is **one issuer's product**, not a monopoly: multiple institutions can e
 
 **tRIEL is backed money, not a free utility token.** Because 1 tRIEL = 1 riel, it must be reserve-backed exactly like a stablecoin, and minted **only** via conversion or reserve-backed issuance — never freely. Two consequences:
 - The genesis allocation and any Native-Minter use represent **issuing real money**, under the same reserve discipline as KHRt.
-- **"Free gas" is really *subsidized* gas** — a deliberate fiscal choice where the state absorbs the (small, real) cost so citizens transact feeless. It is a budget line, not a costless default.
+- **Gas is priced, not free.** An early draft of this design used a zero fee floor and described it as *subsidized* gas — a budget line the state absorbs. That was replaced: gas now costs about 1 riel per payment and is routed to a public-good fund (§8), so the cost of running the chain is paid by its users and visibly returned to them, rather than absorbed invisibly by a treasury.
 
 **Convertibility — both backing tiers supported** (`RielConverter`, planned):
 - **A. Trustless (tRIEL-collateralized).** To mint the token, the issuer locks tRIEL 1:1 in the contract; redemption is contract-enforced and instant. No issuer-solvency risk. All backing concentrates in tRIEL (which is the system anchor).
@@ -171,7 +171,7 @@ Standard EVM chains depend on ECDSA — broken by a cryptographically relevant q
 | Phase | Content |
 |---|---|
 | **0 — Prototype (this repo)** | Contract suite + tests; genesis config; local devnet. |
-| **1 — Devnet demo** | Multi-node local L1; wallet, tiered explorer, and admin-console UIs; scripted end-to-end demo: KYC onboarding → zero-fee transfer → KYC'd DeFi swap → freeze/audit → egress allow/deny. Target audience: decision-makers (hypothetical). |
+| **1 — Devnet demo** | Multi-node local L1; wallet, tiered explorer, and admin-console UIs; scripted end-to-end demo: KYC onboarding → ~1-riel transfer → KYC'd DeFi swap → freeze/audit → egress allow/deny. Target audience: decision-makers (hypothetical). |
 | **2 — Pilot** | 3-institution validator testnet; real ICTT adapter to Fuji C-Chain; one non-monetary asset class in production use (e.g. document/land-title attestation, tokenized bond sandbox). |
 | **3 — KHR mandate** | Issuer mandate resolved politically; stablecoin sandbox with licensed participants; DeFi opening. |
 | **4 — Expansion** | Full institution validator set; non-citizen tiers; selective-privacy instruments; PQ signature migration as standards mature. |
