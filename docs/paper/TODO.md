@@ -71,14 +71,23 @@ chain will not accept a transaction from it, and it holds a claim on regulated
 assets anyway. §5.3 now also reports what DeFi costs when gas is fiscal policy
 (a whole AMM for about eight US cents).
 
+**The lending protocol is DONE** — §5.4, `test/defi-aave.test.js`,
+`scripts/aave-live.js`. A full unmodified Aave V3 market. Two structurally
+dissimilar protocols now fail the same way, which is what turns the anecdote into
+a pattern. Lending added two things Uniswap could not show: the leaked claim is
+yield-bearing and compounds without any observable event, and one apparent
+protection (an unverified party cannot liquidate) is an accident of the debt being
+denominated in the gated asset rather than a designed control.
+
 **Still to do here:**
-- Extend to a lending protocol (Aave V2 or Compound) — receipt tokens should
-  leak identically and more visibly, since they accrue yield. Two protocols
-  makes it a pattern rather than an anecdote.
 - Try the mitigations and report what they cost: permissioned factory (forfeits
   composability) and a compliance-aware fork of `UniswapV2ERC20` (forfeits
   "unmodified"). Showing that both mitigations cost the property the design was
   bought for is stronger than the leak alone.
+- Aave's oracle is its test PriceOracle with a hand-set price. Stated as a
+  limitation in §5.4; a reviewer may still ask whether the yield result depends
+  on it. It does not — interest accrual is independent of price — but saying so
+  explicitly would pre-empt the question.
 
 ## 3. Figures
 
@@ -102,7 +111,7 @@ Currently there is none. Cheap additions:
 ## 5. Claims to keep checking
 
 Corrected in this revision; re-verify before submission, since the code moves:
-- **192 tests / 29 contracts** — regenerate the count at submission time
+- **206 tests / 29 contracts** — regenerate the count at submission time
 - **Single validator** — if more are added, update §4.1 and §7.1
 - **Recovery** (§4.2) — no account abstraction exists; `LandTitleToken
   .recoveryAddress` and `KHRStablecoin.confiscate` are the only paths, and

@@ -48,19 +48,24 @@ egress gateway enforcing token allowlists, identity-tier requirements, daily
 volume caps, and a circuit breaker.
 
 We instantiate the design as a permissioned Avalanche Layer-1 prototype, the
-Cambodia Sovereign Blockchain (CSB): 29 Solidity contracts covered by 197
+Cambodia Sovereign Blockchain (CSB): 29 Solidity contracts covered by 206
 automated tests, a working Avalanche Interchain Token Transfer (ICTT) bridge to
 the Fuji C-Chain, and citizen and institutional interfaces.
 
-We then test the design's central claim by deploying **unmodified** Uniswap V2 —
-the published upstream artifacts, unrecompiled — against the compliance-gated
-stablecoin. It runs. But the perimeter leaks in a way the architecture did not
-anticipate: liquidity-provider tokens are ordinary ERC-20s with no compliance
-hooks, so a *transferable claim on pooled regulated assets* circulates freely to
-addresses holding no identity attestation. Redemption remains blocked, so no
-regulated asset escapes; what escapes is the economic exposure. We argue this
-generalizes to any composable protocol that wraps a gated asset, and that
-base-layer transaction gating is structurally unable to prevent it.
+We then test the design's central claim by deploying two **unmodified** protocols
+— the published upstream artifacts of Uniswap V2 and Aave V3, unrecompiled —
+against the compliance-gated stablecoin. Both run. But the perimeter leaks in a
+way the architecture did not anticipate: liquidity-provider tokens and aTokens
+alike are ordinary ERC-20s with no compliance hooks, so a *transferable claim on
+pooled regulated assets* circulates freely to addresses holding no identity
+attestation. Redemption remains blocked, so no regulated asset escapes; what
+escapes is the economic exposure. Lending sharpens this twice over: the leaked
+claim is **yield-bearing**, growing for an unverified holder with no transaction
+by anyone; and an unverified liquidator is blocked only because repaying a debt
+requires holding the gated asset — a protection that is a coincidence of asset
+choice rather than a designed control. Two structurally dissimilar protocols
+failing the same way is our evidence that the leak belongs to the design, not to
+any protocol.
 
 We further report two operational findings. A sovereign chain's fee policy can be
 *structurally incompatible* with standard interoperability tooling: Avalanche's
@@ -120,12 +125,14 @@ unmodified, with a single governed egress boundary, implemented and publicly
 available.
 
 (ii) **An empirical test of that architecture's central claim, with a negative
-result.** Deploying unmodified Uniswap V2 against the gated stablecoin shows the
-protocol runs without source changes, but that pool shares form an unrestricted
-derivative of a restricted asset. We characterize the leak precisely: the asset
-never leaves the perimeter, the *exposure* does, and no base-layer mechanism can
-close it because the derivative is a token that was never told the perimeter
-exists (§5.2).
+result, replicated across two protocols.** Unmodified Uniswap V2 (§5.2) and
+unmodified Aave V3 (§5.4) both run against the gated stablecoin, and both mint an
+unrestricted derivative of a restricted asset. We characterize the leak
+precisely: the asset never leaves the perimeter, the *exposure* does, and no
+base-layer mechanism can close it because the derivative is a token that was
+never told the perimeter exists. Lending adds that the leaked claim compounds,
+and that one of the perimeter's apparent protections turns out to be an accident
+of which asset the debt is denominated in.
 
 (iii) Two operational findings about sovereign-chain and parent-chain interaction
 that we have not found documented elsewhere: a fee policy that forecloses
@@ -404,7 +411,7 @@ of gas.
 
 ### 5.1 Implementation
 
-29 Solidity contracts, covered by 197 automated tests exercising the KYC
+29 Solidity contracts, covered by 206 automated tests exercising the KYC
 lifecycle, separation-of-powers invariants, compliance-gated transfers and
 confiscation, egress policy (allowlist, tiers, caps, circuit breaker), the ICTT
 bridge adapter, and the Grove and land-title flows.
@@ -425,7 +432,10 @@ Source code, tests, and documentation are available under MIT licence at
 https://github.com/sengtha/CSB.
 
 **What has not been done.** Formal verification, independent security audit,
-performance measurement under load, and any real institutional pilot.
+performance measurement under load, and any real institutional pilot. Two
+unmodified third-party protocols are deployed and exercised (§5.2, §5.4); no
+third-party protocol has been reviewed for how it interacts with the compliance
+layer beyond the behaviours reported there.
 
 ### 5.2 Experiment: an unmodified AMM against a compliance-gated asset
 
@@ -527,7 +537,74 @@ participant remains known" is true of anyone touching the *asset* and false of
 anyone touching a *claim on* the asset. We think proposals for compliant chains
 should state which of the two they mean.
 
-### 5.3 What DeFi costs when gas is fiscal policy
+### 5.4 A second protocol: unmodified Aave V3
+
+One protocol is an anecdote. To test whether §5.2's result is a property of AMMs
+or of the design, we repeated the experiment with a structurally different
+protocol: a lending market.
+
+**Method.** A complete Aave V3 market from the published `@aave/core-v3@1.19.3`
+artifacts, unrecompiled — eight external libraries (Aave's `Pool` exceeds the
+EIP-170 contract size limit on its own and its logic is linked in), the addresses
+provider, ACL manager, `Pool` and `PoolConfigurator` behind their proxies, an
+interest-rate strategy, aToken and debt-token implementations, and KHRt listed as
+a reserve with collateral parameters and borrowing enabled. Roughly twenty
+deployments. Reproducible as `test/defi-aave.test.js`; `scripts/aave-live.js`
+performs the same deployment on the live chain.
+
+**A limitation that must be stated first.** CSB has no price feeds, so the market
+uses Aave's own `PriceOracle` test contract with a hand-set price. Every interest
+rate and health factor below is correct arithmetic over a valuation nobody
+derived from a market. Nothing here speaks to whether the resulting credit market
+is *safe*; the experiment is about the perimeter, not about lending risk.
+
+**Result 1 — it deploys and lists KHRt unchanged.** No source modification, no
+compliance-aware fork. §5.2's first result replicates.
+
+**Result 2 — the vetting problem doubles.** `supply()` reverts until the council
+marks *both* the `Pool` and the `aToken` as KHRt system contracts, and the
+aToken's address does not exist until `initReserves` creates it. This is §5.2's
+cannot-pre-authorise problem again, now twice per listed reserve, and it scales
+with the protocol's complexity rather than with anything the council controls.
+
+**Result 3 — the receipt leaks, and unlike an LP share it grows.** aKHRt is a
+plain ERC-20 with no compliance hooks. A supplier can transfer it to an address
+holding no attestation, which could not receive one riel of KHRt directly. So far
+this is §5.2 restated. What is new is that the claim is *yield-bearing*: with a
+borrower paying interest and one simulated year elapsed, the unverified holder's
+balance was measurably larger, **with no transaction by anyone on its behalf**.
+
+The perimeter is not merely leaking a position. It is leaking a position that
+compounds, held by a party the state cannot identify, without any further event
+for the state to observe.
+
+**Result 4 — a protection nobody designed.** Aave imposes no permission on who
+may liquidate: `liquidationCall` takes the liquidator from `msg.sender`. We
+constructed an underwater position and attempted liquidation from an unverified
+address. It failed — but not because of Aave, and not because of anything in
+CSB's governance. Liquidating means repaying the debt, repaying means
+transferring KHRt, and an address with no attestation cannot hold KHRt to pay
+with. The perimeter held by accident of what liquidation happens to require.
+
+That distinction matters more than the outcome. The same market with an ungated
+debt asset — a bridged stablecoin, say, or the native coin — would let an
+anonymous party seize collateral from a KYC'd borrower, and no part of the design
+would notice. A control that emerges from a coincidence of asset choice is not a
+control; it is a configuration that currently happens to be safe.
+
+We also confirmed the leak survives liquidation: a KYC'd liquidator may elect to
+be paid in aTokens (`receiveAToken = true`) and can then transfer those to an
+unverified address exactly as in result 3. Seized collateral reaches the same
+destination, one hop later.
+
+**Interpretation.** Two protocols, chosen for structural dissimilarity, produce
+the same failure by different mechanisms. We take this as evidence that the leak
+is a property of the *design* — self-enforcing assets plus an open contract layer
+— rather than of any particular protocol. Lending additionally shows that the
+leaked claim can compound, and that some of the perimeter's apparent robustness
+is coincidence rather than construction.
+
+### 5.5 What DeFi costs when gas is fiscal policy
 
 CSB prices gas so that an ordinary 21,000-gas payment costs about one riel
 (§4.3). That is a policy decision rather than a market outcome, and it makes the
@@ -697,7 +774,17 @@ It follows from combining two properties the design deliberately wants — asset
 that enforce their own rules, and a contract layer open enough to run unmodified
 protocols. A chain that closes the leak by permissioning deployment has given up
 the openness that distinguishes it from a CBDC; a chain that closes it by
-requiring compliance-aware forks has given up "unmodified".
+requiring compliance-aware forks has given up "unmodified". Two protocols chosen
+for structural dissimilarity fail the same way (§5.2, §5.4), which is why we
+attribute this to the design rather than to a protocol.
+
+§5.4 adds a second, less comfortable observation. Some of what looks like
+perimeter strength is not designed. An unverified party cannot liquidate a KYC'd
+borrower's collateral — but only because liquidation requires paying the debt in
+the gated asset. Denominate the debt in anything ungated and the same market lets
+an anonymous party seize collateral, with no part of the design registering the
+difference. Designers should audit which of their guarantees are enforced and
+which are merely currently true.
 
 The honest framing for a regulator is therefore: this design makes the regulated
 instrument controllable and auditable, and it makes derivative exposure *visible*
@@ -808,6 +895,13 @@ pool's KHRt.
 `NodeID-BoRS383b4Z9ZdsJSVUcnrXNCXh5Qj93ux`, validation ID
 `2rrjPnaiB3PnatWdkZH37yJqFHBePUupuC5cFPsLXXZja6EBrh`.
 
-**Reproducing the experiments.** `test/defi-unmodified.test.js` runs §5.2 against
-a local instance; `scripts/defi-experiment.js` runs it against a live chain and
-prints the cost table of §5.3.
+**Reproducing the experiments.**
+
+| Experiment | Local | Live chain |
+|---|---|---|
+| Unmodified Uniswap V2 (§5.2) | `test/defi-unmodified.test.js` | `scripts/defi-experiment.js` |
+| Unmodified Aave V3 (§5.4) | `test/defi-aave.test.js` | `scripts/aave-live.js` |
+
+The live scripts print per-step gas, which is the source of the cost table in
+§5.5. Both live deployments require the council to mark protocol contracts as
+KHRt system contracts; both scripts print the commands to revoke that afterwards.

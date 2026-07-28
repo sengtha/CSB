@@ -9,7 +9,9 @@ Full design rationale: [`docs/architecture.md`](docs/architecture.md). License: 
 
 ## Status
 
-**v0 prototype.** Core contract suite implemented and tested (192 tests), including the production **ICTT bridge adapter**. The application — citizen wallet, gated explorer, and institutional admin console — runs against the live chain behind an access-gated server (`docker-compose.app.yml`); participating institutions run validators via `docker-compose.validator.yml`. Cloud-VM tooling stands the whole stack up on a single Ubuntu VM ([`docs/cloud-deployment.md`](docs/cloud-deployment.md)); the real-egress path to Fuji C-Chain is documented in [`docs/fuji-ictt.md`](docs/fuji-ictt.md).
+**v0 prototype.** Core contract suite implemented and tested (206 tests), including the production **ICTT bridge adapter**. The application — citizen wallet, gated explorer, and institutional admin console — runs against the live chain behind an access-gated server (`docker-compose.app.yml`); participating institutions run validators via `docker-compose.validator.yml`. Cloud-VM tooling stands the whole stack up on a single Ubuntu VM ([`docs/cloud-deployment.md`](docs/cloud-deployment.md)); the real-egress path to Fuji C-Chain is documented in [`docs/fuji-ictt.md`](docs/fuji-ictt.md).
+
+**Unmodified DeFi runs on it.** Uniswap V2 and Aave V3 are deployed from published upstream bytecode, with no source changes and no compliance-aware forks — a liquidity pool and a lending market against KHRt. Both work, and both show the same limit: the perimeter protects the asset, while pool shares and aTokens are unrestricted claims on it that reach addresses holding no identity attestation. [`docs/defi.md`](docs/defi.md) explains how to deploy them and exactly what they prove.
 
 ## Repository layout
 
