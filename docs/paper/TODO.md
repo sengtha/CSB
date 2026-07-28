@@ -64,14 +64,21 @@ artifacts, unrecompiled) against KHRt. Written up as §5.2. Four results:
 Result 4 is the paper's contribution. It reframes the whole thing: the design
 secures custody, not exposure, and no base-layer mechanism can close that gap.
 
+Run on the **live chain** (8555) as well as locally, so the txAllowList
+precompile is genuinely in the loop. The live run sharpened result 4: the
+LP-holding address is not merely un-KYC'd, its allow-list role is `none` — the
+chain will not accept a transaction from it, and it holds a claim on regulated
+assets anyway. §5.3 now also reports what DeFi costs when gas is fiscal policy
+(a whole AMM for about eight US cents).
+
 **Still to do here:**
-- Run the same experiment against the **live chain**, not just the local suite,
-  so the txAllowList precompile is genuinely in the loop rather than mocked.
-  Report which allowlist grants the factory and pools actually needed.
 - Extend to a lending protocol (Aave V2 or Compound) — receipt tokens should
-  leak identically and more visibly, since they accrue yield.
-- Try the mitigations and report what they cost: permissioned factory, and a
-  compliance-aware fork of `UniswapV2ERC20`.
+  leak identically and more visibly, since they accrue yield. Two protocols
+  makes it a pattern rather than an anecdote.
+- Try the mitigations and report what they cost: permissioned factory (forfeits
+  composability) and a compliance-aware fork of `UniswapV2ERC20` (forfeits
+  "unmodified"). Showing that both mitigations cost the property the design was
+  bought for is stronger than the leak alone.
 
 ## 3. Figures
 

@@ -444,6 +444,15 @@ compliance-free ERC-20, isolating KHRt's rules as the only variable, and drive
 the pool through creation, liquidity provision, swaps, and redemption with both
 KYC-verified and unverified counterparties.
 
+The experiment was run twice: against a local instance of the contract suite
+(`test/defi-unmodified.test.js`), and **on the live chain**
+(`scripts/defi-experiment.js`), where the `txAllowList` and
+`contractDeployerAllowList` precompiles are genuinely in the loop rather than
+mocked. All results below are from the live run, chain ID 8555, at the 1-riel
+fee policy (`minBaseFee` 47,619 gwei). The unverified counterparty was a freshly
+generated address with no prior state, whose allow-list role the chain reports
+as **`none` — it is not permitted to submit any transaction at all**.
+
 **Result 1 — it runs.** The factory, pair, and router deploy unchanged. No source
 modification was required at any point. To this extent P2 holds.
 
@@ -473,6 +482,23 @@ identity attestation and could not receive one riel of KHRt directly. That
 transfer succeeds. The recipient then holds a transferable, divisible claim on
 pooled KHRt.
 
+On the live chain the recipient's position is starker than the local test could
+show. The same address, in the same block:
+
+| | |
+|---|---|
+| KYC attestation | **none** |
+| `txAllowList` role | **`none` — cannot submit any transaction** |
+| KHRt balance | 0 (a direct transfer of 1 unit reverts) |
+| **LP balance** | **0.001 — a claim on the pooled KHRt** |
+
+An address the chain will not accept a transaction from nonetheless holds a
+transferable claim on regulated assets. It cannot move that claim itself while
+un-allowlisted, but it did not need to act to acquire it, the holder bears the
+full price exposure, and a single allow-list grant — a far weaker act than a KYC
+attestation, and one that carries no tier and no freeze status — makes the claim
+liquid.
+
 Redemption is still blocked — burning to an unverified address reverts, because
 that is a KHRt transfer — so no regulated asset leaves the perimeter. What leaves
 is *economic exposure to it*: the holder bears the price risk, can sell the claim
@@ -500,6 +526,45 @@ matters for regulators. "Standard DeFi runs unmodified" is true. "Every human
 participant remains known" is true of anyone touching the *asset* and false of
 anyone touching a *claim on* the asset. We think proposals for compliant chains
 should state which of the two they mean.
+
+### 5.3 What DeFi costs when gas is fiscal policy
+
+CSB prices gas so that an ordinary 21,000-gas payment costs about one riel
+(§4.3). That is a policy decision rather than a market outcome, and it makes the
+cost of deploying financial infrastructure a directly quoted figure rather than
+something inferred. We have not found this measured elsewhere, so we report it.
+
+Measured on the live chain; gas is as executed, cost is stated at the policy
+floor of 47,619 gwei. USD at roughly 4,000 riel to the dollar.
+
+| Operation | Gas | tRIEL | USD | × an ordinary payment |
+|---|---:|---:|---:|---:|
+| `UniswapV2Factory` deploy | 3,051,511 | 145.31 | $0.036 | 145× |
+| Test ERC-20 deploy | 716,193 | 34.10 | $0.009 | 34× |
+| `createPair` (deploys a pool) | 2,524,114 | 120.20 | $0.030 | 120× |
+| `setSystemContract` (council) | 48,091 | 2.29 | $0.0006 | 2× |
+| Add liquidity (`mint`) | 154,978 | 7.38 | $0.002 | 7× |
+| Swap | 143,980 | 6.86 | $0.002 | 7× |
+| **Whole experiment** | | **316.14** | **$0.079** | **316×** |
+
+Three observations.
+
+**Deploying a complete AMM cost about eight US cents.** At this fee level the
+capital barrier to building financial infrastructure on the national chain is
+negligible, which is the intended effect of pricing gas for inclusion rather
+than for congestion control.
+
+**A swap costs about seven riel and a payment costs one.** The fee is charged per
+unit of gas, so it tracks the work done. A chain wanting a genuinely flat
+per-payment charge must implement it at the contract layer, which CSB does
+separately through `RielPay`'s levy.
+
+**The fee is a policy instrument with real reach.** The same `feeManager` call
+that sets one riel per payment sets 145 riel per contract deployment. Raising the
+floor under attack (§4.1) raises both proportionally; so does lowering it, which
+is what made ICM installable at all (§6.1). A sovereign chain that treats gas as
+fiscal policy should expect that policy to bind on deployment economics, not only
+on user-facing payments.
 
 ---
 
