@@ -72,7 +72,11 @@ async function main() {
   console.log();
 
   const gateway = new ethers.Contract(gatewayAddr, [
-    "function tokenPolicy(address) view returns (bool allowed, uint8 minTier, uint256 dailyCap, address adapter)",
+    // The auto-generated getter for `mapping(address => TokenPolicy) public
+    // policies`. Named `policies`, not `tokenPolicy` — guessing the latter
+    // produced a bare "missing revert data" against a live gateway, which reads
+    // like a broken contract rather than a wrong ABI.
+    "function policies(address) view returns (bool allowed, uint8 minTier, uint256 dailyCap, address adapter)",
     "function requestEgress(address token, uint256 amount, bytes32 destinationChain, bytes recipient)",
     "function paused() view returns (bool)",
     "event EgressInitiated(address indexed token, address indexed from, bytes32 indexed destinationChain, uint256 amount, bytes recipient)",
@@ -87,7 +91,7 @@ async function main() {
   // --- 1. is the policy pointing at a REAL adapter? ------------------------
   let policy;
   try {
-    policy = await gateway.tokenPolicy(khrAddr);
+    policy = await gateway.policies(khrAddr);
   } catch (e) {
     throw new Error(`Could not read the gateway's KHRt policy — is ${gatewayAddr} an EgressGateway? (${e.shortMessage ?? e.message})`);
   }
