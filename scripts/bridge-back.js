@@ -16,10 +16,16 @@ const path = require("path");
  *
  * HOW THE RETURN PATH WORKS. The token on Fuji is not KHRt; it is
  * ERC20TokenRemote, a separate ERC-20 minted when collateral was locked on CSB.
- * `send()` burns the caller's balance of it and emits an ICM message. When a
+ * `send()` takes the caller's balance of it and emits an ICM message. When a
  * relayer delivers that message to CSB, the TokenHome releases the equivalent
- * KHRt to the recipient. No approve() is needed — the remote burns its own
- * token, it does not pull one.
+ * KHRt to the recipient.
+ *
+ * IT DOES NEED AN APPROVAL, which is easy to get wrong: send() pulls with
+ * transferFrom(msg.sender, address(this), amount), so you must approve the
+ * remote contract to spend your balance OF ITSELF. Approving a token to spend
+ * its own token reads like a mistake, and an earlier version of this file
+ * asserted in a comment that no approval was required. It is required — without
+ * it send() reverts with "ERC20: insufficient allowance".
  *
  * THE CHECK THAT MATTERS. KHRt enforces KYC on every transfer, and the TokenHome
  * releasing collateral is a transfer like any other. If the CSB recipient is not
@@ -105,6 +111,8 @@ async function main() {
   const remote = new ethers.Contract(remoteAddr, [
     "function balanceOf(address) view returns (uint256)",
     "function decimals() view returns (uint8)",
+    "function allowance(address,address) view returns (uint256)",
+    "function approve(address,uint256) returns (bool)",
     "function send((bytes32 destinationBlockchainID, address destinationTokenTransferrerAddress, address recipient, address primaryFeeTokenAddress, uint256 primaryFee, uint256 secondaryFee, uint256 requiredGasLimit, address multiHopFallback) input, uint256 amount)",
   ], wallet);
 
@@ -123,6 +131,13 @@ async function main() {
   if (homeHolds < BigInt(amount)) {
     console.log(`  NOTE: the Home holds less collateral than this. Delivery will revert`);
     console.log(`        on CSB until the Home is collateralised for this amount.`);
+  }
+
+  if (await remote.allowance(wallet.address, remoteAddr) < amount) {
+    console.log("\nApproving the remote to take the tokens…");
+    const a = await remote.approve(remoteAddr, amount);
+    await a.wait();
+    console.log(`  \u2713 ${a.hash}`);
   }
 
   console.log("\nSending…");

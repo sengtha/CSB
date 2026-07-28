@@ -254,6 +254,8 @@ const FUJI = {
 const REMOTE_ABI = [
   "function balanceOf(address) view returns (uint256)",
   "function decimals() view returns (uint8)",
+  "function allowance(address,address) view returns (uint256)",
+  "function approve(address,uint256) returns (bool)",
   "function send((bytes32 destinationBlockchainID, address destinationTokenTransferrerAddress, address recipient, address primaryFeeTokenAddress, uint256 primaryFee, uint256 secondaryFee, uint256 requiredGasLimit, address multiHopFallback) input, uint256 amount)",
 ];
 
@@ -352,8 +354,18 @@ async function refreshBack(cfg) {
       const dec = Number(await remote.decimals());
       const amount = ethers.parseUnits(document.getElementById("bk-amount").value.trim() || "0", dec);
       if (amount === 0n) throw new Error("Enter an amount.");
-      const bal = await remote.balanceOf(await signer.getAddress());
+      const me = await signer.getAddress();
+      const bal = await remote.balanceOf(me);
       if (bal < amount) throw new Error(`You hold ${ethers.formatUnits(bal, dec)} of the bridged token.`);
+
+      // send() pulls the tokens with transferFrom(msg.sender, address(this)),
+      // so the remote needs an allowance over your balance OF ITSELF. It reads
+      // oddly — approving a token to spend its own token — but that is how
+      // ERC20TokenRemote takes custody before burning, and without it send()
+      // reverts with "ERC20: insufficient allowance".
+      if (await remote.allowance(me, ictt.tokenRemote) < amount) {
+        await (await remote.approve(ictt.tokenRemote, amount)).wait();
+      }
 
       const tx = await remote.send({
         destinationBlockchainID: homeId,
