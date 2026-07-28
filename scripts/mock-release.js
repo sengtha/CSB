@@ -43,7 +43,8 @@ async function main() {
 
   const khr = new ethers.Contract(khrAddr, [
     "function balanceOf(address) view returns (uint256)",
-    "function identityRegistry() view returns (address)",
+    "function identity() view returns (address)",
+    "function enforcement() view returns (address)",
   ], ethers.provider);
 
   const held = await khr.balanceOf(mock);
@@ -63,13 +64,17 @@ async function main() {
   // Check the recipient BEFORE sending. KHRt enforces KYC on every transfer, so
   // releasing to an unverified or frozen address reverts with a custom error
   // that reads as a broken script rather than as policy doing its job.
-  const registry = new ethers.Contract(await khr.identityRegistry(), [
-    "function isVerified(address) view returns (bool)",
+  // KYC and freezes live in different registries because they are different
+  // powers (P3) — ask both.
+  const registry = new ethers.Contract(await khr.identity(), [
+    "function isActive(address) view returns (bool)",
+  ], ethers.provider);
+  const enforcement = new ethers.Contract(await khr.enforcement(), [
     "function isFrozen(address) view returns (bool)",
   ], ethers.provider);
   const [verified, frozen] = await Promise.all([
-    registry.isVerified(to).catch(() => null),
-    registry.isFrozen(to).catch(() => null),
+    registry.isActive(to).catch(() => null),
+    enforcement.isFrozen(to).catch(() => null),
   ]);
   if (verified === false) throw new Error(`${to} is not KYC-verified — KHRt cannot be transferred to it.`);
   if (frozen === true) throw new Error(`${to} is frozen — unfreeze it first (Admin -> Enforcement).`);

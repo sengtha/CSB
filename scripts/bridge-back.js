@@ -71,16 +71,22 @@ async function main() {
   if (!khrAddr) throw new Error("KHRStablecoin missing from deployments.json");
 
   const khr = new ethers.Contract(khrAddr, [
-    "function identityRegistry() view returns (address)",
+    "function identity() view returns (address)",
+    "function enforcement() view returns (address)",
     "function balanceOf(address) view returns (uint256)",
   ], csb);
-  const registry = new ethers.Contract(await khr.identityRegistry(), [
-    "function isVerified(address) view returns (bool)",
+  // KYC lives in IdentityRegistry, freezes in EnforcementRegistry. They are
+  // separate contracts because they are separate powers (P3), so checking the
+  // recipient means asking both.
+  const registry = new ethers.Contract(await khr.identity(), [
+    "function isActive(address) view returns (bool)",
+  ], csb);
+  const enforcement = new ethers.Contract(await khr.enforcement(), [
     "function isFrozen(address) view returns (bool)",
   ], csb);
   const [verified, frozen] = await Promise.all([
-    registry.isVerified(to).catch(() => null),
-    registry.isFrozen(to).catch(() => null),
+    registry.isActive(to).catch(() => null),
+    enforcement.isFrozen(to).catch(() => null),
   ]);
   console.log(`CSB recipient ${to}  verified=${verified} frozen=${frozen}`);
   if (verified === false) {

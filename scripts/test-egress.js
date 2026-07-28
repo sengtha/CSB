@@ -85,7 +85,8 @@ async function main() {
     "function balanceOf(address) view returns (uint256)",
     "function allowance(address,address) view returns (uint256)",
     "function approve(address,uint256) returns (bool)",
-    "function identityRegistry() view returns (address)",
+    "function identity() view returns (address)",
+    "function enforcement() view returns (address)",
   ], sender);
 
   // --- 1. is the policy pointing at a REAL adapter? ------------------------
@@ -113,15 +114,20 @@ async function main() {
   if (await gateway.paused()) throw new Error("The gateway is paused (Admin -> pause).");
 
   // --- 2. is the sender allowed to bridge? ---------------------------------
-  const registry = new ethers.Contract(await khr.identityRegistry(), [
-    "function isVerified(address) view returns (bool)",
+  // KYC lives in IdentityRegistry and freezes in EnforcementRegistry — separate
+  // contracts because they are separate powers (identity issuance vs. asset
+  // seizure), so the sender's eligibility takes two calls, not one.
+  const registry = new ethers.Contract(await khr.identity(), [
+    "function isActive(address) view returns (bool)",
     "function tierOf(address) view returns (uint8)",
+  ], provider);
+  const enforcement = new ethers.Contract(await khr.enforcement(), [
     "function isFrozen(address) view returns (bool)",
   ], provider);
   const [verified, tier, frozen] = await Promise.all([
-    registry.isVerified(sender.address).catch(() => null),
+    registry.isActive(sender.address).catch(() => null),
     registry.tierOf(sender.address).catch(() => null),
-    registry.isFrozen(sender.address).catch(() => null),
+    enforcement.isFrozen(sender.address).catch(() => null),
   ]);
   console.log(`Sender KYC verified=${verified} tier=${tier} frozen=${frozen}`);
   if (verified === false) throw new Error(`${sender.address} is not KYC-verified — approve it in Admin.`);
