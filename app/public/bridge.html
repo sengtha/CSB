@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bridge to Fuji — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .policy { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 4px 0 6px; }
+    @media (max-width: 760px) { .policy { grid-template-columns: 1fr 1fr; } }
+    .policy .cell { border: 1px solid var(--line); border-radius: 9px; padding: 11px 13px; background: #fbfcfe; }
+    .policy .cell .t { font-size: 11.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+    .policy .cell .v { font-size: 19px; font-weight: 700; color: var(--blue); margin-top: 3px; }
+    .policy .cell .d { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+    .boundary { border-left: 3px solid var(--red); background: #fdeef0; padding: 12px 14px; border-radius: 0 9px 9px 0; margin: 14px 0; font-size: 13px; line-height: 1.65; }
+    .steps { font-size: 13px; color: var(--muted); line-height: 1.8; margin-top: 6px; }
+    .steps b { color: var(--ink); }
+  </style>
+  <script src="vendor/ethers.umd.min.js"></script>
+  <script src="common.js"></script>
+  <script src="shell.js" defer></script>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB Bridge</h1>
+    <span class="sub">the sovereign boundary — where private becomes public</span>
+    <nav></nav>
+  </header>
+  <main>
+    <div id="mock-warning" class="banner err" style="display:none"></div>
+
+    <div class="card">
+      <h2>Egress policy for KHRt</h2>
+      <p class="small" style="margin-bottom:10px;line-height:1.7">
+        Every riel that leaves CSB passes through one contract — the
+        <b>EgressGateway</b>. It is the only exit, and these are the conditions it
+        enforces. Nothing here is enforced by the bridge itself; the bridge only
+        carries what the gateway has already approved.
+      </p>
+      <div class="policy" id="policy"></div>
+      <div id="cap-note" class="small"></div>
+    </div>
+
+    <div class="boundary">
+      <b>This is a one-way door to the public world.</b>
+      Balances on Fuji are visible to anyone, forever, in any block explorer.
+      Inside CSB a payment is visible only to the parties and the state; once it
+      crosses, it is visible to everyone. That is the point of the gateway, and
+      the reason it is governed rather than open.
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>Send KHRt out</h2>
+        <label>Destination chain</label>
+        <select id="eg-dest"></select>
+        <label>Recipient on the destination chain</label>
+        <input id="eg-to" placeholder="0x…" />
+        <label>Amount (KHRt)</label>
+        <input id="eg-amount" placeholder="e.g. 500.00" />
+        <button id="eg-send">Approve &amp; bridge</button>
+        <p class="small" style="margin-top:8px">
+          Two transactions: an approval, then the egress request. Gas is about
+          1 riel each.
+        </p>
+      </div>
+      <div class="card">
+        <h2>Your eligibility</h2>
+        <div id="me" class="kv"><span class="small">Checking your wallet…</span></div>
+        <button id="me-check" style="margin-top:10px">Check my eligibility</button>
+        <div class="steps" style="margin-top:12px">
+          <b>What happens next.</b> The gateway takes your KHRt and hands it to
+          the bridge adapter, which locks it in the TokenHome on CSB and emits a
+          cross-chain message. A relayer delivers that message to Fuji, where the
+          equivalent bridged token is minted to your recipient. If no relayer is
+          running, the value is locked and safe but does not appear — it is not
+          lost, only undelivered.
+        </div>
+      </div>
+    </div>
+
+    <div id="msg" class="banner"></div>
+
+    <div class="card">
+      <h2>Recent crossings</h2>
+      <table id="egress-log"><tr><th>Block</th><th>From</th><th>Amount</th><th>Recipient</th></tr></table>
+    </div>
+  </main>
+  <div class="footer">CSB v0 prototype — a personal experiment; not affiliated with or endorsed by any government. Test tokens only.</div>
+
+<script>
+"use strict";
+
+const LOOKBACK = 2000;
+
+function cell(t, v, d) {
+  return `<div class="cell"><div class="t">${t}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
+}
+
+async function refreshPolicy() {
+  const { khr, gateway } = await getContracts();
+  const cfg = await loadConfig();
+  const [policy, paused] = await Promise.all([
+    gateway.policies(khr.target),
+    gateway.paused().catch(() => false),
+  ]);
+  const [allowed, minTier, dailyCap, adapter] = policy;
+
+  document.getElementById("policy").innerHTML =
+    cell("Status", paused ? "PAUSED" : (allowed ? "Open" : "Closed"),
+      paused ? "The council has pulled the circuit breaker — nothing leaves."
+             : (allowed ? "KHRt may cross" : "KHRt egress is not permitted")) +
+    cell("Minimum tier", String(minTier),
+      `Tier ${minTier} KYC or higher. Basic accounts cannot bridge.`) +
+    cell("Daily cap", dailyCap === 0n ? "none" : fmtKHR(dailyCap),
+      "Across all senders, resets each day") +
+    cell("Adapter", short(adapter), "The transport the gateway routes through");
+
+  // The failure this page exists to make impossible to miss. MockBridgeAdapter
+  // accepts the tokens, emits the same events as a real bridge, and sends
+  // nothing anywhere. Every on-chain signal says success. Without this banner a
+  // visitor would reasonably conclude their money is on Fuji.
+  const mock = cfg.contracts?.MockBridgeAdapter;
+  const warn = document.getElementById("mock-warning");
+  if (mock && adapter.toLowerCase() === mock.toLowerCase()) {
+    warn.style.display = "";
+    warn.innerHTML = "<b>This chain is wired to the development bridge.</b> "
+      + "Sending from this page will look completely successful — your balance will drop and "
+      + "the transaction will confirm — but <b>nothing will reach Fuji</b>. The tokens stay in a "
+      + "stub contract on CSB and can be returned by the council. "
+      + "Run <span class='mono'>scripts/wire-ictt.js</span> to connect a real bridge first.";
+    document.getElementById("eg-send").disabled = true;
+  } else {
+    warn.style.display = "none";
+    document.getElementById("eg-send").disabled = false;
+  }
+
+  const day = Math.floor(Date.now() / 86400000);
+  const used = await gateway.dailyVolume(khr.target, day).catch(() => null);
+  document.getElementById("cap-note").textContent = used === null ? ""
+    : dailyCap === 0n ? `${fmtKHR(used)} KHRt has crossed today (no cap set).`
+    : `${fmtKHR(used)} of ${fmtKHR(dailyCap)} KHRt used today.`;
+}
+
+// The wallet the browser is offering us, or null. `eth_accounts` never prompts —
+// it reports an existing connection only — so this is safe to call on load. The
+// button below uses eth_requestAccounts, which does prompt.
+async function currentAddress(prompt = false) {
+  if (!window.ethereum) return null;
+  try {
+    const accounts = await window.ethereum.request({
+      method: prompt ? "eth_requestAccounts" : "eth_accounts",
+    });
+    return accounts?.[0] ?? null;
+  } catch (_) { return null; }
+}
+
+async function refreshMe(prompt = false) {
+  const el = document.getElementById("me");
+  const addr = await currentAddress(prompt);
+  if (!addr) {
+    el.innerHTML = window.ethereum
+      ? '<span class="small">No wallet connected. Use the button below.</span>'
+      : '<span class="small">No wallet detected in this browser.</span>';
+    return;
+  }
+  const { khr, gateway } = await getContracts();
+  const s = await kycSummary(addr);
+  const [, minTier] = await gateway.policies(khr.target);
+  const okTier = Number(s.tier) >= Number(minTier);
+  const badge = (ok, txt) => `<span class="badge ${ok ? "ok" : "bad"}">${txt}</span>`;
+  el.innerHTML = `
+    <b>Address</b> <span class="mono">${short(addr)}</span><br/>
+    <b>KYC</b> ${badge(s.status === "active", s.status.toUpperCase())}<br/>
+    <b>Frozen</b> ${badge(!s.frozen, s.frozen ? "YES" : "no")}<br/>
+    <b>Tier</b> ${badge(okTier, TIER_NAMES[s.tier])} ${okTier ? "" : `<span class="small">needs tier ${minTier}</span>`}<br/>
+    <b>Balance</b> ${fmtKHR(s.balance)} KHRt`;
+}
+
+async function refreshLog() {
+  const { gateway } = await getContracts();
+  const latest = await getProvider().getBlockNumber();
+  const evs = await gateway.queryFilter(
+    gateway.filters.EgressInitiated(), Math.max(0, latest - LOOKBACK));
+  const rows = evs.slice(-25).reverse().map((e) =>
+    `<tr><td>${e.blockNumber}</td><td class="mono">${short(e.args[0])}</td>`
+    + `<td>${fmtKHR(e.args[2])} KHRt</td><td class="mono">${short(ethers.hexlify(e.args[4]))}</td></tr>`);
+  document.getElementById("egress-log").innerHTML =
+    "<tr><th>Block</th><th>From</th><th>Amount</th><th>Recipient</th></tr>"
+    + (rows.length ? rows.join("") : '<tr><td colspan="4" class="small">No crossings in the last '
+      + LOOKBACK + ' blocks.</td></tr>');
+}
+
+let _lastBtn = null;
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("button");
+  if (b) _lastBtn = b;
+}, true);
+
+async function run(fn) {
+  const msg = document.getElementById("msg");
+  const btn = _lastBtn;
+  const label = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = "Working…"; }
+  msg.className = "banner";
+  try {
+    banner(msg, "ok", await fn());
+    refreshPolicy(); refreshMe(); refreshLog();
+  } catch (e) {
+    banner(msg, "err", explainError(e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    msg.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+}
+
+(async () => {
+  await ensureSession();
+  const cfg = await loadConfig();
+
+  const dest = document.getElementById("eg-dest");
+  const d = cfg.pilot?.destinationChain;
+  if (d) dest.add(new Option(d.label, d.id));
+  else dest.add(new Option("Avalanche C-Chain", ethers.id("avalanche-c-chain")));
+
+  await refreshPolicy();
+  await refreshLog();
+  await refreshMe();
+  window.ethereum?.on?.("accountsChanged", () => refreshMe());
+
+  document.getElementById("me-check").onclick = () => run(async () => {
+    await refreshMe(true);
+    return "Checked. Anything marked red below has to be fixed before you can bridge.";
+  });
+
+  document.getElementById("eg-send").onclick = () => run(async () => {
+    if (!window.ethereum) throw new Error("No wallet detected in this browser.");
+    const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
+    const { khr, gateway } = await getContracts(signer);
+    const amount = parseKHR(document.getElementById("eg-amount").value);
+    const to = document.getElementById("eg-to").value.trim();
+    if (!ethers.isAddress(to)) throw new Error("Recipient must be a valid address on the destination chain.");
+    const destChain = document.getElementById("eg-dest").value;
+    const me = await signer.getAddress();
+    const allowance = await khr.allowance(me, gateway.target);
+    if (allowance < amount) await (await khr.approve(gateway.target, amount, await feeOverrides())).wait();
+    const tx = await gateway.requestEgress(khr.target, amount, destChain, to, await feeOverrides());
+    await tx.wait();
+    return `Egress accepted: ${fmtKHR(amount)} KHRt routed to ${short(to)} via the governed gateway. `
+      + `It will appear on the destination chain once a relayer delivers the message. Tx ${shortHash(tx.hash)}`;
+  });
+})();
+</script>
+</body>
+</html>

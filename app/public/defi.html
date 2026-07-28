@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Liquidity pool — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .pool { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 6px 0; }
+    @media (max-width: 760px) { .pool { grid-template-columns: 1fr; } }
+    .pool .cell { border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; background: #fbfcfe; }
+    .pool .t { font-size: 11.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+    .pool .v { font-size: 20px; font-weight: 700; color: var(--blue); margin-top: 3px; font-variant-numeric: tabular-nums; }
+    .pool .d { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+    .finding { border-left: 3px solid var(--warn); background: #fef8ec; padding: 13px 15px; border-radius: 0 9px 9px 0; margin: 16px 0; font-size: 13px; line-height: 1.7; }
+    .finding h3 { font-size: 13.5px; margin-bottom: 5px; }
+    .setup { font-size: 13px; line-height: 1.8; color: var(--muted); }
+    .setup code { background: #eef1f5; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  </style>
+  <script src="vendor/ethers.umd.min.js"></script>
+  <script src="common.js"></script>
+  <script src="shell.js" defer></script>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB DeFi</h1>
+    <span class="sub">unmodified Uniswap V2, running on a compliance-gated chain</span>
+    <nav></nav>
+  </header>
+  <main>
+    <div class="card">
+      <h2>What this is</h2>
+      <p class="small" style="line-height:1.8">
+        This pool runs the <b>published Uniswap V2 contracts</b>, byte for byte —
+        not a fork, not a rewrite, not a compliance-aware variant. The point is to
+        test the central claim of CSB's design: that enforcing identity beneath
+        the contract layer lets ordinary DeFi deploy unchanged while every
+        participant stays known.
+      </p>
+      <p class="small" style="line-height:1.8">
+        The first half of that claim holds. The second half is more complicated,
+        and the pool below is where you can see why.
+      </p>
+    </div>
+
+    <div id="no-pool" class="card" style="display:none">
+      <h2>No pool deployed yet</h2>
+      <div class="setup">
+        Deploy one with:<br/>
+        <code>source ops/csb-env.sh</code><br/>
+        <code>npx hardhat run scripts/defi-experiment.js --network csbRemote</code><br/><br/>
+        Then paste the pool address here to view it:
+        <div style="margin-top:8px">
+          <input id="manual-pair" placeholder="0x… pair address" />
+          <button id="manual-load">Load pool</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="pool-card" class="card" style="display:none">
+      <h2>Pool</h2>
+      <div class="pool" id="pool"></div>
+      <div class="small" id="pool-addr" style="margin-top:8px"></div>
+    </div>
+
+    <div class="grid2" id="trade-row" style="display:none">
+      <div class="card">
+        <h2>Swap</h2>
+        <label>Direction</label>
+        <select id="sw-dir"></select>
+        <label>Amount in</label>
+        <input id="sw-amount" placeholder="e.g. 100" />
+        <button id="sw-go">Swap</button>
+        <p id="sw-quote" class="small" style="margin-top:8px"></p>
+      </div>
+      <div class="card">
+        <h2>Your position</h2>
+        <div id="me" class="kv"><span class="small">Checking your wallet…</span></div>
+        <button id="me-check" style="margin-top:10px">Check my wallet</button>
+      </div>
+    </div>
+
+    <div id="msg" class="banner"></div>
+
+    <div class="finding">
+      <h3>What the experiment found</h3>
+      <b>1. It runs.</b> The factory, pair and router deploy with no source change.<br/>
+      <b>2. The pool needed permission — after it existed.</b> Creating the pool
+      moves no tokens, so nothing checks compliance and it succeeds. The first
+      transfer <i>into</i> it fails, because the pool holds no KYC attestation.
+      The council must mark it a system contract, which cannot be done in advance
+      because the pool's address is only fixed at creation.<br/>
+      <b>3. The perimeter holds at the edge.</b> Swapping KHRt out to an address
+      with no attestation reverts. Regulated value cannot leave this way.<br/>
+      <b>4. But pool shares are not regulated.</b> The LP token is an ordinary
+      ERC-20 with no compliance hooks. A pool share — a transferable claim on the
+      pooled KHRt — moves freely to an address that could not receive a single
+      riel directly. Redemption stays blocked, so no KHRt escapes; what escapes
+      is the economic exposure to it.
+      <br/><br/>
+      That last one is not a bug we can patch. It follows from wanting both
+      self-enforcing assets and a contract layer open enough to run unmodified
+      protocols. The perimeter governs <b>custody</b>; composability governs
+      <b>exposure</b>.
+    </div>
+  </main>
+  <div class="footer">CSB v0 prototype — a personal experiment; not affiliated with or endorsed by any government. Test tokens only.</div>
+
+<script>
+"use strict";
+
+const PAIR_ABI = [
+  "function token0() view returns (address)",
+  "function token1() view returns (address)",
+  "function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)",
+  "function totalSupply() view returns (uint256)",
+  "function balanceOf(address) view returns (uint256)",
+  "function swap(uint amount0Out, uint amount1Out, address to, bytes data)",
+];
+const ERC20_ABI = [
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function balanceOf(address) view returns (uint256)",
+  "function transfer(address,uint256) returns (bool)",
+];
+
+let POOL = null;   // { pair, token0, token1, meta0, meta1 }
+
+const $ = (id) => document.getElementById(id);
+
+async function meta(addr) {
+  const c = new ethers.Contract(addr, ERC20_ABI, getProvider());
+  const [symbol, decimals] = await Promise.all([
+    c.symbol().catch(() => "???"),
+    c.decimals().then(Number).catch(() => 18),
+  ]);
+  return { addr, symbol, decimals, c };
+}
+
+async function loadPool(pairAddr) {
+  const pair = new ethers.Contract(pairAddr, PAIR_ABI, getProvider());
+  const [t0, t1] = await Promise.all([pair.token0(), pair.token1()]);
+  POOL = { pair, addr: pairAddr, meta0: await meta(t0), meta1: await meta(t1) };
+
+  $("no-pool").style.display = "none";
+  $("pool-card").style.display = "";
+  $("trade-row").style.display = "";
+
+  const dir = $("sw-dir");
+  dir.innerHTML = "";
+  dir.add(new Option(`${POOL.meta0.symbol} → ${POOL.meta1.symbol}`, "0to1"));
+  dir.add(new Option(`${POOL.meta1.symbol} → ${POOL.meta0.symbol}`, "1to0"));
+
+  await refreshPool();
+  await refreshMe();
+}
+
+function fmtUnits(v, d) {
+  return Number(ethers.formatUnits(v, d)).toLocaleString("en-US", { maximumFractionDigits: 4 });
+}
+
+async function refreshPool() {
+  const [r0, r1] = await POOL.pair.getReserves();
+  const supply = await POOL.pair.totalSupply();
+  const a = Number(ethers.formatUnits(r0, POOL.meta0.decimals));
+  const b = Number(ethers.formatUnits(r1, POOL.meta1.decimals));
+  const price = a > 0 ? (b / a) : 0;
+
+  $("pool").innerHTML =
+    `<div class="cell"><div class="t">${POOL.meta0.symbol} reserve</div>`
+    + `<div class="v">${fmtUnits(r0, POOL.meta0.decimals)}</div>`
+    + `<div class="d">pooled, held by the pair contract</div></div>`
+    + `<div class="cell"><div class="t">${POOL.meta1.symbol} reserve</div>`
+    + `<div class="v">${fmtUnits(r1, POOL.meta1.decimals)}</div>`
+    + `<div class="d">pooled, held by the pair contract</div></div>`
+    + `<div class="cell"><div class="t">Price</div>`
+    + `<div class="v">${price.toLocaleString("en-US", { maximumFractionDigits: 6 })}</div>`
+    + `<div class="d">${POOL.meta1.symbol} per ${POOL.meta0.symbol} · `
+    + `${fmtUnits(supply, 18)} LP outstanding</div></div>`;
+
+  $("pool-addr").innerHTML =
+    `Pair <span class="mono">${POOL.addr}</span><br/>`
+    + `${POOL.meta0.symbol} <span class="mono">${POOL.meta0.addr}</span><br/>`
+    + `${POOL.meta1.symbol} <span class="mono">${POOL.meta1.addr}</span>`;
+}
+
+async function currentAddress(prompt = false) {
+  if (!window.ethereum) return null;
+  try {
+    const accounts = await window.ethereum.request({
+      method: prompt ? "eth_requestAccounts" : "eth_accounts",
+    });
+    return accounts?.[0] ?? null;
+  } catch (_) { return null; }
+}
+
+async function refreshMe(prompt = false) {
+  const el = $("me");
+  const addr = await currentAddress(prompt);
+  if (!addr) {
+    el.innerHTML = window.ethereum
+      ? '<span class="small">No wallet connected. Use the button below.</span>'
+      : '<span class="small">No wallet detected in this browser.</span>';
+    return;
+  }
+  const [b0, b1, lp] = await Promise.all([
+    POOL.meta0.c.balanceOf(addr),
+    POOL.meta1.c.balanceOf(addr),
+    POOL.pair.balanceOf(addr),
+  ]);
+  el.innerHTML = `
+    <b>Address</b> <span class="mono">${short(addr)}</span><br/>
+    <b>${POOL.meta0.symbol}</b> ${fmtUnits(b0, POOL.meta0.decimals)}<br/>
+    <b>${POOL.meta1.symbol}</b> ${fmtUnits(b1, POOL.meta1.decimals)}<br/>
+    <b>Pool share</b> ${fmtUnits(lp, 18)} LP
+    ${lp > 0n ? '<br/><span class="small">This LP balance is a claim on the pooled '
+      + POOL.meta0.symbol + '/' + POOL.meta1.symbol
+      + ' and carries no KYC restriction of its own.</span>' : ""}`;
+}
+
+// Constant-product output, with Uniswap V2's 0.3% fee. Computed here rather than
+// read from the router so the page works whether or not a router was deployed.
+function amountOut(amountIn, reserveIn, reserveOut) {
+  const inWithFee = amountIn * 997n;
+  return (inWithFee * reserveOut) / (reserveIn * 1000n + inWithFee);
+}
+
+async function quote() {
+  const el = $("sw-quote");
+  try {
+    const dir = $("sw-dir").value;
+    const from = dir === "0to1" ? POOL.meta0 : POOL.meta1;
+    const to = dir === "0to1" ? POOL.meta1 : POOL.meta0;
+    const raw = $("sw-amount").value.trim();
+    if (!raw) { el.textContent = ""; return null; }
+    const amountIn = ethers.parseUnits(raw, from.decimals);
+    const [r0, r1] = await POOL.pair.getReserves();
+    const [rIn, rOut] = dir === "0to1" ? [r0, r1] : [r1, r0];
+    if (rIn === 0n || rOut === 0n) { el.textContent = "The pool has no liquidity."; return null; }
+    const out = amountOut(amountIn, rIn, rOut);
+    el.textContent = `≈ ${fmtUnits(out, to.decimals)} ${to.symbol} (0.3% pool fee, before slippage)`;
+    return { dir, from, to, amountIn, out };
+  } catch (e) {
+    el.textContent = "";
+    return null;
+  }
+}
+
+let _lastBtn = null;
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("button");
+  if (b) _lastBtn = b;
+}, true);
+
+async function run(fn) {
+  const msg = $("msg");
+  const btn = _lastBtn;
+  const label = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = "Working…"; }
+  msg.className = "banner";
+  try {
+    banner(msg, "ok", await fn());
+    if (POOL) { await refreshPool(); await refreshMe(); }
+  } catch (e) {
+    banner(msg, "err", explainError(e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    msg.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+}
+
+(async () => {
+  await ensureSession();
+  const cfg = await loadConfig();
+
+  // scripts/defi-experiment.js records what it deployed under `defi`. Without
+  // it there is nothing to show, so the page explains how to create one rather
+  // than rendering an empty pool.
+  const pairAddr = cfg.defi?.pair;
+  if (pairAddr) {
+    try { await loadPool(pairAddr); }
+    catch (e) { $("no-pool").style.display = ""; banner($("msg"), "err", explainError(e)); }
+  } else {
+    $("no-pool").style.display = "";
+  }
+
+  $("manual-load").onclick = () => run(async () => {
+    const a = $("manual-pair").value.trim();
+    if (!ethers.isAddress(a)) throw new Error("That is not a valid address.");
+    await loadPool(a);
+    return "Pool loaded.";
+  });
+
+  $("me-check").onclick = () => run(async () => {
+    await refreshMe(true);
+    return "Wallet read.";
+  });
+
+  $("sw-dir").onchange = quote;
+  $("sw-amount").oninput = quote;
+
+  $("sw-go").onclick = () => run(async () => {
+    if (!window.ethereum) throw new Error("No wallet detected in this browser.");
+    const q = await quote();
+    if (!q) throw new Error("Enter an amount first.");
+    const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
+    const me = await signer.getAddress();
+
+    // Uniswap V2 core has no router-style transferFrom: you send the input
+    // tokens to the pair, then call swap(). Doing it directly keeps this page
+    // independent of whether a router was ever deployed.
+    const tokenIn = new ethers.Contract(q.from.addr, ERC20_ABI, signer);
+    await (await tokenIn.transfer(POOL.addr, q.amountIn, await feeOverrides())).wait();
+
+    // 1% slippage tolerance against the quote we just showed.
+    const minOut = (q.out * 99n) / 100n;
+    const pair = new ethers.Contract(POOL.addr, PAIR_ABI, signer);
+    const [a0, a1] = q.dir === "0to1" ? [0n, minOut] : [minOut, 0n];
+    const tx = await pair.swap(a0, a1, me, "0x", await feeOverrides());
+    await tx.wait();
+    return `Swapped ${fmtUnits(q.amountIn, q.from.decimals)} ${q.from.symbol} `
+      + `for at least ${fmtUnits(minOut, q.to.decimals)} ${q.to.symbol}. Tx ${shortHash(tx.hash)}`;
+  });
+})();
+</script>
+</body>
+</html>

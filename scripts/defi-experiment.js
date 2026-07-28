@@ -217,6 +217,19 @@ async function main() {
     `outsider LP balance ${ethers.formatEther(outsiderLp)}  (KHRt balance ${riel(await khr.balanceOf(outsider))}, `
     + `txAllowList ${outsiderRole === null ? "unreadable" : ROLE_NAME[outsiderRole]})`);
 
+  // Record what was deployed so app/public/defi.html can find the pool. Written
+  // under `defi` rather than `contracts`, because these are an experiment's
+  // artifacts and should not be mistaken for part of the CSB contract suite.
+  d.defi = {
+    factory: await factory.getAddress(),
+    pair: pairAddr,
+    testToken: await plain.getAddress(),
+    khr: c.KHRStablecoin,
+    note: "Unmodified Uniswap V2 (published artifacts). See docs/paper §5.2.",
+  };
+  fs.writeFileSync(file, JSON.stringify(d, null, 2));
+  console.log(`\nRecorded the pool in ${path.basename(file)} — it will appear on defi.html.`);
+
   // === summary ============================================================
   console.log(`\n${"=".repeat(72)}`);
   console.log("SUMMARY");

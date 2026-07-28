@@ -14,20 +14,7 @@
   <header class="site">
     <h1>🇰🇭 CSB Wallet</h1>
     <span class="sub">citizen wallet — about 1 riel per payment, KYC-bound accounts</span>
-    <nav>
-      <a href="index.html">Home</a>
-      <a href="wallet.html" class="active">Wallet</a>
-      <a href="explorer.html">Explorer</a>
-      <a href="fund.html">Fund</a>
-      <a href="assets.html">Tokens &amp; NFTs</a>
-      <a href="use-cases.html">Use cases</a>
-      <a href="anchor.html">Anchor</a>
-      <a href="verify.html">Verify</a>
-      <a href="kyc-request.html">Get verified</a>
-      <a href="validator.html">Validators</a>
-      <a href="node.html">Node info</a>
-      <a href="admin.html">Admin</a>
-    </nav>
+    <nav></nav>
   </header>
   <main>
     <div class="card">
@@ -56,15 +43,17 @@
         <p id="levy-note" class="small" style="margin-top:8px"></p>
       </div>
       <div class="card">
-        <h2>Bridge out (egress gateway)</h2>
-        <label>Destination chain</label>
-        <select id="eg-dest"></select>
-        <label>Recipient on destination (address)</label>
-        <input id="eg-to" placeholder="0x…" />
-        <label>Amount (KHRt)</label>
-        <input id="eg-amount" placeholder="e.g. 500.00" />
-        <button id="eg-send">Approve &amp; bridge</button>
-        <p class="small" style="margin-top:8px">⚠ Assets crossing the gateway become permanently public on external chains.</p>
+        <h2>Bridge out</h2>
+        <p class="small" style="line-height:1.75">
+          Sending KHRt outside CSB now has its own page, because it deserves more
+          than a form: it shows the egress policy you must satisfy, whether your
+          account satisfies it, and how much of today's cap is left.
+        </p>
+        <p class="small" style="line-height:1.75">
+          ⚠ Assets crossing the gateway become permanently public on external
+          chains — visible to anyone, forever.
+        </p>
+        <a href="bridge.html"><button type="button">Open the bridge</button></a>
       </div>
     </div>
 
@@ -137,7 +126,7 @@ async function refreshAccount() {
     <b>Address</b> <span class="mono">${wallet.address}</span><br/>
     <b>KYC</b> ${badge} &nbsp; <span class="badge info">tier ${TIER_NAMES[s.tier]}</span><br/>
     <b>Balance</b> ${fmtKHR(s.balance)} KHRt &nbsp;·&nbsp; ${Number(ethers.formatEther(nativeBal)).toLocaleString("en-US")} tRIEL<br/>
-    <b>Recovery</b> <span class="small">Identity Authority-backed (smart-account rotation) — lost key ≠ lost assets</span>`;
+    <b>Recovery</b> <span class="small">Land titles can be reissued to a new address by court order. KHRt requires an enforcement action; native tRIEL cannot be recovered at all. <a href="index.html#recovery">What this means</a></span>`;
   await refreshActivity();
 }
 
@@ -246,10 +235,6 @@ async function run(fn) {
   sel.onchange = () => (document.getElementById("acct-key").value = sel.value);
   pay.onchange = () => (document.getElementById("pay-to").value = pay.value);
 
-  const dest = document.getElementById("eg-dest");
-  const d = cfg.pilot?.destinationChain;
-  if (d) dest.add(new Option(d.label, d.id));
-
   // Show the public-good levy (if the council enabled one) so payers see the donation.
   (async () => {
     try {
@@ -349,18 +334,6 @@ async function run(fn) {
     return `Unwrapped ${amt} tRIEL → ${amt} KHRt. The tRIEL is burned and its backing released. Tx ${shortHash(tx.hash)}`;
   });
 
-  document.getElementById("eg-send").onclick = () => run(async () => {
-    const { khr, gateway } = await getContracts(wallet);
-    const amount = parseKHR(document.getElementById("eg-amount").value);
-    const to = document.getElementById("eg-to").value.trim();
-    if (!ethers.isAddress(to)) throw new Error("Recipient must be a valid address on the destination chain.");
-    const destChain = document.getElementById("eg-dest").value;
-    const allowance = await khr.allowance(wallet.address, gateway.target);
-    if (allowance < amount) await (await khr.approve(gateway.target, amount, await feeOverrides())).wait();
-    const tx = await gateway.requestEgress(khr.target, amount, destChain, to, await feeOverrides());
-    await tx.wait();
-    return `Egress accepted: ${fmtKHR(amount)} KHRt routed to ${short(to)} via the governed gateway. Tx ${shortHash(tx.hash)}`;
-  });
 })();
 </script>
 </body>
