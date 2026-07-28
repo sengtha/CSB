@@ -317,14 +317,42 @@ function signer() {
   return new ethers.Wallet(k, getProvider());
 }
 
+// The last button pressed, captured before any handler runs. run() uses it to
+// show progress on the control the operator actually clicked.
+let _lastBtn = null;
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("button");
+  if (b) _lastBtn = b;
+}, true);
+
+/**
+ * Every admin action goes through here.
+ *
+ * The feedback matters as much as the action. This page reported outcomes ONLY
+ * in a banner at the bottom of a long page: press a button near the middle and
+ * a chain transaction could be pending for half a minute with nothing moving on
+ * screen, or fail instantly with the reason rendered somewhere you were not
+ * looking. Both are indistinguishable from a dead button — and both were
+ * reported as exactly that.
+ *
+ * So the clicked button now says what it is doing, and the banner is scrolled
+ * to. Silence is never a valid outcome for a press.
+ */
 async function run(fn) {
   const msg = document.getElementById("msg");
+  const btn = _lastBtn;
+  const label = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = "Working…"; }
   msg.className = "banner";
   try {
     banner(msg, "ok", await fn());
     refreshStatus();
   } catch (e) {
     banner(msg, "err", explainError(e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    // A result nobody sees is not a result.
+    msg.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
 }
 
