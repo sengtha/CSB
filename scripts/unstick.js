@@ -73,19 +73,37 @@ async function main() {
 
   // --- nothing moved: replace ---------------------------------------------
   console.log(`\nNothing mined in ${WATCH_SECONDS}s. Treating nonce ${mined} as stuck.`);
-  console.log("Replacing each queued nonce with a priced no-op self-transfer.\n");
 
+  // Outbid whatever is sitting there. hardhat.config's fixed gasPrice is not
+  // enough: the browser prices admin transactions at baseFee*3 + 500 gwei, so a
+  // replacement at the config price is REFUSED as underpriced — against a
+  // transaction that was going to mine anyway. Price off the live base fee.
+  const block = await provider.getBlock("latest");
+  const base = block?.baseFeePerGas ?? 0n;
+  const gasPrice = base > 0n ? base * 10n + ethers.parseUnits("2000", "gwei") : undefined;
+  console.log(`Replacing each queued nonce with a no-op self-transfer`
+    + (gasPrice ? ` at ${ethers.formatUnits(gasPrice, "gwei")} gwei.\n` : `.\n`));
+
+  let consumed = 0;
   for (let n = mined; n < pending; n++) {
     // Re-read every iteration: the chain may start moving mid-run, and sending
     // at an already-consumed nonce fails with a misleading "nonce too low".
     const fresh = await provider.getTransactionCount(deployer.address, "latest");
     if (fresh > n) {
       console.log(`  nonce ${n} already mined — skipping ahead to ${fresh}`);
+      // The chain eating its own queue is proof it is working. Carrying on
+      // would replace transactions that are about to succeed.
+      if (++consumed >= 3) {
+        console.log(`\nThe chain has consumed ${consumed} nonces on its own since we started.`);
+        console.log("It IS mining — the watch window simply caught a quiet moment. Stopping");
+        console.log("rather than competing with transactions that are going to land.");
+        return;
+      }
       n = fresh - 1;
       continue;
     }
     try {
-      const tx = await deployer.sendTransaction({ to: deployer.address, value: 0, nonce: n });
+      const tx = await deployer.sendTransaction({ to: deployer.address, value: 0, nonce: n, ...(gasPrice ? { gasPrice } : {}) });
       console.log(`  replacing nonce ${n} … ${tx.hash}`);
       await tx.wait();
       console.log("  ✓ mined");
@@ -101,9 +119,10 @@ async function main() {
       // sentence that tells you what to do next.
       if (/underpriced|already known|known transaction/i.test(msg)) {
         console.log(`  nonce ${n}: the node refuses a replacement — ${msg.slice(0, 90)}`);
-        console.log("  (An identical replacement is rejected as a duplicate. This one needs a");
-        console.log("   higher price than the transaction already sitting there.)");
-        console.log("  A cluster restart clears the mempool, which is the remaining option.");
+        console.log("  The transaction already at this nonce is priced at least as high as our");
+        console.log("  replacement, which means it is a NORMAL transaction waiting its turn, not");
+        console.log("  an underpriced one that can never mine. Let the queue drain.");
+        console.log("  If it truly never moves, a cluster restart clears the mempool.");
         return;
       }
       throw e;
