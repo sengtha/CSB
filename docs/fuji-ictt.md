@@ -296,6 +296,42 @@ Finally, test the controls, which is the part worth showing people:
 - over the daily cap → `DailyCapExceeded`
 - `gateway.pause()` → all egress halts
 
+## Step 7 — Bridge back: Fuji → CSB
+
+```bash
+source ops/csb-env.sh
+CSB_TOKEN_REMOTE=<Remote on Fuji> \
+CSB_TOKEN_HOME=<Home on CSB> \
+CSB_HOME_BLOCKCHAIN_ID=0x9633e7227257f4de7dcd8e595bfafdd8cf6f88918926dd1d4e2ddfff46978a61 \
+CSB_BACK_TO=<recipient on CSB, must be KYC-active> \
+CSB_BACK_AMOUNT=50 \
+  node scripts/bridge-back.js
+```
+
+The token on Fuji is **not** KHRt — it is `ERC20TokenRemote`, a separate ERC-20
+minted when collateral was locked on CSB. `send()` burns the caller's balance of
+it and emits an ICM message; when the relayer delivers that message, the
+TokenHome releases the equivalent KHRt on CSB. No `approve()` is needed, because
+the remote burns its own token rather than pulling one.
+
+**The recipient on CSB must be KYC-active.** KHRt enforces compliance on every
+transfer, and the TokenHome releasing collateral is a transfer like any other. If
+the recipient is not verified, the **Fuji burn succeeds and the CSB delivery
+reverts** — the tokens are recoverable (the collateral stays in the Home and the
+message can be re-delivered once the recipient is verified) but the failure lands
+on a different chain from the transaction that caused it. `scripts/bridge-back.js`
+reads CSB's identity registry before burning anything and refuses if the
+recipient cannot receive.
+
+That asymmetry is deliberate and is the point of the design: leaving the
+sovereign perimeter is council-governed and publicly visible; coming back is
+subject to the same KYC rule as any domestic transfer. The bridge cannot be used
+to launder an identity.
+
+Note also that the remote's `decimals()` need not match KHRt's 2 — ICTT can be
+configured with a different scale on the remote side. The script reads it rather
+than assuming, since guessing wrong sends 100× or 1/100th of the intended amount.
+
 ## Notes
 
 - **The boundary, made visible:** the recipient balance on Fuji is visible in any
@@ -305,10 +341,12 @@ Finally, test the controls, which is the part worth showing people:
   non-zero, the first send goes toward collateral rather than to the recipient —
   a CSB-side success with a zero Fuji balance is more likely this than a relayer
   fault.
-- **Return path** (Fuji → CSB): `TokenRemote.send()` back to the TokenHome
-  unlocks collateral. v1 leaves ingress ungated; the recipient must still be
-  KYC'd to receive KHRt, so non-KYC'd returns revert unless sent to a system
-  contract or an `IngressGateway` escrow (future work).
+- **Ingress is ungated in v1** (see step 7). There is no `IngressGateway` mirror
+  of the egress policy: no tier requirement, no daily cap, no pause. The only
+  control on the way back in is KHRt's own KYC rule, which is enough to keep
+  funds inside the verified perimeter but does not let the council rate-limit or
+  halt inbound flow the way it can outbound. An `IngressGateway` escrow is future
+  work.
 - **Fees.** ICTT primary/secondary fees are zero — a state-run relayer needs no
   incentive. That is the bridge's own fee and is separate from CSB gas; the
   transaction still costs about 1 riel like any other.
