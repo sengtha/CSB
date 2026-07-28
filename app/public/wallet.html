@@ -230,8 +230,18 @@ async function run(fn) {
   const sel = document.getElementById("acct-select");
   const pay = document.getElementById("pay-preset");
   for (const [name, a] of Object.entries(cfg.pilot?.accounts ?? {})) {
-    sel.add(new Option(`${name} — ${a.note}`, a.key));
+    // The server only sends pilot private keys to an authenticated session, so
+    // an anonymous visitor gets addresses and no keys. Offering the account in
+    // the "act as" picker without one would produce a signer with an empty key
+    // and an incomprehensible error, so it is only listed when usable.
+    if (a.key) sel.add(new Option(`${name} — ${a.note}`, a.key));
     pay.add(new Option(`${name} (${short(a.address)})`, a.address));
+  }
+  if (sel.options.length <= 1) {
+    const hint = document.createElement("option");
+    hint.textContent = "(sign in to act as a pilot account)";
+    hint.disabled = true;
+    sel.add(hint);
   }
   sel.onchange = () => (document.getElementById("acct-key").value = sel.value);
   pay.onchange = () => (document.getElementById("pay-to").value = pay.value);

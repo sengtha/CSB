@@ -17,6 +17,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { stripSecrets } = require("./server-secrets");
 const { filterBody } = require("./rpc-filter");
 const { deriveToken, addressFromToken, verifySignature } = require("./rpc-access");
 const { fundReport } = require("./fund");
@@ -526,7 +527,18 @@ const server = http.createServer(async (req, res) => {
       send(res, 404, { error: "deployments.json missing — run scripts/deploy.js (and optionally scripts/seed-accounts.js)" });
       return;
     }
-    send(res, 200, fs.readFileSync(file, "utf8"));
+    // deployments.json holds the pilot cast's PRIVATE KEYS, and this route used
+    // to return the file verbatim to anyone who asked — no cookie, no passcode.
+    // On a chain whose entire claim is that every participant is known, handing
+    // out working keys for KYC'd, allow-listed accounts is worse than losing
+    // test funds: an anonymous visitor acquires a verified identity.
+    //
+    // Contract addresses are genuinely public — the wallet needs them before
+    // login — so the route still answers unauthenticated. The keys are the part
+    // that must not travel, and they are only included for an authenticated
+    // session, where they drive the demo's "act as Sokha" account picker.
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    send(res, 200, authed(req) ? parsed : stripSecrets(parsed));
     return;
   }
 
