@@ -225,7 +225,7 @@ async function main() {
     pair: pairAddr,
     testToken: await plain.getAddress(),
     khr: c.KHRStablecoin,
-    note: "Unmodified Uniswap V2 (published artifacts). See docs/paper §5.2.",
+    note: "Unmodified Uniswap V2 (published artifacts). See docs/defi.md.",
   };
   fs.writeFileSync(file, JSON.stringify(d, null, 2));
   console.log(`\nRecorded the pool in ${path.basename(file)} — it will appear on defi.html.`);

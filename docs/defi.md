@@ -166,10 +166,13 @@ temporarily lowered (see `docs/fuji-ictt.md` §1).
 
 ---
 
-## Where this is written up
+## Where the evidence lives
 
-- `docs/paper/csb-paper.md` §5.2 (Uniswap), §5.4 (Aave), §5.5 (costs), §7.5
-  (what the perimeter actually secures)
+This document is the write-up. Everything in it is reproducible from:
+
 - Tests: `test/defi-unmodified.test.js`, `test/defi-aave.test.js`
 - Live scripts: `scripts/defi-experiment.js`, `scripts/aave-live.js`
 - Shared Aave deployment helper: `scripts/lib/aave.js`
+
+The tests are the authority for the findings — each one is written to fail if the
+behaviour it describes stops being true.

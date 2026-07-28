@@ -102,7 +102,7 @@ async function main() {
     underlying: khrAddr,
     decimals,
     note: "Unmodified @aave/core-v3 1.19.3. Test oracle with a hand-set price — "
-      + "valuations are not market-derived. See docs/paper §5.4.",
+      + "valuations are not market-derived. See docs/defi.md.",
   };
   fs.writeFileSync(file, JSON.stringify(d, null, 2));
 
