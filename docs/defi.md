@@ -40,8 +40,8 @@ source ops/csb-env.sh
 npx hardhat run scripts/aave-live.js --network csbRemote
 ```
 
-~1,000–1,200 tRIEL (estimated, not yet measured on 8555 — see Costs) and a few
-minutes. It is about twenty deployments: Aave's
+~2,270 tRIEL (measured locally, not yet measured on 8555 — see Costs) and a few
+minutes. It is 31 transactions: Aave's
 `Pool` exceeds the EIP-170 contract size limit on its own, so its logic lives in
 eight external libraries that must be deployed and linked first, and `Pool` and
 `PoolConfigurator` sit behind proxies owned by the addresses provider.
@@ -171,9 +171,17 @@ hardhat's fixed 55,000 gwei.
 A complete AMM for about eight US cents is the intended effect of pricing gas for
 inclusion rather than for congestion.
 
-**Not measured on 8555:** the Aave market. Its cost is *estimated* at roughly
-950–1,200 tRIEL by scaling gas from a local run to the policy fee. Do not quote it
-as a measurement — run `scripts/aave-live.js` on 8555 and use what it prints.
+**Not measured on 8555:** the Aave market. Measured locally, standing up the
+market is **31 transactions and 47,709,671 gas**, which at the 47,619 gwei policy
+floor is **2,271.89 tRIEL ($0.568)**; the two `setSystemContract` grants the market
+needs add 96,182 gas (4.58 tRIEL). Gas is deterministic for identical bytecode, so
+these transfer to 8555 at the same fee policy — but they are a local measurement,
+not a live one. Run `scripts/aave-live.js` on 8555 and use what it prints before
+quoting a live figure.
+
+(An earlier estimate of 950–1,200 tRIEL in this file was low by roughly half; it
+was derived from an assumption of about twenty deployments rather than the 31 the
+market actually takes.)
 
 Note the same `feeManager` call that makes a payment cost one riel makes a
 contract deployment cost 145. Gas as fiscal policy binds on deployment economics
