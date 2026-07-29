@@ -1,6 +1,6 @@
 # CSB deployment status — Fuji testnet
 
-**Status:** LIVE on Avalanche Fuji · redeployed 2026-07-24 on a fresh VM, running **three nodes but ONE registered L1 validator** (see the validator-set section below — this was recorded as "three validators" until 2026-07-28, when querying the P-Chain showed otherwise). **Wallet KHRt transfer, the Fuji ICTT bridge in both directions, and unmodified Uniswap V2 and Aave V3 all verified working end-to-end.**
+**Status:** LIVE on Avalanche Fuji · redeployed 2026-07-24 on a fresh VM, running **TWO nodes and ONE registered L1 validator** (see the validator-set section — recorded as "three validators" until 2026-07-28, then as three nodes until 2026-07-29, when probing every listening port showed node 3 had stopped). **Wallet KHRt transfer, the Fuji ICTT bridge in both directions, and unmodified Uniswap V2 and Aave V3 all verified working end-to-end.**
 
 This is the running record of the CSB testnet: what exists, where, and how to operate it. Public identifiers and contract addresses only — **no private keys or passcodes live in this file** (those are in `~/.avalanche-cli/key/`, `app/deployments.json`, and the operator's env, all off-repo).
 
@@ -14,7 +14,7 @@ This is the running record of the CSB testnet: what exists, where, and how to op
 | Blockchain ID | `299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW` |
 | VM ID | `koLRzStcoE4fZ6V1DtXJCYMVWctdrdfpR6Y5egzFbURXRSvVv` |
 | Validator Manager | V2 PoA, owned by the deployer key (Governing-Council slot in production) |
-| Validators | **3** (avalanche-cli local cluster `csb-local-node-fuji`) — see Infrastructure. Multi-validator from birth so block production keeps going under load. |
+| Validators | **1** (avalanche-cli local cluster `csb-local-node-fuji`) — see Infrastructure. Single validator: no fault tolerance. Verify with `bash ops/csb-nodes.sh`, never from this table. |
 | Native token | **tRIEL** (10,000,000 allocated to the deployer at genesis) |
 | Gas | **~1 tRIEL (1 riel) per ordinary payment** — fee floor ≈ 47,619 gwei, so a 21,000-gas transfer costs 1 tRIEL and heavier transactions cost proportionally more. Set with `scripts/set-gas-price.js`. |
 | Gas fees go to | **The public-good fund, not burned** — RewardManager (`0x…04`) routes every transaction's fee to the charity address. Set with `scripts/set-reward-address.js`. |
@@ -26,7 +26,7 @@ This is the running record of the CSB testnet: what exists, where, and how to op
 | | |
 |---|---|
 | Host | Elestio VM (host `cicd-upecy-u70984`; repo at `/opt/csb`, Ubuntu, Docker) |
-| Nodes (3), validators (**1**) | avalanche-cli local **cluster `csb-local-node-fuji`**. Node 1 `NodeID-BoRS383b4Z9ZdsJSVUcnrXNCXh5Qj93ux` (port **9650**, primary API) — **the only registered L1 validator** · Node 2 `NodeID-7bR7RPuFvqKqz6iJghvhcuyDSwTovV7xk` (port 32865) · Node 3 `NodeID-LfGX121t7kEmbMWTmcF5RDSP6bWARK87U` (port 37973). Nodes 2 and 3 track the chain and contribute no stake. Measured 2026-07-28: node 2 serves the ICM relayer's **websocket** (one established connection — the relayer subscribes there for new blocks while using node 1 for RPC); node 3 has **no connections at all** and is a warm spare. Everything else — the app, the ops scripts, the relayer's RPC — points at node 1, which is also the validator, so read load and consensus share one process. **Always operate this one cluster.** Verify the validator set rather than trusting this table: `platform.getCurrentValidators` with the subnet ID (command in the validator-set section). |
+| Nodes (**2** running of 3 provisioned), validators (**1**) | avalanche-cli local **cluster `csb-local-node-fuji`**. Node 1 `NodeID-BoRS383b4Z9ZdsJSVUcnrXNCXh5Qj93ux` (port **9650**, primary API) — **the only registered L1 validator** · Node 2 `NodeID-7bR7RPuFvqKqz6iJghvhcuyDSwTovV7xk` (port 32865) tracks the chain and serves the ICM relayer's **websocket** (the relayer subscribes there for new blocks while using node 1 for RPC) · Node 3 `NodeID-LfGX121t7kEmbMWTmcF5RDSP6bWARK87U` (was port 37973) — **NOT RUNNING**. Its directory and staking keys still exist; only the process is gone. Measured 2026-07-29 by probing every listening port with `info.getNodeID`: two answered. On 2026-07-28 node 3 was recorded as a "warm spare" on the strength of having no network connections — that was an absence of connections being read as idleness, when it was probably already stopped. Nothing depended on it, which is why it went unnoticed. Everything else — the app, the ops scripts, the relayer's RPC — points at node 1, which is also the validator, so read load and consensus share one process. **Always operate this one cluster.** Never trust this row: `bash ops/csb-nodes.sh`. |
 | Staking key backup | `~/csb-backup.tgz` (staker.key/crt + BLS signer + deployer key) — pulled off the VM. Each validator's staking identity lives under `~/.avalanche-cli/local/csb-local-node-fuji/<NodeID>/staking/`. |
 | App server | `app/server.js` on port **8080** (gated wallet/explorer/admin), passcode via `EXPLORER_PASSCODE` env |
 | Deployer / admin key | `csb-deployer` → **`0x8f6aE9fB0993C8691D7FCDFBFC79fbcF5A7BFa8b`** — precompile admin, contract deployer, KHRt issuer, validator-manager owner. **TESTNET ONLY — never reuse on mainnet.** |
@@ -220,7 +220,7 @@ donation on the payment panel and the running total raised.
 
 ## What works today
 
-- Chain producing blocks on a **3-validator** cluster; RPC answers `eth_chainId` = `0x216b`.
+- Chain producing blocks (one validator; see the validator-set section); RPC answers `eth_chainId` = `0x216b`.
 - Full contract suite live; Sokha/Dara KYC-active, txAllowList-enabled, and funded with tRIEL.
 - **Wallet KHRt transfer (Sokha → Dara) verified end-to-end through the gated app.**
 - **RielPay** — pay in native tRIEL directly, so the chain is usable before any tokenized riel exists.
@@ -272,7 +272,7 @@ CSB_RPC_URL=$RPC CSB_CHAIN_ID=8555 CSB_DEPLOYER_KEY=<deployer-key> \
 # after a VM reboot, the validator cluster must be restarted. All three
 # validators live in the ONE cluster 'csb-local-node-fuji' — starting it starts
 # all of them. Never create a second cluster for this chain.
-avalanche node local list                        # shows all 3 nodes + health
+bash ops/csb-nodes.sh                            # nodes running, and which validate
 avalanche node local start csb-local-node-fuji
 ```
 
@@ -280,7 +280,7 @@ Browser access: your Elestio host over HTTPS (passcode-gated). **Easiest login: 
 
 ## Next steps (testnet checklist continues)
 
-1. Watch that the 3-validator chain keeps producing blocks over days, not minutes — the earlier chains wedged only after sustained use. Install the watchdog (below) so a stall is caught automatically instead of during a demo.
+1. Watch that the chain keeps producing blocks over days, not minutes — the earlier chains wedged only after sustained use. Install the watchdog (below) so a stall is caught automatically instead of during a demo.
 2. Decide the gas policy: leave gas near-free, or charge a small fee and route it to the public fund with the RewardManager precompile (`setRewardAddress`).
 3. Real ICTT egress to Fuji C-Chain (`docs/fuji-ictt.md`) — first token across the governed gateway onto a public chain.
 4. Remaining rehearsals: freeze/confiscate, validator remove, fee raise/lower (partly done), backup restore, coordinated upgrade.
@@ -356,7 +356,7 @@ contents leak pending transactions; see the RPC-privacy section of
 
 - `~/.avalanche-cli/key/csb-deployer.pk` — chain root authority.
 - `app/deployments.json` — contract addresses + pilot keys.
-- **Validator staking identities** — `~/.avalanche-cli/local/csb-local-node-fuji/<NodeID>/staking/staker.key` + `staker.crt`, for all three NodeIDs. Together these keys **are** the L1's validator set; lose enough of them and the chain cannot reach quorum to bootstrap or to register replacements. Back them all up off the VM. (This is exactly what went wrong once: a stop/start landed on a *different* cluster with a new NodeID, and the L1 sat at "0% stake connected / context deadline exceeded" until the original cluster was restarted.)
+- **Validator staking identities** — `~/.avalanche-cli/local/csb-local-node-fuji/<NodeID>/staking/staker.key` + `staker.crt`, for all three provisioned NodeIDs (including node 3, which is not currently running). Together these keys **are** the L1's validator set; lose enough of them and the chain cannot reach quorum to bootstrap or to register replacements. Back them all up off the VM. (This is exactly what went wrong once: a stop/start landed on a *different* cluster with a new NodeID, and the L1 sat at "0% stake connected / context deadline exceeded" until the original cluster was restarted.)
 - (validator identity) `csb_avalanchego-staking` Docker volume, if an off-VM Docker validator is registered.
 
 ## Troubleshooting
@@ -398,7 +398,7 @@ restart nor adding a validator afterwards recovered a chain once wedged. Check
 liveness first, and check every node in the cluster:
 
 ```bash
-avalanche node local list                        # all 3 nodes should be Running/Healthy/Bootstrapped
+bash ops/csb-nodes.sh                            # each node should answer and be healthy
 curl -s 127.0.0.1:9650/ext/health | head -c 400  # look for percentConnected / disconnectedValidators
 for i in 1 2; do
   curl -s -X POST -H 'content-type:application/json' \
@@ -425,11 +425,11 @@ started the `csb-local-node-fuji` cluster rather than creating a new one — a
 freshly created cluster gets *new* NodeIDs that the L1 has never registered and
 can therefore never bootstrap it.
 
-## Validator set — three nodes, ONE validator
+## Validator set — TWO running nodes, ONE validator
 
-This section was wrong until 2026-07-28. It said the chain ran three validators.
-It runs three *nodes* and one *validator*, which are different things: a node that
-tracks the chain contributes no stake, and only validators registered on the
+This section has been wrong twice. It said three validators until 2026-07-28, then
+three nodes until 2026-07-29. It is two running nodes and one validator. A node
+and a validator are different things: a node that tracks the chain contributes no stake, and only validators registered on the
 P-Chain do. Check it, do not trust this file:
 
 ```bash
@@ -449,10 +449,19 @@ is not hypothetical — it is exactly how the chain went down for fourteen hours
 because nothing was wrong with the nodes.
 
 Registering nodes 2 and 3 as validators is the single most valuable reliability
-change available. They already exist, already run, and already track the chain;
-they are simply not in the validator set. See `docs/validator-manual.md`.
+change available. Their directories and staking identities already exist. Node 2
+runs and tracks the chain; node 3 must be started first. See
+`docs/validator-manual.md`. Note that each registered validator draws its own
+continuous ACP-77 fee, so going from one to three roughly triples the drain rate
+in the next section — budget the P-Chain balance before doing it.
 
-The VM remains a single point of failure regardless — all three nodes share one
+If an `addValidator` run appeared to succeed but the P-Chain still shows one
+validator, suspect a registration that completed its first phase
+(`initiateValidatorRegistration` on the validator manager) and never landed the
+Warp message that completes it on the P-Chain. That is recoverable without
+redeploying.
+
+The VM remains a single point of failure regardless — every node shares one
 host. Geographic redundancy is separate, later work.
 
 ### The fee balance is a deadline
@@ -479,6 +488,21 @@ before deciding the interval.
 Earlier single- and two-validator deployments of this chain repeatedly stopped
 producing blocks, and this file previously attributed the current chain's
 stability to having three validators. That explanation cannot be right, since the
-current chain has one. The stalls are more plausibly the same fee-balance
-exhaustion documented in the incident write-up. Recorded here because a wrong
-explanation that predicts correctly is worse than no explanation.
+current chain has one, and has carried the full deploy, the bridge in both
+directions and a Uniswap deployment on it.
+
+What replaced it is **not** "the stalls were fee-balance exhaustion" — that is a
+hypothesis, not a finding, and the evidence to test it no longer exists (the VM
+was rebuilt 2026-07-24; no logs, balances or validator queries survive). See
+`docs/paper-notes.md` §2.
+
+What can be said is narrower and holds for every stall observed, including
+2026-07-28: the chain had **connected stake below the finalisation threshold**,
+reached by different routes — a validator deactivated for a zero P-Chain balance,
+a restart landing on a cluster whose NodeID was not the registered one, possibly
+an RPC that 404'd on a bad `eth-apis` entry. Validator *count* was never the
+variable; it was standing in for "is any stake actually connected", which is why
+it appeared to predict correctly.
+
+Recorded here because a wrong explanation that predicts correctly is worse than no
+explanation.
