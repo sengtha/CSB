@@ -1,6 +1,6 @@
 # CSB deployment status — Fuji testnet
 
-**Status:** LIVE on Avalanche Fuji · redeployed 2026-07-24 on a fresh VM with **three validators from birth** (the previous single-validator chains kept wedging block production under load — a fresh 3-validator deploy ran the full deploy + seed + charity-levy sequence, ~30 txs, without stalling). **Wallet KHRt transfer verified working end-to-end.**
+**Status:** LIVE on Avalanche Fuji · redeployed 2026-07-24 on a fresh VM, running **three nodes but ONE registered L1 validator** (see the validator-set section below — this was recorded as "three validators" until 2026-07-28, when querying the P-Chain showed otherwise). **Wallet KHRt transfer, the Fuji ICTT bridge in both directions, and unmodified Uniswap V2 and Aave V3 all verified working end-to-end.**
 
 This is the running record of the CSB testnet: what exists, where, and how to operate it. Public identifiers and contract addresses only — **no private keys or passcodes live in this file** (those are in `~/.avalanche-cli/key/`, `app/deployments.json`, and the operator's env, all off-repo).
 
@@ -26,7 +26,7 @@ This is the running record of the CSB testnet: what exists, where, and how to op
 | | |
 |---|---|
 | Host | Elestio VM (host `cicd-upecy-u70984`; repo at `/opt/csb`, Ubuntu, Docker) |
-| Validators (3) | avalanche-cli local **cluster `csb-local-node-fuji`**, all Running/Healthy/Bootstrapped. Node 1 `NodeID-BoRS383b4Z9ZdsJSVUcnrXNCXh5Qj93ux` (port **9650**, primary API) · Node 2 `NodeID-7bR7RPuFvqKqz6iJghvhcuyDSwTovV7xk` (port 32865) · Node 3 `NodeID-LfGX121t7kEmbMWTmcF5RDSP6bWARK87U` (port 37973). **Always operate this one cluster** — it holds all three validators. |
+| Nodes (3), validators (**1**) | avalanche-cli local **cluster `csb-local-node-fuji`**. Node 1 `NodeID-BoRS383b4Z9ZdsJSVUcnrXNCXh5Qj93ux` (port **9650**, primary API) — **the only registered L1 validator** · Node 2 `NodeID-7bR7RPuFvqKqz6iJghvhcuyDSwTovV7xk` (port 32865) · Node 3 `NodeID-LfGX121t7kEmbMWTmcF5RDSP6bWARK87U` (port 37973). Nodes 2 and 3 track the chain and serve RPC; they contribute no stake. **Always operate this one cluster.** Verify the validator set rather than trusting this table: `platform.getCurrentValidators` with the subnet ID (command in the validator-set section). |
 | Staking key backup | `~/csb-backup.tgz` (staker.key/crt + BLS signer + deployer key) — pulled off the VM. Each validator's staking identity lives under `~/.avalanche-cli/local/csb-local-node-fuji/<NodeID>/staking/`. |
 | App server | `app/server.js` on port **8080** (gated wallet/explorer/admin), passcode via `EXPLORER_PASSCODE` env |
 | Deployer / admin key | `csb-deployer` → **`0x8f6aE9fB0993C8691D7FCDFBFC79fbcF5A7BFa8b`** — precompile admin, contract deployer, KHRt issuer, validator-manager owner. **TESTNET ONLY — never reuse on mainnet.** |
@@ -406,10 +406,16 @@ for i in 1 2; do
 done                                             # the two numbers must differ
 ```
 
-If height is frozen, restart the whole cluster (`avalanche node local stop
-csb-local-node-fuji && avalanche node local start csb-local-node-fuji`). If it
-stays frozen, the chain is wedged — redeploy with **at least three validators
-from the start**; retrofitting validators onto a wedged chain does not work.
+If height is frozen, **check the validator fee balance before restarting** — a
+validator deactivated for a zero balance produces exactly this symptom, and a
+restart cannot fix it (see "The fee balance is a deadline" below, and
+`docs/incident-2026-07-28.md`). Restarting a chain whose validator is inactive
+wastes time and destroys the evidence.
+
+If balances are healthy and height is still frozen, restart the cluster
+(`avalanche node local stop csb-local-node-fuji && avalanche node local start
+csb-local-node-fuji`) — once, and then leave it alone; competing starts are their
+own failure mode.
 
 **Chain won't bootstrap after a restart: "context deadline exceeded" / health shows
 `not connected to enough stake: connected to 0.000000%`.** The nodes that came up
@@ -419,16 +425,60 @@ started the `csb-local-node-fuji` cluster rather than creating a new one — a
 freshly created cluster gets *new* NodeIDs that the L1 has never registered and
 can therefore never bootstrap it.
 
-## Validator-set caveat
+## Validator set — three nodes, ONE validator
 
-All three validators run in one cluster on **one VM**, so the VM is still a single
-point of failure: if it reboots, the chain pauses until `avalanche node local start
-csb-local-node-fuji` brings the cluster back — data persists. The remaining
-redundancy work is geographic: register a validator on a *different* host using
-`docs/validator-manual.md`.
+This section was wrong until 2026-07-28. It said the chain ran three validators.
+It runs three *nodes* and one *validator*, which are different things: a node that
+tracks the chain contributes no stake, and only validators registered on the
+P-Chain do. Check it, do not trust this file:
 
-Why three and not one: single- and two-validator deployments of this chain
-repeatedly stopped producing blocks after limited activity (height frozen, no
-recovery from restart or from adding a validator afterwards). The three-validator
-deploy ran the entire deploy + seed + levy sequence without stalling. Treat "one
-validator is enough for a pilot" as disproven here.
+```bash
+curl -s -X POST -H 'content-type:application/json' --data '{
+  "jsonrpc":"2.0","id":1,"method":"platform.getCurrentValidators",
+  "params":{"subnetID":"fgNiKVRTRJFZbCzSUPJMix6YdG2HfpXGf1LP9rQ58b5TU9mJL"}
+}' http://127.0.0.1:9650/ext/bc/P | python3 -m json.tool
+```
+
+Measured 2026-07-28: exactly one entry, `NodeID-BoRS383b4Z9ZdsJSVUcnrXNCXh5Qj93ux`,
+weight 100.
+
+**What this costs you.** There is no fault tolerance whatsoever. An L1 needs 80%
+of its stake connected to finalise; with one validator, losing it means 0%. That
+is not hypothetical — it is exactly how the chain went down for fourteen hours on
+2026-07-28 (`docs/incident-2026-07-28.md`), and no amount of restarting helped,
+because nothing was wrong with the nodes.
+
+Registering nodes 2 and 3 as validators is the single most valuable reliability
+change available. They already exist, already run, and already track the chain;
+they are simply not in the validator set. See `docs/validator-manual.md`.
+
+The VM remains a single point of failure regardless — all three nodes share one
+host. Geographic redundancy is separate, later work.
+
+### The fee balance is a deadline
+
+Each L1 validator pays a continuous fee from a balance held on the P-Chain, and at
+zero it is **deactivated** — which is what caused the outage. Watch it:
+
+```bash
+avalanche validator getBalance --fuji \
+  --validation-id 2rrjPnaiB3PnatWdkZH37yJqFHBePUupuC5cFPsLXXZja6EBrh
+```
+
+Top up with `avalanche validator increaseBalance --fuji --key csb-deployer
+--validation-id <id> --balance <AVAX>`, funded from `csb-deployer`'s P-Chain
+address (`P-fuji1mwwasu75mmwehls89rych7mxrnu0936lc8fpwv`).
+
+Observed drain: topped up to 1.0 AVAX on 2026-07-28 and reading 0.983 a few hours
+later. That is on the order of **weeks, not months**, so this needs a calendar
+reminder, not good intentions. Take two readings a day apart to get a real rate
+before deciding the interval.
+
+### Historical note
+
+Earlier single- and two-validator deployments of this chain repeatedly stopped
+producing blocks, and this file previously attributed the current chain's
+stability to having three validators. That explanation cannot be right, since the
+current chain has one. The stalls are more plausibly the same fee-balance
+exhaustion documented in the incident write-up. Recorded here because a wrong
+explanation that predicts correctly is worse than no explanation.
