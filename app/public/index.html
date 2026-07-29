@@ -62,25 +62,29 @@
 
       <div class="pillars">
         <div class="pillar">
-          <h3>🛡 Against AI-driven attack — multisig everywhere</h3>
+          <h3>🛡 Against AI-driven attack — multisig required at mainnet</h3>
           <div class="sub2">No single compromised human, key, or machine is enough.</div>
           <div class="threat">
             The realistic AI attack is not breaking cryptography. It is convincingly
             impersonating an official, at scale, until someone approves something.
           </div>
           <ul>
-            <li><strong>No unilateral authority.</strong> The validator manager, every precompile admin address, and every administrative contract role are held by <strong>institutional multisigs</strong> — no official below the council can act alone.</li>
-            <li><strong>Powers are split across institutions.</strong> Identity issuance, asset freezing, and money issuance are three different authorities. Compromising one gets you one power, not the chain.</li>
-            <li><strong>Every enforcement action carries a court-order reference</strong> on chain. An action without one is not just wrong, it is impossible.</li>
-            <li><strong>Validators sign blocks with HSM-protected node keys</strong> — no human approves individual blocks, so there is no per-block human to deceive.</li>
-            <li><strong>A stolen key is not a lost account.</strong> Identity-bound recovery reissues to a new address under the same registered identity — the attacker's advantage expires.</li>
-            <li><strong>Tamper-evident across institutions.</strong> Altering the record requires collusion between separately-run validators, and leaves evidence with all of them.</li>
+            <li><strong>No unilateral authority — a mainnet requirement.</strong> On mainnet the validator manager, every precompile admin address, and every administrative contract role <strong>must</strong> be held by <strong>institutional multisigs</strong>, so that no official below the council can act alone. Every role is a deployment parameter and the promotion procedure requires multisig ceremonies before launch. <strong>The testnet deployment does not do this</strong> — all roles are currently held by a single deployer key.</li>
+            <li><strong>Powers are split across institutions — in the contracts, not yet in the deployment.</strong> Identity issuance, asset freezing, and money issuance are three distinct roles in three distinct contracts, so compromising one authority gets one power rather than the chain. That separation is real in code and is what mainnet would assign to different institutions. <strong>On the testnet all three roles are held by the same key</strong>, so today compromising it does get you the chain.</li>
+            <li><strong>Every enforcement action carries a court-order reference</strong> on chain. An action without one is not just wrong, it is impossible — the contracts revert on a zero reference. <em>This one is live today</em>, in <span class="mono">EnforcementRegistry</span>, <span class="mono">KHRStablecoin</span> and <span class="mono">LandTitleToken</span>.</li>
+            <li><strong>Validators sign blocks with node keys, and no human approves individual blocks</strong> — so there is no per-block human to deceive. <em>That much is true today.</em> <strong>HSM protection is a mainnet requirement, not the current state</strong>: the testnet's staking keys are files on the node's disk.</li>
+            <li><strong>A stolen key need not be a lost account.</strong> Identity-bound recovery reissues a holding to a new address under the same registered identity, so the attacker's advantage expires. <strong>Implemented for land titles only</strong> (<span class="mono">LandTitleToken.recoveryAddress</span>); KHRt has enforcement <span class="mono">confiscate</span> rather than recovery, and <strong>native tRIEL has no recovery path at all</strong>. General account recovery needs the account abstraction described in the next pillar, which is not built.</li>
+            <li><strong>Tamper-evident across institutions — the mainnet target.</strong> With validators run by separate institutions, altering the record requires collusion between them and leaves evidence with all of them. <strong>The testnet has one registered validator on one host</strong>, so it has neither that property nor any fault tolerance.</li>
           </ul>
           <div class="honest">
-            <strong>Stated honestly:</strong> this is <em>resilience, not immunity</em>. It does not
-            stop an attack; it makes a single successful compromise insufficient to
-            move money, and makes the attempt visible to parties the attacker does not
-            control.
+            <strong>Stated honestly:</strong> this is <em>resilience, not immunity</em>, and most of it
+            is <em>not yet in force</em>. The design makes a single successful compromise
+            insufficient to move money and makes the attempt visible to parties the
+            attacker does not control — but that depends on roles being split across
+            institutional multisigs and on validators being separately run, and this
+            deployment does neither. What is enforced today is the court-order
+            requirement. The rest is a deployment configuration that mainnet must
+            adopt, and a prototype should not be read as having adopted it.
           </div>
         </div>
 
@@ -93,18 +97,20 @@
             already published, waiting.
           </div>
           <ul>
-            <li><strong>Upgradeable signature verification.</strong> Accounts are smart accounts whose signing scheme can change: ECDSA today, ML-DSA / Falcon-class when the standards and tooling mature — <strong>keeping the same address, with no asset migration</strong>.</li>
-            <li><strong>A governed validator set can actually execute the upgrade.</strong> Coordinated, fleet-wide cryptographic migration is a decision here. On a public chain it is a years-long social negotiation that may simply fail.</li>
+            <li><strong>Upgradeable signature verification — designed, not built.</strong> The design targets smart accounts whose signing scheme can change: ECDSA today, ML-DSA / Falcon-class when the standards and tooling mature, <strong>keeping the same address with no asset migration</strong>. <strong>The prototype implements no account abstraction</strong>: accounts here are ordinary externally-owned ECDSA keys, exactly as on any EVM chain.</li>
+            <li><strong>A governed validator set can actually execute the upgrade.</strong> Coordinated, fleet-wide cryptographic migration is a decision here. On a public chain it is a years-long social negotiation that may simply fail. (The property is governance, not scale — this deployment's set is one validator.)</li>
             <li><strong>"Private to the world" limits harvest-now-decrypt-later.</strong> Public ledgers expose every public key permanently, so an adversary can collect today and break later. CSB's ledger is not world-readable, so there is far less to harvest in the first place.</li>
             <li><strong>Migration is a planned phase</strong>, not an emergency response written after the news breaks.</li>
           </ul>
           <div class="honest">
             <strong>Stated honestly:</strong> post-quantum signatures are <em>not deployed today</em>
-            — the tooling is not ready anywhere. What exists now is the architecture
-            that makes switching possible without asking every citizen to move their
-            money, plus the governance able to decide it. That is quantum
-            <em>readiness</em>, not quantum proof, and anyone claiming the latter today
-            should be read carefully.
+            — the tooling is not ready anywhere. Nor is the account abstraction that
+            would let a signing scheme change without moving anyone's money: that is a
+            <em>design commitment for mainnet</em>, and this prototype does not implement it.
+            What exists today is the governance able to decide such a migration, and a
+            ledger that is not world-readable, so there is less to harvest in the
+            meantime. That is a <em>plan</em> for quantum readiness rather than readiness
+            itself — and anyone claiming quantum <em>proof</em> today should be read carefully.
           </div>
         </div>
       </div>
