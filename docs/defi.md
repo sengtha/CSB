@@ -40,7 +40,8 @@ source ops/csb-env.sh
 npx hardhat run scripts/aave-live.js --network csbRemote
 ```
 
-~1,000–1,200 tRIEL and a few minutes. It is about twenty deployments: Aave's
+~1,000–1,200 tRIEL (estimated, not yet measured on 8555 — see Costs) and a few
+minutes. It is about twenty deployments: Aave's
 `Pool` exceeds the EIP-170 contract size limit on its own, so its logic lives in
 eight external libraries that must be deployed and linked first, and `Pool` and
 `PoolConfigurator` sit behind proxies owned by the addresses provider.
@@ -54,6 +55,13 @@ and borrow APRs read from the reserve, your position with a health factor, and
 supply / withdraw / borrow / repay.
 
 **Reproduce locally** — `npx hardhat test test/defi-aave.test.js`
+
+> **Status: local only.** As of 2026-07-28 the Aave market has been deployed and
+> exercised against a local instance of the contract suite and against a local
+> hardhat node, but **not** against chain 8555. Every Aave finding below is a
+> local result. The Uniswap findings are live (chain 8555). Check whether that has
+> changed since:
+> `node -e "console.log(require('./app/deployments.json').aave ?? 'no live Aave market')"`
 
 ### Two things to know before you run it
 
@@ -144,20 +152,28 @@ same guarantee and only one of them is enforced.
 
 ---
 
-## Costs, measured
+## Costs
 
-At the 1-riel fee policy (`minBaseFee` 47,619 gwei), from the live runs:
+**Measured on chain 8555**, at the 1-riel fee policy (`minBaseFee` 47,619 gwei).
+Gas is as executed; tRIEL is normalised to the policy floor, since the runs paid
+hardhat's fixed 55,000 gwei.
 
 | Operation | Gas | tRIEL | ≈ USD |
 |---|---:|---:|---:|
 | `UniswapV2Factory` deploy | 3,051,511 | 145.31 | $0.036 |
+| Test ERC-20 deploy | 716,193 | 34.10 | $0.009 |
 | `createPair` (deploys a pool) | 2,524,114 | 120.20 | $0.030 |
+| `setSystemContract` (council) | 48,091 | 2.29 | $0.0006 |
+| Add liquidity (`mint`) | 154,978 | 7.38 | $0.002 |
 | Uniswap swap | 143,980 | 6.86 | $0.002 |
-| Whole Uniswap experiment | | 316.14 | $0.079 |
-| Whole Aave V3 market (~20 deployments) | ~20,000,000 | ~950 | ~$0.24 |
+| **Whole Uniswap experiment** | | **316.14** | **$0.079** |
 
-A complete AMM for about four US cents, and a lending market for about a quarter,
-is the intended effect of pricing gas for inclusion rather than for congestion.
+A complete AMM for about eight US cents is the intended effect of pricing gas for
+inclusion rather than for congestion.
+
+**Not measured on 8555:** the Aave market. Its cost is *estimated* at roughly
+950–1,200 tRIEL by scaling gas from a local run to the policy fee. Do not quote it
+as a measurement — run `scripts/aave-live.js` on 8555 and use what it prints.
 
 Note the same `feeManager` call that makes a payment cost one riel makes a
 contract deployment cost 145. Gas as fiscal policy binds on deployment economics
