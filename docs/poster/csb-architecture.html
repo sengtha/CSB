@@ -211,22 +211,22 @@
           <h3>🛡 AI-driven attack</h3>
           <div class="lead">The realistic AI attack is not breaking cryptography. It is convincingly impersonating an official, at scale, until someone approves something.</div>
           <ul>
-            <li><b>Nobody can act alone.</b> Every administrative power is held by institutional multisigs.</li>
-            <li><b>Powers are split.</b> Compromise one authority and you get one power, not the chain.</li>
+            <li><b>Nobody can act alone</b> — required at mainnet. Every administrative power must be held by institutional multisigs. <b>The prototype holds all of them on one key.</b></li>
+            <li><b>Powers are split</b> in the contracts — compromise one authority and you get one power, not the chain. <b>Not yet in the deployment</b>: one key holds every role.</li>
             <li><b>Every freeze carries a court-order reference</b> — an action without one is impossible, not merely wrong.</li>
-            <li><b>A stolen key is not a lost account.</b> The attacker's advantage expires.</li>
+            <li><b>A stolen key need not be a lost account.</b> The attacker's advantage expires — <b>implemented for land titles only</b>; native tRIEL has no recovery path.</li>
           </ul>
-          <div class="honest"><b>Honestly:</b> resilience, not immunity. One successful deception is not enough to move money, and the attempt is visible to parties the attacker does not control.</div>
+          <div class="honest"><b>Honestly:</b> resilience, not immunity — and mostly <i>not yet in force</i>. The design makes one successful deception insufficient to move money and the attempt visible to parties the attacker does not control, but that rests on multisigs and separately-run validators, and this prototype has neither. What is enforced today is the court-order reference.</div>
         </div>
         <div>
           <h3>🔐 Quantum computers</h3>
           <div class="lead">Every blockchain today relies on ECDSA signatures. A quantum computer breaks them — and on a public ledger, the keys it will break are already published, waiting.</div>
           <ul>
-            <li><b>Accounts can change their cryptography</b> — same address, no need to move anyone's money.</li>
+            <li><b>Accounts can change their cryptography</b> — same address, no need to move anyone's money. <b>Designed, not built:</b> the prototype has no account abstraction.</li>
             <li><b>A governed validator set can actually execute the upgrade.</b> On a public chain it is a years-long negotiation that may simply fail.</li>
             <li><b>“Private to the world” means far less to harvest today</b> and decrypt later.</li>
           </ul>
-          <div class="honest"><b>Honestly:</b> post-quantum signatures are <i>not deployed anywhere yet</i> — the tooling is not ready. This is quantum <b>readiness</b>, not quantum proof. Anyone claiming the latter today should be read carefully.</div>
+          <div class="honest"><b>Honestly:</b> post-quantum signatures are <i>not deployed anywhere yet</i> — the tooling is not ready — and neither is the account abstraction that would let a signing scheme change without moving anyone's money. This is a <b>plan</b> for quantum readiness, not readiness itself, and certainly not quantum proof. Anyone claiming the latter today should be read carefully.</div>
         </div>
       </div>
     </div>

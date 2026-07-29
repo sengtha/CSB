@@ -12,7 +12,7 @@ A sovereign hybrid blockchain for Cambodia: **public within the country, private
 - Ledger data, infrastructure, and governance under Cambodian sovereign control.
 - A single, governed gateway through which only **permitted tokens** route to global public blockchains (Avalanche, Ethereum, Solana, …).
 - A token fee — about 1 riel per payment — routed to a public-good fund rather than burned, so the cost of running the chain becomes visible public benefit (§8).
-- Designed for a future in which AI-driven attacks and quantum computing stress the traditional banking system: multisig-everywhere, tamper-evident audit trails, identity-bound recoverable accounts, and **crypto-agility** as a first-class pillar.
+- Designed for a future in which AI-driven attacks and quantum computing stress the traditional banking system: multisig-everywhere, tamper-evident audit trails, identity-bound recoverable accounts, and **crypto-agility** as a first-class pillar. These are design targets for mainnet; §10 and `docs/deployment-status.md` record which of them the current deployment actually implements (few).
 
 This is not a single CBDC. Money is **two-tier**: a native, riel-pegged base coin (**tRIEL**) that also pays gas, and **many tokenized-riel stablecoins** (KHRt is one reference issuer) that all convert to tRIEL 1:1 — like USDT/USDC redeeming to the dollar. The chain itself is a neutral registry-and-asset layer; see §6.
 
@@ -46,13 +46,22 @@ Containment: the chain runs even if the P-Chain is unreachable; validator change
   - `contractNativeMinter` — administrative issuance of the native coin **tRIEL**, which is riel-pegged base money (not a speculative token); minted only under reserve discipline (§6), never freely;
   - `rewardManager` — directs gas fees to a public-good fund instead of burning them. **Only settable at genesis**, so it is enabled from the start (§8).
 - **Multisig clarification:** validators sign blocks automatically with node keys (HSM-protected — no per-block human approval). Multisig lives at the *governance layer*: the Validator Manager, precompile admin addresses, and every administrative contract role are held by institutional multisigs, so **no official below the council can act unilaterally**.
+  - *Current deployment:* the automatic block signing is true, but the rest is not. **No multisignature wallet is deployed anywhere**, every role named above is held by a single deployer key, and the staking keys are files on the node's disk rather than in an HSM.
 - **Trust model honesty:** with all validators under one government, BFT does not defend against the state itself. What it buys: tamper-evidence *between* institutions, auditability, and no single point of technical failure. Credibility can be strengthened later by seating a minority of validators outside the executive (audit bodies, universities, regional partners).
+  - *Current deployment:* none of that is realised. There is **one registered validator**, on **one host**, run by one party — so there is a single point of technical failure, no tamper-evidence between institutions, and no fault tolerance. This is a property of the prototype's scale, not of the design; it is the first thing mainnet must change.
 
 ## 4. Governance and separation of powers
 
 Root authority is a **Governing Council** established by an appropriate legal instrument (hypothetical) — this is also the legal vehicle that owns the chain, employs the core team, and holds root multisigs. Succession is automatic: authority follows the office. Changes of officeholders trigger a routine key-rotation ceremony.
 
 Powers are deliberately split across institutions and enforced in code:
+
+> **Status in the current deployment: not exercised.** The table below is the
+> role structure the contracts implement and the assignment mainnet requires.
+> On the testnet **every row is held by the same deployer key**, and no
+> multisignature wallet is deployed anywhere. The separation is real in code —
+> the roles are distinct and independently grantable — but it buys nothing
+> against a compromise of that one key today. See `docs/testnet-to-mainnet.md`.
 
 | Power | Holder | Contract |
 |---|---|---|
@@ -63,7 +72,9 @@ Powers are deliberately split across institutions and enforced in code:
 | Egress token allowlist, caps, circuit breaker | Governing Council | `EgressGateway` |
 | Validator set, protocol upgrades, precompile admin | Governing Council | Validator Manager + genesis admin keys |
 
-The point: the Identity Authority can stop *new* activity (revoke KYC) but cannot seize assets; the enforcement authority can freeze/confiscate but cannot touch identity or issuance; every enforcement action carries a court/AML order reference on chain. Due process, auditable by construction.
+The point, once the roles are held by different institutions: the Identity Authority can stop *new* activity (revoke KYC) but cannot seize assets; the enforcement authority can freeze/confiscate but cannot touch identity or issuance. Due process, auditable by construction.
+
+Of that, the order reference is the part in force today: every enforcement action carries a court/AML reference on chain, and the contracts revert without one (`EnforcementRegistry`, `KHRStablecoin.confiscate`, `LandTitleToken.forcedTransfer`/`recoveryAddress`). The mutual-exclusion property is not, because one key holds both roles.
 
 ## 5. Identity and on-chain KYC (Identity-Authority-issued)
 
@@ -159,11 +170,13 @@ Decided posture: **full validator transparency, controlled edges.**
 
 ## 10. Crypto-agility (quantum readiness)
 
-Standard EVM chains depend on ECDSA — broken by a cryptographically relevant quantum computer, with public keys permanently exposed on transparent ledgers. CSB's honest counter is **crypto-agility by governance**, which no public chain and no bank can match:
+Standard EVM chains depend on ECDSA — broken by a cryptographically relevant quantum computer, with public keys permanently exposed on transparent ledgers. CSB's counter is **crypto-agility by governance**.
 
-- Accounts are **smart accounts** whose signature-verification logic is upgradeable: ECDSA today, post-quantum schemes (ML-DSA/Falcon-class) when tooling matures — without users migrating addresses or losing assets.
+> **Status: design commitment, not implemented.** The v0 prototype has **no account abstraction**. Accounts are ordinary externally-owned ECDSA keys, exactly as on any EVM chain, and native tRIEL has no recovery path. The bullets below describe what mainnet is designed to provide; only the governance property and the non-public ledger are true of the deployment today.
+
+- *(Designed, not built.)* Accounts become **smart accounts** whose signature-verification logic is upgradeable: ECDSA today, post-quantum schemes (ML-DSA/Falcon-class) when tooling matures — without users migrating addresses or losing assets.
 - The permissioned validator set allows coordinated, fleet-wide protocol upgrades public chains cannot execute.
-- Against AI-driven attacks the claim is **resilience, not immunity**: multisig-everywhere (no single compromised official can move funds), tamper-evident cross-institution audit trails, identity-bound freeze/recovery, deterministic contract logic.
+- Against AI-driven attacks the claim is **resilience, not immunity**: multisig-everywhere (no single compromised official can move funds), tamper-evident cross-institution audit trails, identity-bound freeze/recovery, deterministic contract logic. *(Of these, only the deterministic contract logic and the order-referenced freeze/recovery are in force today — the testnet holds every role on one key and runs one validator, so neither the multisig property nor the cross-institution property exists yet.)*
 - **"Private to the world" also blunts harvest-now-decrypt-later.** A public ledger publishes every account's public key permanently, so an adversary can collect them today and break them once a quantum computer exists. CSB's ledger is not world-readable, so there is far less material to harvest in the first place — a privacy property doing double duty as a cryptographic one.
 
 ## 11. Roadmap

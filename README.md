@@ -9,9 +9,11 @@ Full design rationale: [`docs/architecture.md`](docs/architecture.md). License: 
 
 ## Status
 
-**v0 prototype.** Core contract suite implemented and tested (206 tests), including the production **ICTT bridge adapter**. The application — citizen wallet, gated explorer, and institutional admin console — runs against the live chain behind an access-gated server (`docker-compose.app.yml`); participating institutions run validators via `docker-compose.validator.yml`. Cloud-VM tooling stands the whole stack up on a single Ubuntu VM ([`docs/cloud-deployment.md`](docs/cloud-deployment.md)); the real-egress path to Fuji C-Chain is documented in [`docs/fuji-ictt.md`](docs/fuji-ictt.md).
+**v0 prototype.** Core contract suite implemented and tested (206 tests at `HEAD`; regenerate with `npx hardhat test` rather than quoting this), including the production **ICTT bridge adapter**. 29 Solidity files: 19 production contracts, 5 interfaces, 4 test mocks, 1 library. The application — citizen wallet, gated explorer, and institutional admin console — runs against the live chain behind an access-gated server (`docker-compose.app.yml`); `docker-compose.validator.yml` is the template for an institution to run a validator, though **none does yet**.
 
-**Unmodified DeFi runs on it.** Uniswap V2 and Aave V3 are deployed from published upstream bytecode, with no source changes and no compliance-aware forks — a liquidity pool and a lending market against KHRt. Both work, and both show the same limit: the perimeter protects the asset, while pool shares and aTokens are unrestricted claims on it that reach addresses holding no identity attestation. [`docs/defi.md`](docs/defi.md) explains how to deploy them and exactly what they prove.
+**What the deployment is not.** The prototype runs **one registered validator** on one host, so it has no fault tolerance; **every institutional role — council, Identity Authority, enforcement, KHRt issuer, precompile admin, validator-manager owner — is held by a single deployer key**, so the separation of powers exists in the contracts but not in the deployment; there is **no account abstraction**; **ingress is ungated** (the egress gateway has no inbound counterpart); and the suite has had **no security audit, no formal verification, and no performance testing**. Current state is recorded in [`docs/deployment-status.md`](docs/deployment-status.md); the mainnet requirements these fall short of are in [`docs/testnet-to-mainnet.md`](docs/testnet-to-mainnet.md). Cloud-VM tooling stands the whole stack up on a single Ubuntu VM ([`docs/cloud-deployment.md`](docs/cloud-deployment.md)); the real-egress path to Fuji C-Chain is documented in [`docs/fuji-ictt.md`](docs/fuji-ictt.md).
+
+**Unmodified DeFi runs on it.** Uniswap V2 and Aave V3 are deployed from published upstream bytecode, with no source changes and no compliance-aware forks — a liquidity pool and a lending market against KHRt. **Uniswap is deployed and exercised on the live chain (8555); the Aave market is a local result only and has never been deployed on 8555.** Both work, and both show the same limit: the perimeter protects the asset, while pool shares and aTokens are unrestricted claims on it that reach addresses holding no identity attestation. [`docs/defi.md`](docs/defi.md) explains how to deploy them and exactly what they prove.
 
 ## Repository layout
 
@@ -74,7 +76,7 @@ scripts/license-attester.js    Licenses a field verifier and clears all three
 scripts/demo-grove.js          Grove end-to-end: plant, anchor, verify, tokenize,
                                and get paid for survival
 scripts/seed-accounts.js       Seeds pilot identities, balances, egress policy
-test/                          192 tests: KYC lifecycle, separation of powers,
+test/                          206 tests: KYC lifecycle, separation of powers,
                                compliance gating, egress policy, ICTT adapter,
                                grove anchoring / licensed attestation / pledges
 docs/deployment-status.md      LIVE Fuji testnet: IDs, contract addresses, ops
@@ -137,5 +139,5 @@ Replace the `0xC0DE...` placeholder admin addresses in the genesis file with rea
 
 1. **Sovereignty with a contained dependency** — Avalanche L1 chosen for its native, audited egress path (ICM/ICTT); the P-Chain dependency is documented and containable, with Hyperledger Besu as the named EVM-portable fallback.
 2. **KYC below the contract layer** — the `txAllowList` precompile plus the `IdentityRegistry` mean standard DeFi deploys unmodified while every human participant is KYC'd by construction.
-3. **Separation of powers in code** — identity, enforcement, issuance, and chain governance (all placeholder authorities) are distinct roles in distinct contracts; no institution below the council holds two.
+3. **Separation of powers in code** — identity, enforcement, issuance, and chain governance (all placeholder authorities) are distinct roles in distinct contracts, so that no institution below the council holds two. The *contracts* enforce this; **the current deployment does not exercise it** — every one of those roles is held by the same deployer key. Assigning them to different holders is a deployment step, not a code change.
 4. **Crypto-agility — designed for, not yet implemented.** The design targets smart accounts with upgradeable signature validation so that a governed validator set can coordinate migration of cryptographic primitives, including a post-quantum transition. **The v0 prototype implements no account abstraction**, and native tRIEL has no recovery path. This is a mainnet design commitment, not a current capability.

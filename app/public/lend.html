@@ -28,7 +28,7 @@
 <body>
   <header class="site">
     <h1>🇰🇭 CSB Lending</h1>
-    <span class="sub">unmodified Aave V3, running on a compliance-gated chain</span>
+    <span class="sub">unmodified Aave V3 on a compliance-gated chain</span>
     <nav></nav>
   </header>
   <main>
@@ -43,7 +43,10 @@
     <div id="no-market" class="card" style="display:none">
       <h2>No lending market deployed yet</h2>
       <p class="small" style="line-height:1.8">
-        Deploy one with:<br/>
+        This is the expected state: as of 2026-07-29 the Aave market has
+        <b>never been deployed on the live chain</b>. It has been built and
+        exercised locally only, so the findings below are a <b>local</b> result,
+        unlike the Uniswap ones, which are live. Deploy one with:<br/>
         <code>source ops/csb-env.sh</code><br/>
         <code>npx hardhat run scripts/aave-live.js --network csbRemote</code>
       </p>
@@ -97,6 +100,13 @@
       would disappear the moment the debt asset was something ungated.
       <br/><br/>
       Reproduce all of it: <span class="mono">npx hardhat test test/defi-aave.test.js</span>
+      <br/><br/>
+      <b>These findings are local.</b> They come from the test suite, where the
+      allow-list precompiles are mocked, and not from the live chain. The
+      equivalent Uniswap findings on <a href="defi.html">the pool page</a> were
+      measured on chain 8555. Standing the market up costs 31 transactions and
+      47,709,671 gas — about 2,272 tRIEL at this chain's fee policy — measured
+      locally; see <span class="mono">docs/defi.md</span>.
     </div>
   </main>
   <div class="footer">CSB v0 prototype — a personal experiment; not affiliated with or endorsed by any government. Test tokens only.</div>

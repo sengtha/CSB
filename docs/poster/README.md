@@ -38,3 +38,12 @@ prototype, the institutions are placeholders, and the quantum section says
 "readiness, not proof" because that is the truth — post-quantum signatures are
 not deployed here or anywhere else yet. Do not quietly drop those lines to make
 the image cleaner.
+
+The same applies to the "not yet in the deployment" qualifiers added to the
+multisig, split-powers, recovery and account-abstraction bullets. They are there
+because the poster previously asserted, in the present tense, four things this
+deployment does not do: multisig-held roles (one deployer key holds every role),
+separated powers in practice (same), general key recovery (land titles only),
+and account abstraction (none). A poster is read faster and trusted more than a
+document, so it is the worst place to overstate. Current state:
+`docs/deployment-status.md`.
