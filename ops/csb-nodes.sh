@@ -24,10 +24,15 @@ CL="$HOME/.avalanche-cli/local/$CLUSTER"
 SUBNET_ID="${CSB_SUBNET_ID:-fgNiKVRTRJFZbCzSUPJMix6YdG2HfpXGf1LP9rQ58b5TU9mJL}"
 
 echo "=============== 1. processes ==============="
+# One avalanchego process is one node, so the count of distinct PIDs IS the
+# number of running nodes. Every other listening port those processes hold is an
+# internal listener, which is why counting ports gives a much bigger, wrong
+# number.
+#
 # pgrep -c prints 0 AND exits non-zero when there is no match, so `|| echo 0`
 # would append a second zero. Take the first line and default it instead.
 n_proc=$(pgrep -c -f '[a]valanchego' 2>/dev/null | head -1)
-echo "avalanchego processes: ${n_proc:-0}"
+echo "RUNNING NODES (distinct avalanchego processes): ${n_proc:-0}"
 ps -eo pid,etime,args= 2>/dev/null | grep '[a]valanchego' \
   | sed -E 's/(--[a-z-]*(key|secret)[^ ]*)/\1=REDACTED/g' \
   | cut -c1-160
@@ -49,13 +54,21 @@ ports=$( { ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null; } \
 ports=$(printf '%s\n9650\n' "$ports" | sort -un)
 
 found=0
+seen=""
 for p in $ports; do
   id=$(curl -s -m 2 -X POST -H 'content-type:application/json' \
         --data '{"jsonrpc":"2.0","id":1,"method":"info.getNodeID"}' \
         "http://127.0.0.1:$p/ext/info" 2>/dev/null \
         | grep -oE 'NodeID-[1-9A-HJ-NP-Za-km-z]+' | head -1)
   [ -z "$id" ] && continue
+  # A node answers on more than one port, so count each NodeID once.
+  case " $seen " in *" $id "*) continue ;; esac
+  seen="$seen $id"
   found=$((found + 1))
+  # Which process owns this port, so the node can be matched to a PID in
+  # section 1 and stopped or inspected individually.
+  pid=$( { ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null; } \
+         | grep -E "[:.]$p[[:space:]]" | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
 
   health=$(curl -s -m 5 "http://127.0.0.1:$p/ext/health" 2>/dev/null)
   if [ -z "$health" ]; then
@@ -68,13 +81,21 @@ for p in $ports; do
   # percentConnected is the number that decides whether the chain can finalise.
   pc=$(printf '%s' "$health" | grep -oE '"percentConnected"[[:space:]]*:[[:space:]]*[0-9.]+' \
        | grep -oE '[0-9.]+$' | head -1)
-  echo "port $p  $id  $state${pc:+  percentConnected $pc}"
+  echo "port $p  ${pid:+pid $pid  }$id  $state${pc:+  percentConnected $pc}"
 done
 echo "nodes answering: $found"
 
 if [ -d "$CL" ]; then
-  echo "node dirs on disk: $(find "$CL" -maxdepth 1 -name 'NodeID-*' -type d 2>/dev/null | wc -l) in $CLUSTER"
-  echo "(a dir with no answering port above is a node that is NOT running)"
+  dirs=$(find "$CL" -maxdepth 1 -name 'NodeID-*' -type d 2>/dev/null | wc -l)
+  echo "node dirs on disk: $dirs in $CLUSTER"
+  if [ "$found" -lt "$dirs" ]; then
+    echo "*** $((dirs - found)) node(s) have a directory but are NOT running. Which ones:"
+    for dir in "$CL"/NodeID-*/; do
+      [ -d "$dir" ] || continue
+      nid=$(basename "$dir")
+      case " $seen " in *" $nid "*) ;; *) echo "    $nid — no API port answered" ;; esac
+    done
+  fi
 else
   echo "No cluster dir at $CL — clusters present:"
   ls -1 "$HOME/.avalanche-cli/local" 2>/dev/null | sed 's/^/  /' || echo "  (none)"
