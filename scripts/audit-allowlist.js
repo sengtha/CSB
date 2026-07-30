@@ -104,7 +104,17 @@ async function main() {
     }
   }
 
-  // 2. everyone who has actually sent a transaction — they were allow-listed to do it
+  // 2. everyone who has actually sent a transaction — they were allow-listed to do
+  //    it. Record WHAT each one did at the same time: an unattested address that can
+  //    transact has to be identified before it can be judged intended or not, and
+  //    "which contracts did it call, did it deploy anything" identifies an operator
+  //    address immediately.
+  const activity = new Map();   // address -> { count, targets:Set, creates:number }
+  const act = (from) => {
+    const k = ethers.getAddress(from);
+    if (!activity.has(k)) activity.set(k, { count: 0, targets: new Set(), creates: 0 });
+    return activity.get(k);
+  };
   let scanned = 0;
   for (let b = scanFrom; b <= latest; b++) {
     const blk = await provider.getBlock(b, true);
@@ -113,10 +123,34 @@ async function main() {
     for (const h of blk.transactions) {
       try {
         const t = await blk.getTransaction(h);
-        if (t?.from) note(t.from, "sent-tx");
+        if (!t?.from) continue;
+        note(t.from, "sent-tx");
+        const a = act(t.from);
+        a.count++;
+        if (!t.to) a.creates++;
+        else a.targets.add(ethers.getAddress(t.to));
       } catch { /* prefetch miss; skip */ }
     }
   }
+
+  // Reverse-map deployed contract addresses to names, so a target reads as
+  // "KHRStablecoin" rather than as a hex string.
+  const known = new Map();
+  for (const [k, v] of Object.entries(d.contracts ?? {})) {
+    if (typeof v === "string" && ethers.isAddress(v)) known.set(ethers.getAddress(v), k);
+  }
+  for (const [k, v] of Object.entries(d.aave ?? {})) {
+    if (typeof v === "string" && ethers.isAddress(v)) known.set(ethers.getAddress(v), `aave.${k}`);
+  }
+  for (const [k, v] of Object.entries(d.defi ?? {})) {
+    if (typeof v === "string" && ethers.isAddress(v)) known.set(ethers.getAddress(v), `defi.${k}`);
+  }
+  // Addresses with a fixed, published meaning. Worth naming because each one looks
+  // alarming in this report and is in fact expected.
+  const WELL_KNOWN = {
+    "0x618FEdD9A45a8C456812ecAAE70C671c6249DfaC":
+      "ICM/Teleporter deterministic deployer — expected, see docs/fuji-ictt.md",
+  };
 
   // 3. anything named in deployments.json
   for (const [k, v] of Object.entries(d.accounts ?? {})) {
@@ -177,6 +211,29 @@ async function main() {
       console.log(`\n  ${neverKyc.length} address(es) can transact with no attestation ever issued —`);
       console.log(`  expected for operator/dev addresses granted via scripts/allow-dev.js.`);
       console.log(`  Confirm each is intended, and that none is a citizen-facing account.`);
+      console.log(`\n  WHAT EACH ONE HAS ACTUALLY DONE (to identify it):`);
+      for (const r of neverKyc) {
+        const wk = WELL_KNOWN[r.addr];
+        const a = activity.get(r.addr);
+        const bal = await provider.getBalance(r.addr).catch(() => null);
+        console.log(`\n    ${r.addr}`);
+        if (wk) console.log(`      KNOWN: ${wk}`);
+        console.log(`      transactions in range: ${a?.count ?? 0}`
+          + `${a?.creates ? `, deployed ${a.creates} contract(s)` : ""}`);
+        if (bal !== null) console.log(`      balance: ${ethers.formatEther(bal)} tRIEL`);
+        const targets = [...(a?.targets ?? [])];
+        if (targets.length) {
+          console.log(`      called:`);
+          for (const t of targets.slice(0, 8)) {
+            console.log(`        ${t}${known.has(t) ? `  (${known.get(t)})` : ""}`);
+          }
+          if (targets.length > 8) console.log(`        …and ${targets.length - 8} more`);
+        }
+      }
+      console.log(`\n    An address that only deployed contracts, or only called`);
+      console.log(`    infrastructure, is an operator address and is fine. One that`);
+      console.log(`    called KHRStablecoin or the Aave pool is acting like a`);
+      console.log(`    participant without an attestation, and needs explaining.`);
     }
   } else {
     console.log(`\nNo gap found in what could be enumerated. Note the limit: an`);

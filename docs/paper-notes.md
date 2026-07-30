@@ -238,6 +238,28 @@ Why this is the sharper version of the composability finding:
   receipt and call `pool.withdraw(asset, amount, attestedAddress)` to convert it
   into real KHRt in an attested party's hands.
 
+**Audited on chain 8555, 2026-07-30** (`scripts/audit-allowlist.js`, blocks 0–500,
+20 distinct addresses):
+
+| | |
+|---|---|
+| can transact AND attested | 16 |
+| can transact, **revoked or suspended** | **0** |
+| can transact, never attested | 4 |
+| cannot transact | 0 |
+
+**The gap is latent, not realised.** No address has had an attestation withdrawn on
+this chain, so nothing currently exploits the decoupling — it becomes real at the
+first revocation. State that as measured, and do not imply the leak is in use.
+
+Of the four never-attested addresses, one is identified: the **ICM/Teleporter
+deterministic deployer** `0x618FEdD9A45a8C456812ecAAE70C671c6249DfaC`, which needed
+the deployer allow-list to install `TeleporterMessenger` (`docs/fuji-ictt.md`). The
+other three are unidentified operator addresses; the audit now prints each one's
+transaction count, contract deployments and call targets so an operator address
+(deploys, calls infrastructure) can be told apart from one behaving as a participant
+(calls `KHRStablecoin` or the Aave pool) without an attestation.
+
 So the honest claim is not "the perimeter fails on receipts" but something more
 precise and more defensible:
 
