@@ -151,6 +151,8 @@ async function main() {
   console.log(`  flagged as borrowing               ${isBorrowing}`);
   console.log(`  totalCollateralBase                ${acct.totalCollateralBase}`);
   console.log(`  availableBorrowsBase               ${acct.availableBorrowsBase}`);
+  const comp = await complianceOf(ethers, provider, who, d.contracts?.IdentityRegistry);
+  if (comp) console.log(`  compliance status                  ${comp}`);
 
   console.log(`\nVERDICT`);
   if (myA === 0n && totalA > 0n) {
@@ -160,7 +162,7 @@ async function main() {
     console.log(`  pool's total is irrelevant — someone else supplied it.`);
     console.log(`  Fix: supply from this address, or borrow from the one that did.`);
     console.log(`\n  Looking for who holds it...`);
-    await findHolders(ethers, provider, a.aToken, f);
+    await findHolders(ethers, provider, a.aToken, f, d.contracts?.IdentityRegistry);
   } else if (myA === 0n) {
     console.log(`  Nobody has supplied anything. Supply first, then borrow.`);
   } else if (!usingAsCollateral) {
@@ -182,8 +184,42 @@ async function main() {
   for (const [k, v] of Object.entries(AAVE_ERRORS)) console.log(`  "${k}"  ${v}`);
 }
 
+const IDENTITY = [
+  "function isActive(address) view returns (bool)",
+  "function tierOf(address) view returns (uint8)",
+];
+// txAllowList precompile: role 0 = none, 1 = enabled, 2 = admin, 3 = manager.
+const TX_ALLOW_LIST = "0x0200000000000000000000000000000000000002";
+const ROLE_NAMES = { 0: "none", 1: "enabled", 2: "admin", 3: "manager" };
+
+/**
+ * For an aToken holder, report whether the chain would let it hold the
+ * UNDERLYING or even send a transaction. This is the experiment's actual
+ * question, not a side quest: an aToken is an unrestricted ERC-20 claim on
+ * pooled KHRt, so a holder whose identity status is `none` is a live instance of
+ * economic exposure escaping the compliance perimeter. Returns a label, or null
+ * if the registries could not be read.
+ */
+async function complianceOf(ethers, provider, addr, identityAddr) {
+  const bits = [];
+  if (identityAddr && ethers.isAddress(identityAddr)) {
+    try {
+      const reg = new ethers.Contract(identityAddr, IDENTITY, provider);
+      const [active, tier] = await Promise.all([reg.isActive(addr), reg.tierOf(addr)]);
+      bits.push(active ? `KYC active (tier ${tier})` : "NO KYC ATTESTATION");
+    } catch { /* registry unreadable — say nothing rather than guess */ }
+  }
+  try {
+    const al = new ethers.Contract(TX_ALLOW_LIST,
+      ["function readAllowList(address) view returns (uint256)"], provider);
+    const n = Number(await al.readAllowList(addr));
+    bits.push(`txAllowList: ${ROLE_NAMES[n] ?? n}`);
+  } catch { /* not a subnet-evm chain, or precompile disabled */ }
+  return bits.length ? bits.join(", ") : null;
+}
+
 /** Find aToken holders from Transfer events, so "who supplied" is answerable. */
-async function findHolders(ethers, provider, aTokenAddr, f) {
+async function findHolders(ethers, provider, aTokenAddr, f, identityAddr) {
   const c = new ethers.Contract(aTokenAddr,
     ["event Transfer(address indexed from, address indexed to, uint256 value)"], provider);
   const latest = await provider.getBlockNumber();
@@ -205,7 +241,14 @@ async function findHolders(ethers, provider, aTokenAddr, f) {
   const bal = new ethers.Contract(aTokenAddr, ERC20, provider);
   for (const addr of seen) {
     const b = await bal.balanceOf(addr);
-    if (b > 0n) console.log(`    ${addr}  holds ${f(b)} aKHRt`);
+    if (b === 0n) continue;
+    // The compliance status is the point, not decoration: an aToken holder whose
+    // status is "NO KYC ATTESTATION" is the perimeter leak, observed live.
+    const c = await complianceOf(ethers, provider, addr, identityAddr);
+    console.log(`    ${addr}  holds ${f(b)} aKHRt${c ? `  [${c}]` : ""}`);
+    if (c && c.includes("NO KYC")) {
+      console.log(`      ^ an unattested address holding a claim on pooled KHRt`);
+    }
   }
   if (!seen.size) console.log(`    (no Transfer events in the last ${latest - from} blocks)`);
 }
