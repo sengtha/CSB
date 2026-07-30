@@ -88,13 +88,33 @@ inertness claim, because it names what stands between the exposure and its
 realisation: a single administrative act, held by the state, that the deployment
 already performs for reasons unrelated to identity.
 
-**Aggregate accrual is live-observable.** Pool total moved 580,000.01 → 580,000.05
-between the two readings. A transfer cannot change an aToken's total supply, so the
-+0.04 is interest. Accrual is therefore occurring on the live chain; what remains
-local is accrual *at the leaked holding*, because 20.00 aKHRt at this utilisation
-will not move a 0.01 increment for a long time — the limit is the token's two-decimal
-precision, not the absence of the mechanism. Worth stating that way rather than as
-"accrual is local", which implies less than is known.
+**Accrual is live at the holder level, not merely in aggregate.** Two readings a day
+apart, with the escape run's 20.00 transfer accounted for: `0xC52D98D0…` went
+500,000.01 → 500,000.04 (**+0.03**) and `0x70E7601F…` went 79,970.00 → 79,970.01
+(**+0.01**), neither having transacted; the pool total went 580,000.01 → 580,000.05
+(**+0.04**).
+
+Two independent reasons this is accrual and not a transfer, both worth giving in the
+paper because the first alone is not quite sufficient:
+
+1. An aToken transfer **cannot change total supply** — it moves scaled balances and
+   leaves `scaledTotalSupply` untouched — so +0.04 can only be the liquidity index
+   advancing.
+2. The increments are distributed **in proportion to holdings**. At the implied index
+   growth of 6.9e-8, expected increments are +0.0345 and +0.0055, rounding to the
+   observed +0.03 and +0.01. Proportionality is the signature of an index update;
+   transfers do not produce it.
+
+**The leaked holding accrues too, but below display precision — say it exactly this
+way.** An aToken balance is `scaledBalance × index` and the index applies to all
+holders identically, so the unattested address's 20.00 is growing at 1.4e-6 per
+interval, needing roughly **7,250 intervals to move one 0.01 unit**. Accrual at the
+leaked holding is therefore a *mathematical consequence of a live-demonstrated
+mechanism*, not a separate observation; `balanceOf` truncating to two decimals is what
+hides it. The bound is the token's precision at this utilisation, not the mechanism.
+
+Avoid both weaker and stronger formulations: "accrual is local" now claims less than is
+known, and "the leaked holding was observed to grow" claims more.
 
 **Addresses for Appendix A** are recorded in `docs/defi.md` §Appendix — all nine
 validated as correctly-checksummed and distinct. The `Pool` entry is the proxy;

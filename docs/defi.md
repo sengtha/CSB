@@ -105,7 +105,8 @@ supply / withdraw / borrow / repay.
 > | Market deployed and in use on 8555 | ✅ **live** — reserve active, LTV 75%, borrowing enabled, 580,000.01 aKHRt outstanding across three holders, one address carrying real variable debt |
 > | Finding: the receipt escapes the perimeter | ✅ **live, and executed** — tx `0xc5306114…85ad83a`, block 500, `SUCCESS`; the unattested recipient holds 20.00 aKHRt on chain. Was disputed by an earlier failed transfer, measured to be a gas shortfall rather than a refusal. |
 > | Finding: the perimeter holds on the asset | ✅ **live** — `KHRt.transfer` to the unattested address reverts. Not affected by the dispute; both the simulation and the executed transactions agree the asset does not move. |
-> | Findings on accrual and on liquidation | ⚠️ still **local** (`test/defi-aave.test.js`, where the allow-list precompiles are mocked) |
+> | Finding: the claim accrues | ✅ **live at the holder level**, with a precision bound — see below |
+> | Finding on liquidation | ⚠️ still **local** (`test/defi-aave.test.js`, where the allow-list precompiles are mocked) |
 > | Deployment cost | ⚠️ still a **local** measurement |
 >
 > Verify rather than trust this table:
@@ -230,6 +231,37 @@ told the identity registry exists.
 **The claim compounds.** An aToken accrues interest. Over a simulated year with a
 borrower paying, an unverified holder's balance grew — with no transaction by
 anyone on its behalf. There is no event for the state to observe.
+
+**Demonstrated live on 8555, 2026-07-30, at the holder level.** Between two readings
+a day apart, with the 20.00 transfer of the escape run accounted for:
+
+| Holder | adjusted before | after | change |
+|---|---:|---:|---:|
+| `0xC52D98D0…` | 500,000.01 | 500,000.04 | **+0.03** |
+| `0x70E7601F…` | 79,970.00 | 79,970.01 | **+0.01** |
+| `0x93318de6…` | 10.00 | 10.00 | +0.00 |
+| `0x0Ebb8283…` (unattested) | 20.00 | 20.00 | +0.00 |
+| pool total | 580,000.01 | 580,000.05 | **+0.04** |
+
+Two things make this accrual rather than a transfer. **An aToken transfer cannot change
+total supply** — it moves scaled balances and leaves `scaledTotalSupply` untouched — so
+the +0.04 can only come from the liquidity index advancing. And the increments are
+distributed **in proportion to holdings**: at the implied index growth of 6.9e-8, the
+expected increments are +0.0345 and +0.0055, which round to the observed +0.03 and
++0.01. That proportionality is the signature of an index update; transfers do not
+produce it. Two holders' balances grew with no transaction by them.
+
+**The leaked holding accrues too, below display precision.** An aToken balance is
+`scaledBalance × index`, and the index applies to every holder identically, so the
+20.00 at the unattested address is growing as well — by 1.4e-6 per interval, which
+needs about **7,250 intervals to move a single 0.01 unit**. So the accrual at the
+leaked holding is a *mathematical consequence* of a demonstrated live mechanism, not a
+separate observation, and `balanceOf` truncating to two decimals is what hides it. The
+binding constraint is the token's precision at this utilisation, not the absence of the
+mechanism.
+
+State it that way rather than as "accrual is local", which claims less than is known,
+and rather than as "the leaked holding was observed to grow", which claims more.
 
 **One protection is an accident.** Aave lets anyone liquidate: `liquidationCall`
 takes the liquidator from `msg.sender`. An unverified liquidator is nonetheless
