@@ -425,6 +425,47 @@ started the `csb-local-node-fuji` cluster rather than creating a new one — a
 freshly created cluster gets *new* NodeIDs that the L1 has never registered and
 can therefore never bootstrap it.
 
+## Orphaned deployment still live on 8555
+
+Found 2026-07-30 by `scripts/audit-allowlist.js`. An **earlier deployment of the
+suite is still live on this chain** and is not recorded in `app/deployments.json`:
+
+| Contract | Address |
+|---|---|
+| `IdentityRegistry` (orphaned) | `0x446BE7b37954b0BFB2c42162832C7c2f2876a101` |
+| token reporting symbol `KHRt` | `0xb8571bdd0fBA0790CDB5D9D28C75C877486F046c` |
+| token reporting symbol `LAND1` | `0xa7f089C3a465c7e913dE5058e8E4A612663D26Ec` |
+| token reporting symbol `LAND1` | `0x4f54f0D92ebd6EC6A1d605fDfeDf4D5B41E31E0A` |
+
+The chain's current registry is `0xa33a4C897ce417DD05042e1f9dC35A5550b5f5a9`. These
+tokens obey the orphaned one, permanently — the reference is `immutable`. So the
+current Identity Authority **cannot revoke, freeze or confiscate** against them, and
+addresses holding them read as unattested against the current registry while being
+`Active` in the old one.
+
+Two addresses have transacted on them successfully:
+`0x0E1A7Bc8A24c9ac6EB89343668EECa4F11dA88ae` (4 transfers on the orphaned KHRt) and
+`0x6aD62D8cE5Cb79316BdA435d5841c993C63f6255` (`transfer` and `approve` on both LAND1
+tokens).
+
+**Before describing the perimeter as covering this chain, decide what to do:**
+
+```bash
+source ops/csb-env.sh
+CSB_TOKEN=0xb8571bdd0fBA0790CDB5D9D28C75C877486F046c \
+  npx hardhat run scripts/orphan-check.js --network csbRemote
+```
+
+That reports the supply, who holds it, each holder's status in the registry the token
+obeys, and whether any address still holds a role able to stop it. If the deployer
+still holds `DEFAULT_ADMIN_ROLE` on the orphaned registry, revoking its attestations
+makes those tokens untransferable. If nobody holds a role, they cannot be stopped —
+say that here rather than implying otherwise.
+
+Two `KHRt` tokens now answer `symbol()` on this chain and nothing on chain marks
+either as superseded. Anything reading a token by symbol rather than by address can
+pick the wrong one.
+
 ## Validator set — TWO running nodes, ONE validator
 
 This section has been wrong twice. It said three validators until 2026-07-28, then

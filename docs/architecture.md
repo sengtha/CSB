@@ -91,7 +91,29 @@ Powers are deliberately split across institutions and enforced in code:
 > compares both gates and lists every address that can transact without an active
 > attestation.
 >
-> Two ways to close it, and the choice is a real trade:
+> **A second, related decoupling: a redeploy forks the perimeter.** Every gated
+> token binds its registry immutably —
+> `IdentityRegistry public immutable identity` (`KHRStablecoin.sol:28`,
+> `LandTitleToken.sol:42`). Redeploying the suite therefore does not replace the
+> compliance perimeter, it partitions it: the previous tokens keep obeying the
+> previous registry, with their own attestations, and the current authority holds no
+> role on it. Revocation, freezing and confiscation are all inoperative against
+> those assets, and the current registry — the state's own view of who is verified —
+> does not cover their holders.
+>
+> This is not hypothetical. Measured on chain 8555 on 2026-07-30: three live tokens
+> (one reporting symbol `KHRt`, two `LAND1`) obey registry
+> `0x446BE7b3…a101` while the chain's registry is `0xa33a4C89…`, and addresses
+> transacting on them read as unattested against the current registry while being
+> `Active` in the old one. Assess an orphan with
+> `CSB_TOKEN=0x… npx hardhat run scripts/orphan-check.js`.
+>
+> The design fix is to stop binding it immutably — a registry behind a proxy at a
+> fixed address, or a council-settable reference — so a later authority inherits the
+> assets rather than forking away from them. That trades immutability for
+> governability, and the trade should be made deliberately rather than by default.
+>
+> Two ways to close the revocation gap, and the choice is a real trade:
 >
 > 1. **Operator procedure** — revocation includes `txAllowList.setNone(addr)`.
 >    Cheap and changes no code, but it is a manual step, and manual steps are what

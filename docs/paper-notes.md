@@ -282,36 +282,59 @@ Two things to resolve before either is described in the paper:
    role* the address holds — `issue`/`confiscate`/`grantRole` with a matching role
    is an operator; `transfer`/`approve`/`supply` without one is a participant.
 
-**Measured 2026-07-30, and currently an OPEN question — do not write it up either
-way yet.** With outcome tracking added, the calls **succeeded**:
+**RESOLVED 2026-07-30: not a compliance breach. A redeploy forked the perimeter.**
 
-- `0x0E1A7Bc8…` → `transfer` on the KHRt-symbol token `0xb8571bdd…`: **4 succeeded, 0 reverted**
-- `0x6aD62D8c…` → `transfer` and `approve` on both LAND1 tokens: **all succeeded, 0 reverted**
+The calls succeeded — 4 transfers on the KHRt-symbol token, `transfer` and `approve`
+on both LAND1 tokens, none reverted, and neither sender holds any role. But all
+three tokens are gated by `0x446BE7b37954b0BFB2c42162832C7c2f2876a101`, **not** the
+chain's current `0xa33a4C897ce417DD05042e1f9dC35A5550b5f5a9`, and both senders are
+**Active in that older registry**. The gate worked exactly as written; it was
+consulting a different register of who is verified.
 
-Neither address holds any of the five roles checked, so neither is an operator
-acting in role. On its face that is an unattested address moving a gated asset.
+### The finding this actually is, and it is a better one
 
-**But none of those three contracts is recorded in `deployments.json` at all**, even
-after the audit was changed to walk the whole file. Two hypotheses, and they have
-opposite consequences:
+An entire earlier deployment of the suite is **still live on chain 8555** — its own
+`IdentityRegistry`, its own KHRt, two LAND1 land-title tokens — carrying its own
+attestations, and people transacted on it. The current Identity Authority has no
+authority over any of it, because the reference is immutable:
 
-1. **Stale deployments.** They are tokens from an earlier run of `deploy.js`, gated
-   by an *earlier* `IdentityRegistry` in which those senders hold valid
-   attestations. Then this is not a compliance breach — it is an orphaned gated
-   token that remains transferable under governance nobody administers. Still a
-   real operational finding, and a good one for the paper: the perimeter is only as
-   current as the registry each asset was wired to at deployment.
-2. **A genuine hole**, if those tokens point at the *current* registry and the
-   transfers still went through.
+```solidity
+IdentityRegistry public immutable identity;   // KHRStablecoin.sol:28, LandTitleToken.sol:42
+```
 
-The audit now discriminates them: for each gated token it reads the token's own
-`identity` immutable, reports whether that is the registry being audited, and if not
-looks the sender up in the registry the token actually trusts. Verified against a
-constructed two-deployment case, where it correctly reported a different registry,
-found the sender Active there, and said it was stale rather than a breach.
+So **redeploying the suite does not replace the compliance perimeter — it forks
+it.** Consequences worth stating precisely:
 
-Run it and read those lines before writing anything. Asserting a compliance breach
-without checking which registry the token trusts would be a fabricated finding.
+- Revocation, suspension, freezing and confiscation by the current authority are
+  **inoperative** on the orphaned assets. It holds no role on the registry they obey.
+- The state's own view of "who is verified" — the current registry — **does not
+  cover** holders of the orphaned assets. They read as unattested while transacting
+  legitimately under the old regime. That is why this looked like a breach.
+- Nothing on chain marks the orphan as superseded. Two tokens both answer `symbol()`
+  with `KHRt`, and only an off-chain record distinguishes them.
+
+The generalisation for the paper: **a compliance perimeter bound at deployment time
+by an immutable reference is per-asset, and upgrading the authority silently
+partitions it.** Identity is enforced against whichever register each asset was
+wired to when it was created, not against the state's current one. This is an
+upgrade-governance failure mode specific to putting regulatory authority in
+contracts, and it is invisible to every test — the suite has 206 passing tests and
+every one of them exercises a single, freshly-wired deployment.
+
+### Remediation, and the honest limit on it
+
+`scripts/orphan-check.js` reports, for an orphaned token, its supply, where that
+supply sits, each holder's status in the registry the token actually obeys, and
+whether any address still holds a role capable of stopping it. Whether it can be
+neutralised at all depends on that last point — if nobody holds a role on the old
+registry or token, it cannot be stopped, and the deployment record must say so
+rather than imply the perimeter covers it.
+
+The design fix is not to redeploy more carefully. It is to stop binding the
+reference immutably: a registry behind a proxy at a fixed address, or a settable
+reference under council control, means a later authority inherits the assets instead
+of forking away from them. That trades immutability for governability, which is a
+real trade and belongs in the paper as one.
 
 The audit reports the rest, so this is answerable rather than arguable: per call
 target it prints each selector, classified `PARTICIPANT` / `admin` / `read`, and
