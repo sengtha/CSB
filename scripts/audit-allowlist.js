@@ -87,6 +87,11 @@ const ADMIN_SELECTORS = {
   "0x5b5ba2fd": "recoveryAddress(address,address,bytes32)",
   "0xc69c09cf": "setAddressFrozen(address,bool)",
 };
+const INFRA_SELECTORS = {
+  "0xccb5f809": "receiveCrossChainMessage(uint32,address) — an ICM relayer delivering",
+  "0x62448850": "sendCrossChainMessage(...)",
+  "0xbe7e1b1a": "retryMessageExecution(...)",
+};
 const READ_ONLY_SELECTORS = {
   "0x18160ddd": "totalSupply()",
   "0x70a08231": "balanceOf(address)",
@@ -218,8 +223,18 @@ async function main() {
           // address is an operator or a participant.
           const sel = (t.data ?? "0x").slice(0, 10);
           if (sel.length === 10) {
-            if (!a.calls.has(to)) a.calls.set(to, new Set());
-            a.calls.get(to).add(sel);
+            if (!a.calls.has(to)) a.calls.set(to, new Map());
+            const m = a.calls.get(to);
+            if (!m.has(sel)) m.set(sel, { ok: 0, failed: 0 });
+            // WHETHER IT SUCCEEDED IS THE WHOLE POINT. A `transfer` from an
+            // unattested address on a compliance-gated token is supposed to
+            // REVERT — recording only that the call was attempted would report the
+            // perimeter working as though it had been breached.
+            let status = null;
+            try { status = (await provider.getTransactionReceipt(h))?.status; }
+            catch { /* receipt unavailable */ }
+            if (status === 1) m.get(sel).ok++;
+            else if (status === 0) m.get(sel).failed++;
           }
         }
       } catch { /* prefetch miss; skip */ }
@@ -228,16 +243,24 @@ async function main() {
 
   // Reverse-map deployed contract addresses to names, so a target reads as
   // "KHRStablecoin" rather than as a hex string.
+  // Walk the WHOLE deployments file. An earlier version read only contracts/aave/
+  // defi, so anything recorded under another key — a land or grove block — was
+  // reported as an unnamed contract and looked far more suspicious than it was.
   const known = new Map();
-  for (const [k, v] of Object.entries(d.contracts ?? {})) {
-    if (typeof v === "string" && ethers.isAddress(v)) known.set(ethers.getAddress(v), k);
-  }
-  for (const [k, v] of Object.entries(d.aave ?? {})) {
-    if (typeof v === "string" && ethers.isAddress(v)) known.set(ethers.getAddress(v), `aave.${k}`);
-  }
-  for (const [k, v] of Object.entries(d.defi ?? {})) {
-    if (typeof v === "string" && ethers.isAddress(v)) known.set(ethers.getAddress(v), `defi.${k}`);
-  }
+  const walk = (node, path) => {
+    if (typeof node === "string") {
+      if (ethers.isAddress(node)) known.set(ethers.getAddress(node), path);
+      return;
+    }
+    if (!node || typeof node !== "object") return;
+    for (const [k, v] of Object.entries(node)) {
+      // Never index a value under a secret-looking key, so a private key in this
+      // file cannot end up printed as a label.
+      if (/^(key|privateKey|private_key|mnemonic|secret|seed)$/i.test(k)) continue;
+      walk(v, path ? `${path}.${k}` : k);
+    }
+  };
+  walk(d, "");
   // Addresses with a fixed, published meaning. Worth naming because each one looks
   // alarming in this report and is in fact expected.
   const WELL_KNOWN = {
@@ -324,13 +347,17 @@ async function main() {
             // Nothing named it, so ask the chain rather than print a bare hex string.
             if (!label) label = await identifyContract(ethers, provider, t);
             console.log(`        ${t}${label ? `  (${label})` : ""}`);
-            for (const sel of (a?.calls.get(t) ?? [])) {
+            for (const [sel, c] of (a?.calls.get(t) ?? new Map())) {
               const pn = PARTICIPANT_SELECTORS[sel];
               const an = ADMIN_SELECTORS[sel];
-              const rn = READ_ONLY_SELECTORS[sel];
-              const kind = pn ? "PARTICIPANT" : an ? "admin" : rn ? "read" : "unknown";
+              const rn = READ_ONLY_SELECTORS[sel] ?? INFRA_SELECTORS[sel];
+              let kind = pn ? "PARTICIPANT" : an ? "admin"
+                : INFRA_SELECTORS[sel] ? "infrastructure" : rn ? "read" : "unknown";
+              // A participant call that only ever REVERTED is the perimeter doing
+              // its job, and must not read the same as one that went through.
+              if (pn && c.ok === 0 && c.failed > 0) kind = "PARTICIPANT, ALL REVERTED";
               console.log(`          ${sel}  ${pn ?? an ?? rn ?? "(selector not in dictionary)"}`
-                + `  [${kind}]`);
+                + `  [${kind}]  ${c.ok} succeeded, ${c.failed} reverted`);
             }
             // Role membership settles the ambiguity that a selector cannot: an
             // address holding an admin role on the contract is an operator by
