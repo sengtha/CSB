@@ -359,6 +359,41 @@ async function main() {
               console.log(`          ${sel}  ${pn ?? an ?? rn ?? "(selector not in dictionary)"}`
                 + `  [${kind}]  ${c.ok} succeeded, ${c.failed} reverted`);
             }
+            // WHICH REGISTRY DOES THIS TOKEN TRUST? A successful transfer by an
+            // address with no attestation looks like a compliance breach and is
+            // usually something duller and still worth knowing: an orphaned token
+            // from an earlier deployment, gated by an EARLIER IdentityRegistry in
+            // which the sender is perfectly valid. Reading the token's own
+            // `identity` immutable settles it, and reporting a breach without
+            // checking would be a fabricated finding.
+            try {
+              const tc = new ethers.Contract(t,
+                ["function identity() view returns (address)"], provider);
+              const reg = await tc.identity();
+              if (ethers.isAddress(reg)) {
+                const same = ethers.getAddress(reg) === ethers.getAddress(idAddr);
+                console.log(`          gated by IdentityRegistry ${reg}`
+                  + `${same ? "  (the one audited above)" : "  <-- A DIFFERENT REGISTRY"}`);
+                if (!same) {
+                  // Ask the registry this token actually trusts.
+                  try {
+                    const other = new ethers.Contract(reg, IDENTITY_ABI, provider);
+                    const st = Number((await other.attestationOf(r.addr)).status);
+                    console.log(`          in THAT registry this address is: `
+                      + `${STATUS_NAMES[st] ?? st}`);
+                    if (st === 1) {
+                      console.log(`          => NOT a compliance breach. This is a STALE`);
+                      console.log(`             deployment: the token is gated by a registry`);
+                      console.log(`             that is no longer the chain's active one, and`);
+                      console.log(`             the sender is attested there. Still worth`);
+                      console.log(`             fixing — an orphaned gated token remains`);
+                      console.log(`             transferable under abandoned governance.`);
+                    }
+                  } catch { console.log(`          (that registry did not answer)`); }
+                }
+              }
+            } catch { /* not a gated token of this shape */ }
+
             // Role membership settles the ambiguity that a selector cannot: an
             // address holding an admin role on the contract is an operator by
             // construction, whatever it happened to call.

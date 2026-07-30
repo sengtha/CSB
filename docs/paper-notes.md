@@ -282,7 +282,38 @@ Two things to resolve before either is described in the paper:
    role* the address holds — `issue`/`confiscate`/`grantRole` with a matching role
    is an operator; `transfer`/`approve`/`supply` without one is a participant.
 
-The audit now reports both, so this is answerable rather than arguable: per call
+**Measured 2026-07-30, and currently an OPEN question — do not write it up either
+way yet.** With outcome tracking added, the calls **succeeded**:
+
+- `0x0E1A7Bc8…` → `transfer` on the KHRt-symbol token `0xb8571bdd…`: **4 succeeded, 0 reverted**
+- `0x6aD62D8c…` → `transfer` and `approve` on both LAND1 tokens: **all succeeded, 0 reverted**
+
+Neither address holds any of the five roles checked, so neither is an operator
+acting in role. On its face that is an unattested address moving a gated asset.
+
+**But none of those three contracts is recorded in `deployments.json` at all**, even
+after the audit was changed to walk the whole file. Two hypotheses, and they have
+opposite consequences:
+
+1. **Stale deployments.** They are tokens from an earlier run of `deploy.js`, gated
+   by an *earlier* `IdentityRegistry` in which those senders hold valid
+   attestations. Then this is not a compliance breach — it is an orphaned gated
+   token that remains transferable under governance nobody administers. Still a
+   real operational finding, and a good one for the paper: the perimeter is only as
+   current as the registry each asset was wired to at deployment.
+2. **A genuine hole**, if those tokens point at the *current* registry and the
+   transfers still went through.
+
+The audit now discriminates them: for each gated token it reads the token's own
+`identity` immutable, reports whether that is the registry being audited, and if not
+looks the sender up in the registry the token actually trusts. Verified against a
+constructed two-deployment case, where it correctly reported a different registry,
+found the sender Active there, and said it was stale rather than a breach.
+
+Run it and read those lines before writing anything. Asserting a compliance breach
+without checking which registry the token trusts would be a fabricated finding.
+
+The audit reports the rest, so this is answerable rather than arguable: per call
 target it prints each selector, classified `PARTICIPANT` / `admin` / `read`, and
 checks `hasRole` for `DEFAULT_ADMIN_ROLE`, `ISSUER_ROLE`, `ENFORCER_ROLE`,
 `AGENT_ROLE` and `REGISTRAR_ROLE` on that contract. Re-run it and read the
