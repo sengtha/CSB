@@ -227,6 +227,55 @@ temporarily lowered (see `docs/fuji-ictt.md` §1).
 
 ---
 
+## Appendix — live contract addresses, chain 8555
+
+Recorded 2026-07-29 from `app/deployments.json`. All nine validated as
+correctly-checksummed distinct addresses. Chain ID 8555; the blockchain ID is in
+`docs/deployment-status.md`.
+
+**Uniswap V2** — see `scripts/defi-experiment.js` output recorded in
+`app/deployments.json` under `defi`.
+
+**Aave V3** (unmodified `@aave/core-v3` 1.19.3):
+
+| Contract | Address |
+|---|---|
+| `Pool` (proxy — call this one) | `0x57B4f7562Ab046CbBa6315a7F60B1e4d7727566F` |
+| `PoolConfigurator` (proxy) | `0x2057B2e2E309535791B79be871A9ca309F54b058` |
+| `PoolAddressesProvider` | `0xaDeac5a998Cd6FBE8CF7386d5ce2Ac8E404f152b` |
+| `ACLManager` | `0xaC0954c9c7F7fF287bC9F3c829702700d102384e` |
+| `PriceOracle` (**test contract, hand-set price**) | `0xe44CBb78ce8D48CAA86ec172Beec121d80a0E2E1` |
+| `AToken` — aKHRt | `0xaCE9cdDb2CFcb92FF613E9330D5241fC66586e8D` |
+| `VariableDebtToken` | `0xB814576D66F08287cb60f21Bc29aB15d198701E8` |
+| `StableDebtToken` | `0x71E7F92318B60632f5620A2B00D812F8141D42E7` |
+| Underlying — KHRt (2 decimals) | `0xEAE160F6f9a4D626A5A94402E87F0EB7f89A88C1` |
+
+Reserve parameters, read from the chain on 2026-07-29 and consistent with what
+`scripts/lib/aave.js` sets: active, not frozen, not paused; borrowing enabled;
+LTV 75%; liquidation threshold 80%; reserve id 0; decimals 2. The oracle price
+implied by `getUserAccountData` is 1e18 per whole KHRt, matching the
+`setAssetPrice` call in that helper.
+
+Two things to note if these are cited:
+
+- **The `Pool` address is the proxy.** The implementation address is not usable —
+  calling it directly appears to work and then reverts on anything touching state,
+  because the implementation's own storage is empty.
+- **The recorded `note` field on this deployment reads "See docs/paper §5.4",**
+  which is not a path in this repository (`scripts/aave-live.js` writes
+  "See docs/defi.md"). So the live market was deployed by a slightly different
+  revision of that script than the one now committed. The reserve parameters above
+  were re-read from the chain rather than assumed, and they match — but a
+  reproduction claim should rest on those readings, not on the note.
+
+Re-read any of this instead of trusting it:
+
+```bash
+npx hardhat run scripts/aave-diagnose.js --network csbRemote
+```
+
+---
+
 ## Where the evidence lives
 
 This document is the write-up. Everything in it is reproducible from:

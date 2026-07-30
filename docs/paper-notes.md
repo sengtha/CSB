@@ -54,6 +54,15 @@ Two limits to state in the paper rather than leave a reviewer to find:
    It establishes that the chain permits the transfer. It does not establish that
    one occurred, and leaves no on-chain record. One transaction would fix that.
 
+**Addresses for Appendix A** are recorded in `docs/defi.md` §Appendix — all nine
+validated as correctly-checksummed and distinct. The `Pool` entry is the proxy;
+the implementation address is not usable. One caveat recorded there and worth
+repeating: the live deployment's `note` field cites "docs/paper §5.4", a path that
+does not exist in this repository, so the live market was deployed by a slightly
+different revision of `scripts/aave-live.js` than the committed one. The reserve
+parameters were re-read from the chain and match — base any reproducibility claim
+on those readings, not on the note.
+
 **Still local, so do not promote these:** the accrual finding, the liquidation finding, and the cost. On the
 hardhat network the allow-list precompiles are mocked, which is why finding 3 was
 worth re-doing live — and on 8555 the recipient's `txAllowList: none` is a real
