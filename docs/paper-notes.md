@@ -330,6 +330,22 @@ neutralised at all depends on that last point — if nobody holds a role on the 
 registry or token, it cannot be stopped, and the deployment record must say so
 rather than imply the perimeter covers it.
 
+**Measured on 8555, 2026-07-30.** The orphaned KHRt holds **6,156,000.00** across
+**7 holders**, all `Active` in the orphaned registry, with no pause function. It is
+remediable: the deployer retains `DEFAULT_ADMIN_ROLE` and `ISSUER_ROLE` on both the
+orphaned token and the orphaned registry, so revoking those attestations would render
+the whole supply untransferable.
+
+**The sharpest sentence available from this, and it should go in the paper:**
+remediation is possible only because a single key holds every role on both
+deployments — the very concentration the design exists to eliminate. Under the
+intended arrangement, where different institutions hold different roles and a
+redeploy hands the new registry to a new authority, nobody need hold the old
+registry's issuer role and the orphan would be **permanently** unfixable. So the
+recovery path here depends on the design not yet being implemented, and implementing
+the separation of powers correctly would *remove* it. A reviewer can check that claim
+against the roles on chain.
+
 The design fix is not to redeploy more carefully. It is to stop binding the
 reference immutably: a registry behind a proxy at a fixed address, or a settable
 reference under council control, means a later authority inherits the assets instead

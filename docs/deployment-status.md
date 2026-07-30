@@ -448,6 +448,25 @@ Two addresses have transacted on them successfully:
 `0x6aD62D8cE5Cb79316BdA435d5841c993C63f6255` (`transfer` and `approve` on both LAND1
 tokens).
 
+**Measured 2026-07-30** (`scripts/orphan-check.js`): the orphaned KHRt has a supply
+of **6,156,000.00** across **7 holders**, every one of them `Active` in the orphaned
+registry. Largest holdings 5,000,000.00 and 1,000,000.00. The token has **no pause
+function**.
+
+**It is remediable.** The deployer `0x8f6aE9fB0993C8691D7FCDFBFC79fbcF5A7BFa8b` still
+holds `DEFAULT_ADMIN_ROLE` and `ISSUER_ROLE` on **both** the orphaned token and the
+orphaned registry, plus `ENFORCER_ROLE` on the token. Revoking the attestations in
+the orphaned registry would make all 6,156,000.00 untransferable.
+
+> **Note why remediation is possible here**, because it does not generalise: one key
+> holds every role on both deployments. That is the single-key concentration this
+> repository documents as a weakness (see the Status section of `README.md`), and it
+> is the only reason the orphan can be reached at all. Under the intended mainnet
+> design — different institutions holding different roles, and a redeploy handing the
+> new registry to a new authority — **nobody need hold the old registry's issuer
+> role, and the orphan would be permanently unfixable.** The concentration that is a
+> weakness in every other respect is what makes this recoverable.
+
 **Before describing the perimeter as covering this chain, decide what to do:**
 
 ```bash
