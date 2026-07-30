@@ -56,39 +56,46 @@ supply / withdraw / borrow / repay.
 
 **Reproduce locally** — `npx hardhat test test/defi-aave.test.js`
 
-> ⚠️ **DISPUTED — 2026-07-30. Do not cite the escape finding as live.** An
-> executed MetaMask transaction contradicts the `eth_call` simulation this section
-> rests on. From `0x70E7601Ff820042Fe05c149aA94722A4fB44ba10`, 10 aKHRt to the
-> unattested `0x0Ebb8283bA8C207c832d6043858e98f10915Fbd9` **FAILED**
-> (`0x6e5f0…8a903`), while 10 aKHRt to the KYC-active
-> `0x93318de699311bc7bBd994298feb25335d124f6d` **CONFIRMED**
-> (`0x9b341…24878`) — same sender, same token, same amount. The simulation said
-> the first would succeed. Until the revert reason is known, treat the live status
-> of the escape finding as **unresolved**, not confirmed. It remains established
-> LOCALLY (`test/defi-aave.test.js`). There is also a confound: the KYC'd recipient
-> already held aKHRt while the unattested one held none, and Aave takes a different
-> path when the recipient's balance is zero — so KYC status and first-time-holder
-> status both differ between those two transactions.
+> **The escape finding was disputed on 2026-07-30 and is now RESOLVED in its
+> favour.** Kept here because the resolution is the more useful result.
 >
-> **That confound is now measured, and it is large.** An aKHRt transfer to a
-> recipient whose aToken balance is **zero** costs **129,725 gas**; the same
-> transfer to an address that **already holds** aKHRt costs **87,039** — a
-> difference of **42,686 gas, about 49%**. Aave runs
-> `validateAutomaticUseAsCollateral` and writes a collateral bit only on the
-> recipient's first receipt. So two transfers that a wallet displays identically
-> ("10 aKHRt") differ by half again in cost, and a wallet that estimates per
-> transaction can under-provision the expensive one while having ample gas for the
-> cheap one — **in either order**. Transaction ordering therefore does not
-> distinguish gas from compliance, and neither does the wallet's own display.
+> An executed MetaMask transfer of 10 aKHRt to the unattested
+> `0x0Ebb8283bA8C207c832d6043858e98f10915Fbd9` **failed**
+> (`0x6e5f06a567d98bfec71bec3761ec964b0605242c8769cd80c71a6a709058a903`), while the
+> same sender moving the same amount to the KYC-active
+> `0x93318de699311bc7bBd994298feb25335d124f6d` **confirmed**. That looked like the
+> perimeter refusing the receipt, and contradicted the `eth_call` evidence.
 >
-> The failed transaction's own numbers point at gas: `gasUsed` 175,302 of a 182,013
-> limit is **96.3%** — not the 100% of a top-level out-of-gas, but the signature of
-> an **inner** call exhausting its EIP-150 63/64 allocation while the outer frame
-> keeps the reserve. A locally reproduced gas-starved transfer to a zero-balance
-> recipient gives 97.5% and the identical replay behaviour. That is strong, but it
-> is a matched fingerprint rather than a measurement of *this* transaction; settle
-> it with `scripts/why-did-tx-fail.js`, which replays at the parent block **with the
-> original gas limit** and reports what the call actually needed.
+> **It was gas.** Measured with `scripts/why-did-tx-fail.js`: the call needed
+> **~184,463** gas and the wallet gave it **182,013** — short by **2,450**, about
+> 1.3%. Replayed at the parent block with the original limit it fails; replayed at
+> the same block with more gas it succeeds. So the contracts permitted the transfer
+> and nothing refused it.
+>
+> **Why the wallet came up short, and why it fooled a like-for-like comparison.** An
+> aKHRt transfer to a recipient whose aToken balance is **zero** costs **129,725**
+> gas; to an address that **already holds** aKHRt, **87,039** — **42,686 more,
+> about 49%** — because Aave calls `validateAutomaticUseAsCollateral` and writes a
+> collateral bit only on a recipient's first receipt. Two transfers a wallet renders
+> identically as "10 aKHRt" therefore differ by half again in cost. A wallet
+> estimating per transaction can starve the expensive one while having ample gas for
+> the cheap one **in either order**, so transaction ordering does not distinguish
+> gas from compliance. The residual 1.3% shortfall is most likely Aave's liquidity
+> index advancing between the estimate and execution, which shifts the
+> scaled-balance arithmetic — probable, not measured.
+>
+> **Three methodological points worth carrying into the paper**, because each one
+> nearly produced a wrong result here:
+>
+> 1. A wallet's "failed" is not evidence of a refusal. `gasUsed` at **96.3%** of the
+>    limit is not the 100% of a top-level out-of-gas but the signature of an
+>    **inner** call exhausting its EIP-150 63/64 allocation — and it reads, wrongly,
+>    as "not a gas problem".
+> 2. A replay must fix **both** the block and the gas limit. An earlier revision of
+>    this diagnostic replayed at the right block with default gas and reported the
+>    failure as unexplained, exonerating a gas fault.
+> 3. An `eth_call` against `latest` is not evidence about a past block. That is what
+>    produced the premature "confirmed live" claim this note replaces.
 
 > **Status: market LIVE on chain 8555; finding statuses as marked.** This block said "local only" until 2026-07-29, which was true when
 > written and is not now. Keep the distinction, because it is not all-or-nothing:
@@ -96,7 +103,7 @@ supply / withdraw / borrow / repay.
 > | | Status |
 > |---|---|
 > | Market deployed and in use on 8555 | ✅ **live** — reserve active, LTV 75%, borrowing enabled, 580,000.01 aKHRt outstanding across three holders, one address carrying real variable debt |
-> | Finding: the receipt escapes the perimeter | ⚠️ **DISPUTED live** — simulation says yes, an executed transaction says no. Local result stands. |
+> | Finding: the receipt escapes the perimeter | ✅ **live** — `aKHRt.transfer` to an unattested address is permitted by the contracts. Was disputed 2026-07-30 by a failed executed transfer; that failure was measured to be a gas shortfall, not a refusal. See the note above. **Not yet executed on chain** — the evidence is a gas-corrected simulation. |
 > | Finding: the perimeter holds on the asset | ✅ **live** — `KHRt.transfer` to the unattested address reverts. Not affected by the dispute; both the simulation and the executed transactions agree the asset does not move. |
 > | Findings on accrual and on liquidation | ⚠️ still **local** (`test/defi-aave.test.js`, where the allow-list precompiles are mocked) |
 > | Deployment cost | ⚠️ still a **local** measurement |

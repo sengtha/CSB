@@ -44,7 +44,22 @@ hand the receipt out while the debt stays behind, and the only thing bounding ho
 much is the borrower's own health factor — Aave refuses at code 35, a solvency
 limit — not anything about the recipient.
 
-Two limits to state in the paper rather than leave a reviewer to find:
+**One challenge, and how it resolved (2026-07-30).** An executed MetaMask transfer
+of 10 aKHRt to the unattested address **failed**
+(`0x6e5f06a567d98bfec71bec3761ec964b0605242c8769cd80c71a6a709058a903`) while the
+same sender moving the same amount to a KYC-active address confirmed. Measured with
+`scripts/why-did-tx-fail.js`, the failure was a **gas shortfall, not a refusal**:
+the call needed ~184,463 gas and was given 182,013. Replayed at the parent block
+with the original limit it fails; with more gas at the same block it succeeds.
+
+The confound that made the naive comparison misleading is worth a sentence in the
+paper: a transfer to a recipient with a **zero** aToken balance costs 129,725 gas
+versus 87,039 to an existing holder — **49% more** — because Aave enables collateral
+for the recipient only on a first receipt. Two transfers a wallet displays
+identically differ by half again in cost, so ordering and wallet display both fail
+to distinguish gas from compliance.
+
+Three limits to state rather than leave a reviewer to find:
 
 1. The live node returns a bare `execution reverted` for the KHRt leg with no
    revert data. Locally the identical call decodes to `NotKycActive(0x0Ebb…)`. So
