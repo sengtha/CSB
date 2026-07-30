@@ -43,10 +43,10 @@
     <div id="no-market" class="card" style="display:none">
       <h2>No lending market deployed yet</h2>
       <p class="small" style="line-height:1.8">
-        This is the expected state: as of 2026-07-29 the Aave market has
-        <b>never been deployed on the live chain</b>. It has been built and
-        exercised locally only, so the findings below are a <b>local</b> result,
-        unlike the Uniswap ones, which are live. Deploy one with:<br/>
+        A market <b>is</b> deployed on chain 8555 — if you are seeing this card,
+        this page could not read it, so check that <span class="mono">deployments.json</span>
+        carries an <span class="mono">aave</span> block and that the RPC is reachable.
+        To deploy a fresh one:<br/>
         <code>source ops/csb-env.sh</code><br/>
         <code>npx hardhat run scripts/aave-live.js --network csbRemote</code>
       </p>
@@ -108,12 +108,17 @@
       <br/><br/>
       Reproduce all of it: <span class="mono">npx hardhat test test/defi-aave.test.js</span>
       <br/><br/>
-      <b>These findings are local.</b> They come from the test suite, where the
-      allow-list precompiles are mocked, and not from the live chain. The
-      equivalent Uniswap findings on <a href="defi.html">the pool page</a> were
-      measured on chain 8555. Standing the market up costs 31 transactions and
-      47,709,671 gas — about 2,272 tRIEL at this chain's fee policy — measured
-      locally; see <span class="mono">docs/defi.md</span>.
+      <b>The first two are verified live; the liquidation one is local.</b> On
+      2026-07-29, on this chain, a transfer of aKHRt to an address with no KYC
+      attestation and <span class="mono">txAllowList: none</span> was permitted
+      while the same transfer of KHRt itself was refused — both legs measured
+      together, which is what makes the pair a finding rather than two claims. The
+      liquidation result comes from the test suite, where the allow-list
+      precompiles are mocked. Standing the market up costs 31
+      transactions and 47,709,671 gas — about 2,272 tRIEL at this chain's fee
+      policy — measured locally. See <span class="mono">docs/defi.md</span>, and
+      check any address with
+      <span class="mono">scripts/aave-diagnose.js</span>.
     </div>
   </main>
   <div class="footer">CSB v0 prototype — a personal experiment; not affiliated with or endorsed by any government. Test tokens only.</div>

@@ -40,8 +40,8 @@ source ops/csb-env.sh
 npx hardhat run scripts/aave-live.js --network csbRemote
 ```
 
-~2,270 tRIEL (measured locally, not yet measured on 8555 — see Costs) and a few
-minutes. It is 31 transactions: Aave's
+~2,270 tRIEL (measured locally; the live run's cost was not captured — see Costs)
+and a few minutes. It is 31 transactions: Aave's
 `Pool` exceeds the EIP-170 contract size limit on its own, so its logic lives in
 eight external libraries that must be deployed and linked first, and `Pool` and
 `PoolConfigurator` sit behind proxies owned by the addresses provider.
@@ -56,12 +56,20 @@ supply / withdraw / borrow / repay.
 
 **Reproduce locally** — `npx hardhat test test/defi-aave.test.js`
 
-> **Status: local only.** As of 2026-07-28 the Aave market has been deployed and
-> exercised against a local instance of the contract suite and against a local
-> hardhat node, but **not** against chain 8555. Every Aave finding below is a
-> local result. The Uniswap findings are live (chain 8555). Check whether that has
-> changed since:
-> `node -e "console.log(require('./app/deployments.json').aave ?? 'no live Aave market')"`
+> **Status: LIVE on chain 8555, with two findings live-verified and two still
+> local.** This block said "local only" until 2026-07-29, which was true when
+> written and is not now. Keep the distinction, because it is not all-or-nothing:
+>
+> | | Status |
+> |---|---|
+> | Market deployed and in use on 8555 | ✅ **live** — reserve active, LTV 75%, borrowing enabled, 580,000.01 aKHRt outstanding across three holders, one address carrying real variable debt |
+> | Finding: the receipt escapes the perimeter | ✅ **live** — see below |
+> | Finding: the perimeter holds on the asset | ✅ **live** — measured in the same run, which is what makes the pair a finding rather than two separate claims |
+> | Findings on accrual and on liquidation | ⚠️ still **local** (`test/defi-aave.test.js`, where the allow-list precompiles are mocked) |
+> | Deployment cost | ⚠️ still a **local** measurement |
+>
+> Verify rather than trust this table:
+> `npx hardhat run scripts/aave-diagnose.js --network csbRemote`
 
 ### Two things to know before you run it
 
@@ -117,8 +125,28 @@ Redemption stays blocked — burning or withdrawing to an unverified address fai
 — so the asset never escapes. **The economic exposure does.**
 
 On the live chain the holder's position is starker than it sounds: the address in
-the recorded run holds a claim on pooled KHRt while its `txAllowList` role is
-`none`, meaning the chain will not accept *any* transaction from it.
+the recorded Uniswap run holds a claim on pooled KHRt while its `txAllowList` role
+is `none`, meaning the chain will not accept *any* transaction from it.
+
+**Verified live for Aave on 2026-07-29, chain 8555.** This was a local result
+until then. Measured with `scripts/atoken-escape-test.js`, which simulates both
+transfers with `eth_call` and a `from` override — no key, nothing signed:
+
+| | |
+|---|---|
+| Sender | `0x93318de699311bc7bBd994298feb25335d124f6d` — KYC active (tier 2), `txAllowList: enabled`, holding 10.00 aKHRt and no debt |
+| Recipient | `0x0Ebb8283bA8C207c832d6043858e98f10915Fbd9` — **no KYC attestation**, **`txAllowList: none`**, holding nothing |
+| `KHRt.transfer` (the asset) | **reverts** |
+| `aKHRt.transfer` (the receipt) | **succeeds** |
+
+Two limits on that, stated so nobody has to guess how strong it is. First, the
+live node returns a bare `execution reverted` for the KHRt leg without revert
+data; the local run decodes the same call to `NotKycActive(0x0Ebb…)`. So the
+*refusal* is live-measured and the *stated reason* is inferred from the
+recipient's measured status. Second, this is a simulation of chain state, not an
+executed transfer — it establishes that the chain permits the transfer, not that
+one happened. Executing it would leave an on-chain record; the sender holds
+10.00 aKHRt, so it is one transaction away.
 
 This is not patchable at the base layer. `txAllowList` governs who may send a
 transaction, not who may hold a claim, and the claim is a contract that was never
@@ -171,13 +199,16 @@ hardhat's fixed 55,000 gwei.
 A complete AMM for about eight US cents is the intended effect of pricing gas for
 inclusion rather than for congestion.
 
-**Not measured on 8555:** the Aave market. Measured locally, standing up the
-market is **31 transactions and 47,709,671 gas**, which at the 47,619 gwei policy
-floor is **2,271.89 tRIEL ($0.568)**; the two `setSystemContract` grants the market
-needs add 96,182 gas (4.58 tRIEL). Gas is deterministic for identical bytecode, so
-these transfer to 8555 at the same fee policy — but they are a local measurement,
-not a live one. Run `scripts/aave-live.js` on 8555 and use what it prints before
-quoting a live figure.
+**Deployed on 8555, but the cost was not captured.** The market *is* live on 8555
+(see the status block above), but nobody recorded what the deploy run printed, and
+`scripts/aave-live.js` is idempotent so re-running it reports the existing market
+rather than re-measuring. What follows is therefore still a **local** measurement:
+standing up the market is **31 transactions and 47,709,671 gas**, which at the
+47,619 gwei policy floor is **2,271.89 tRIEL ($0.568)**; the two
+`setSystemContract` grants add 96,182 gas (4.58 tRIEL). Gas is deterministic for
+identical bytecode, so these carry to 8555 at the same fee policy — but that is an
+inference, not a live reading. To get a live figure, delete the `aave` block from
+`app/deployments.json`, re-run on 8555, and record the total it prints.
 
 (An earlier estimate of 950–1,200 tRIEL in this file was low by roughly half; it
 was derived from an assumption of about twenty deployments rather than the 31 the

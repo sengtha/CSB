@@ -9,12 +9,46 @@ thing it rests on.
 
 ## 1. Has the Aave market been deployed on chain 8555?
 
-**No. It is a local result.**
+**Answered "no" on 2026-07-28. That answer is now out of date: as of 2026-07-29 it
+is deployed and in use on 8555, and two of the four findings are live-verified.**
 
 | Experiment | Local | Chain 8555 |
 |---|---|---|
 | Unmodified Uniswap V2 | ✅ `test/defi-unmodified.test.js` | ✅ run 2026-07-28, output recorded |
-| Unmodified Aave V3 | ✅ `test/defi-aave.test.js` | ❌ **not run** |
+| Unmodified Aave V3 — market deployed | ✅ `test/defi-aave.test.js` | ✅ **live**, measured 2026-07-29 |
+| Aave: the perimeter holds on the ASSET | ✅ | ✅ **live**, measured 2026-07-29 |
+| Aave: the RECEIPT escapes it | ✅ | ✅ **live**, measured 2026-07-29 |
+| Aave: aTokens accrue for an unattested holder | ✅ | ❌ still local |
+| Aave: liquidation blocked only by the debt asset | ✅ | ❌ still local |
+| Aave deployment cost | ✅ | ❌ not captured |
+
+**What is live, measured with `scripts/aave-diagnose.js` on chain 8555:** reserve
+active, not frozen, not paused; borrowing enabled; LTV 75%, liquidation threshold
+80%; reserve id 0; decimals 2; 580,000.01 aKHRt outstanding across three holders,
+all KYC tier 2 with `txAllowList: enabled`; one holder carrying 50,000.01 of real
+variable debt against 79,990.00 of collateral.
+
+**Finding 3, live**, measured with `scripts/atoken-escape-test.js`: from
+`0x93318de699311bc7bBd994298feb25335d124f6d` (KYC tier 2, no debt, 10.00 aKHRt) to
+`0x0Ebb8283bA8C207c832d6043858e98f10915Fbd9` (**no KYC attestation**,
+**`txAllowList: none`**), `KHRt.transfer` reverts and `aKHRt.transfer` succeeds.
+
+Two limits to state in the paper rather than leave a reviewer to find:
+
+1. The live node returns a bare `execution reverted` for the KHRt leg with no
+   revert data. Locally the identical call decodes to `NotKycActive(0x0Ebb…)`. So
+   the refusal is live-measured; the stated *reason* is inferred from the
+   recipient's measured attestation status.
+2. It is an `eth_call` simulation of live chain state, not an executed transfer.
+   It establishes that the chain permits the transfer. It does not establish that
+   one occurred, and leaves no on-chain record. One transaction would fix that.
+
+**Still local, so do not promote these:** the accrual finding, the liquidation finding, and the cost. On the
+hardhat network the allow-list precompiles are mocked, which is why finding 3 was
+worth re-doing live — and on 8555 the recipient's `txAllowList: none` is a real
+precompile reading, not a mock.
+
+**The superseded answer**, kept because the paper may already cite it:
 
 What exists for Aave:
 
