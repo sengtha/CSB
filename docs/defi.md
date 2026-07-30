@@ -210,12 +210,27 @@ protocol has not merely let an unattested address hold a claim; it has enrolled 
 address as a collateralised borrower eligible to draw on the reserve.
 
 It cannot exercise that today, because `txAllowList: none` means the chain accepts no
-transaction from it. But the capacity is pre-computed and sitting in protocol state,
-and it activates the moment the address is admitted to the allow-list — which the
-allow-list audit shows can happen through operator provisioning without an
-attestation ever being issued (`scripts/audit-allowlist.js`; 4 of 20 addresses on
-this chain are allow-listed with no attestation). Inertness is therefore "cannot move
-it **yet**", not "cannot move it".
+transaction from it. The position is nonetheless complete: the entitlement waits in
+protocol state rather than needing to be established.
+
+**Two administrative acts stand between the exposure and its realisation, and they are
+not equally weighted.** An earlier version of this note said the capacity "activates
+the moment the address is admitted to the allow-list". **That was wrong**, and the
+distinction matters:
+
+| Act | What it unlocks | Gate |
+|---|---|---|
+| Allow-list admission alone | **moving or selling the receipt** — an aKHRt transfer touches no gated asset | weak: the audit shows admission occurring through operator provisioning with no attestation issued (4 of 20 addresses on this chain) |
+| Admission **plus** an attestation | **drawing on the reserve** | firm: `borrow()` calls `AToken.transferUnderlyingTo`, which is a KHRt transfer to the borrower, so KHRt's own hook checks the borrower's attestation |
+
+Verified in `@aave/core-v3`: `BorrowLogic.executeBorrow` →
+`transferUnderlyingTo(params.user, amount)` →
+`IERC20(_underlyingAsset).safeTransfer(target, amount)`. So an unattested address
+cannot draw on the reserve even once allow-listed — the drawdown is a transfer of the
+gated asset and the perimeter holds on it, exactly as everywhere else.
+
+Inertness is therefore "cannot move it **yet**", with the chokepoint on **resale**
+weaker than the chokepoint on **drawdown**.
 
 One limit remains: the live node returns a bare `execution reverted` for the refused
 KHRt leg with no revert data, where the identical call against the local suite decodes

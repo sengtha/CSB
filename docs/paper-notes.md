@@ -78,15 +78,31 @@ arithmetic checked against the oracle's 1e18 per whole KHRt). Aave has not merel
 an unattested address hold a claim, it has **enrolled it as a collateralised borrower
 eligible to draw on the reserve.**
 
-It cannot exercise that while `txAllowList: none` blocks every transaction from it.
-But the capacity is already computed and held in protocol state, and it activates on
-allow-list admission — which the audit shows can occur through operator provisioning
-with no attestation ever issued (4 of 20 addresses on this chain). So the inertness
-argument should be stated as **"cannot move it yet"**, not "cannot move it". That is
-a better sentence for the paper than either the bare escape or an unqualified
-inertness claim, because it names what stands between the exposure and its
-realisation: a single administrative act, held by the state, that the deployment
-already performs for reasons unrelated to identity.
+It cannot exercise that while `txAllowList: none` blocks every transaction from it,
+though the position is complete — the entitlement waits in protocol state.
+
+**Correction, 2026-07-30.** An earlier version of this note said the capacity
+"activates on allow-list admission". That is wrong, and the correct version is
+sharper. **Two acts of unequal weight** stand between the exposure and its
+realisation:
+
+- **Allow-list admission alone** permits **resale** of the receipt, because an aKHRt
+  transfer touches no gated asset. This is the weak chokepoint: the audit shows such
+  admission occurring through operator provisioning with no attestation issued.
+- **Drawing on the reserve additionally requires an attestation**, because
+  `borrow()` calls `AToken.transferUnderlyingTo`, which is a KHRt transfer to the
+  borrower, so the asset's own eligibility check applies. Verified in
+  `@aave/core-v3`: `BorrowLogic.executeBorrow` → `transferUnderlyingTo` →
+  `safeTransfer`. This is the firm chokepoint, and it is the perimeter working.
+
+So the guarantee is: **the perimeter leaks exposure while keeping a chokepoint on
+realising it — firm on drawdown, weak on resale.** That is more defensible than either
+the bare escape or an unqualified inertness claim, and it survives a reviewer who
+checks Aave's borrow path.
+
+The chokepoint depends on the perimeter being **singular**. §6.3's orphaned deployment
+is where it fails outright: those holders are attested and allow-listed under a
+registry no current authority administers, so their exposure is fully realisable.
 
 **Accrual is live at the holder level, not merely in aggregate.** Two readings a day
 apart, with the escape run's 20.00 transfer accounted for: `0xC52D98D0…` went
