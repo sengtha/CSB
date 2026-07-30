@@ -92,40 +92,81 @@ async function main() {
   }
 
   console.log(`\nWHY IT FAILED`);
-  if (ratio > 0.97) {
-    console.log(`  Gas used is ${(ratio * 100).toFixed(1)}% of the limit — this is very likely`);
-    console.log(`  OUT OF GAS, not a contract refusal. The wallet under-estimated.`);
-    console.log(`  Retry with a higher gas limit before concluding anything about`);
-    console.log(`  the contracts. A revert normally uses well under the limit.`);
+
+  // A TOP-LEVEL out-of-gas consumes the whole limit, so gasUsed == gasLimit
+  // exactly. A ratio a few percent short of 100% with nothing else wrong is the
+  // signature of an INNER call running out: EIP-150 hands a sub-call at most
+  // 63/64 of the remaining gas, so when the sub-call exhausts its allocation the
+  // outer frame still holds an unspent sliver, and each level of nesting leaves
+  // another. Both are gas problems, and neither says anything about the contracts.
+  if (ratio >= 0.999) {
+    console.log(`  gasUsed EQUALS the limit — top-level OUT OF GAS. The contracts`);
+    console.log(`  did not refuse anything; the gas limit was too low.`);
+  } else if (ratio > 0.90) {
+    console.log(`  gasUsed is ${(ratio * 100).toFixed(1)}% of the limit but not all of it. That gap`);
+    console.log(`  is the EIP-150 1/64 reserve, which is what an INNER call running`);
+    console.log(`  out of gas looks like — a nested call exhausted its allocation`);
+    console.log(`  while the outer frame kept the reserve. Still a gas problem.`);
+    console.log(`  The gas-constrained replay below settles it.`);
   }
 
-  // Replay the exact call against the state its parent block had. This is the
-  // only faithful reconstruction: replaying against `latest` asks a different
-  // question and is how the original contradiction arose.
-  console.log(`\n  Replaying the identical call at block ${rcpt.blockNumber - 1} (the parent):`);
+  const base = { from: tx.from, to: tx.to, data: tx.data, value: tx.value };
+  const parent = rcpt.blockNumber - 1;
+
+  // THE faithful reconstruction: parent block AND the original gas limit. Getting
+  // either wrong produces a false exoneration — replaying at `latest` asks about
+  // different state, and replaying without the gas cap hands the call far more
+  // gas than it had, so a gas failure silently "succeeds".
+  console.log(`\n  1. Identical call, parent block ${parent}, ORIGINAL gas limit ${tx.gasLimit}:`);
+  let faithfulOk = false;
   try {
-    await provider.call({
-      from: tx.from, to: tx.to, data: tx.data, value: tx.value,
-    }, rcpt.blockNumber - 1);
-    console.log(`    IT SUCCEEDS at that block.`);
-    console.log(`    So the calldata and the state were both fine, and the failure`);
-    console.log(`    came from something outside them — the gas limit above being the`);
-    console.log(`    first thing to check.`);
+    await provider.call({ ...base, gasLimit: tx.gasLimit }, parent);
+    faithfulOk = true;
+    console.log(`     SUCCEEDS — so neither the state, the calldata, nor the gas`);
+    console.log(`     limit explains the failure. Look at nonce or ordering.`);
   } catch (e) {
-    console.log(`    REVERTS: ${explain(ethers, e)}`);
-    console.log(`    This is the real reason. It reproduces from the state at the`);
-    console.log(`    time, so it is not a gas or nonce artifact.`);
+    console.log(`     FAILS: ${explain(ethers, e)}`);
   }
 
-  // And at latest, to show explicitly whether the answer is state-dependent.
-  console.log(`\n  For contrast, the same call against the CURRENT state:`);
+  // Same state, generous gas. If this succeeds where the above failed, gas is
+  // the whole story and the contracts permitted the action.
+  console.log(`\n  2. Same call and block, but with generous gas:`);
+  let richOk = false;
   try {
-    await provider.call({ from: tx.from, to: tx.to, data: tx.data, value: tx.value });
-    console.log(`    succeeds now — so the outcome DEPENDS ON STATE that has since`);
-    console.log(`    changed. Any simulation run against 'latest' is therefore not`);
-    console.log(`    evidence about what happened in block ${rcpt.blockNumber}.`);
+    await provider.call(base, parent);
+    richOk = true;
+    console.log(`     SUCCEEDS.`);
   } catch (e) {
-    console.log(`    still reverts: ${explain(ethers, e)}`);
+    console.log(`     FAILS: ${explain(ethers, e)}`);
+  }
+
+  // What the call actually needs. If this exceeds the limit the wallet used, the
+  // wallet under-estimated, and that is the entire explanation.
+  console.log(`\n  3. Gas the call actually requires, at that block:`);
+  try {
+    const need = await provider.estimateGas({ ...base }, parent);
+    const over = need > tx.gasLimit;
+    console.log(`     needs ~${need}, the transaction was given ${tx.gasLimit}`);
+    if (over) {
+      console.log(`     ** SHORT BY ${need - tx.gasLimit} — the wallet UNDER-ESTIMATED. **`);
+    } else {
+      console.log(`     within the limit, so a plain shortfall is not the explanation.`);
+    }
+  } catch (e) {
+    console.log(`     estimate failed: ${explain(ethers, e)}`);
+  }
+
+  console.log(`\nVERDICT`);
+  if (!faithfulOk && richOk) {
+    console.log(`  GAS, NOT REFUSAL. With the gas it was actually given the call`);
+    console.log(`  fails; with more gas, at the same block and state, it succeeds.`);
+    console.log(`  The contracts permitted this action. Retry with a higher limit.`);
+  } else if (!faithfulOk && !richOk) {
+    console.log(`  A GENUINE REFUSAL. It fails even with ample gas at the state it`);
+    console.log(`  ran against, so the reason in (2) is the real one.`);
+  } else {
+    console.log(`  NOT REPRODUCIBLE from the call itself. The state, calldata and`);
+    console.log(`  gas limit all replay cleanly, so the cause lies outside them.`);
   }
 }
 

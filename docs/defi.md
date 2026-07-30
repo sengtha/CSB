@@ -68,7 +68,27 @@ supply / withdraw / borrow / repay.
 > LOCALLY (`test/defi-aave.test.js`). There is also a confound: the KYC'd recipient
 > already held aKHRt while the unattested one held none, and Aave takes a different
 > path when the recipient's balance is zero — so KYC status and first-time-holder
-> status both differ between those two transactions. See §Disputed below.
+> status both differ between those two transactions.
+>
+> **That confound is now measured, and it is large.** An aKHRt transfer to a
+> recipient whose aToken balance is **zero** costs **129,725 gas**; the same
+> transfer to an address that **already holds** aKHRt costs **87,039** — a
+> difference of **42,686 gas, about 49%**. Aave runs
+> `validateAutomaticUseAsCollateral` and writes a collateral bit only on the
+> recipient's first receipt. So two transfers that a wallet displays identically
+> ("10 aKHRt") differ by half again in cost, and a wallet that estimates per
+> transaction can under-provision the expensive one while having ample gas for the
+> cheap one — **in either order**. Transaction ordering therefore does not
+> distinguish gas from compliance, and neither does the wallet's own display.
+>
+> The failed transaction's own numbers point at gas: `gasUsed` 175,302 of a 182,013
+> limit is **96.3%** — not the 100% of a top-level out-of-gas, but the signature of
+> an **inner** call exhausting its EIP-150 63/64 allocation while the outer frame
+> keeps the reserve. A locally reproduced gas-starved transfer to a zero-balance
+> recipient gives 97.5% and the identical replay behaviour. That is strong, but it
+> is a matched fingerprint rather than a measurement of *this* transaction; settle
+> it with `scripts/why-did-tx-fail.js`, which replays at the parent block **with the
+> original gas limit** and reports what the call actually needed.
 
 > **Status: market LIVE on chain 8555; finding statuses as marked.** This block said "local only" until 2026-07-29, which was true when
 > written and is not now. Keep the distinction, because it is not all-or-nothing:
