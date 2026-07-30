@@ -252,13 +252,22 @@ Why this is the sharper version of the composability finding:
 this chain, so nothing currently exploits the decoupling — it becomes real at the
 first revocation. State that as measured, and do not imply the leak is in use.
 
-Of the four never-attested addresses, one is identified: the **ICM/Teleporter
-deterministic deployer** `0x618FEdD9A45a8C456812ecAAE70C671c6249DfaC`, which needed
-the deployer allow-list to install `TeleporterMessenger` (`docs/fuji-ictt.md`). The
-other three are unidentified operator addresses; the audit now prints each one's
-transaction count, contract deployments and call targets so an operator address
-(deploys, calls infrastructure) can be told apart from one behaving as a participant
-(calls `KHRStablecoin` or the Aave pool) without an attestation.
+Two of the four never-attested addresses are identified, and both are ICM
+infrastructure rather than participants:
+
+| Address | What it is | Evidence |
+|---|---|---|
+| `0x618FEdD9A45a8C456812ecAAE70C671c6249DfaC` | ICM/Teleporter **deterministic deployer** | needed the deployer allow-list to install `TeleporterMessenger`; `docs/fuji-ictt.md` |
+| `0x416d4DE5333F31E950C73c92c52C9b8A36e1cE2B` | the **ICM relayer** | its only call target is `0x253b2784c75e510dD0fF1da844684a1aC0aa5fcf`, the ICM Messenger (`docs/deployment-status.md`); holds 11,979 tRIEL, consistent with paying gas to deliver messages |
+
+The remaining two (`0x0E1A7Bc8…`, `0x6aD62D8c…`) call contracts that are in neither
+`deployments.json` nor the docs, and each holds ~90 tRIEL — the shape of ICM/ICTT
+infrastructure deployed by avalanche-cli rather than by this repo. The audit now
+probes unnamed call targets on chain (TeleporterRegistry, ICTT token bridge, Warp,
+then ERC-20 `symbol`/`name`) so they identify themselves; re-run it to close this
+out. **None of the four has called `KHRStablecoin` or the Aave pool**, which is the
+test that matters — an operator address that only touches infrastructure is
+behaving as one.
 
 So the honest claim is not "the perimeter fails on receipts" but something more
 precise and more defensible:

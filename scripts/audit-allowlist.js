@@ -55,6 +55,48 @@ const IDENTITY_ABI = [
 ];
 const ALLOWLIST_ABI = ["function readAllowList(address) view returns (uint256)"];
 
+/**
+ * Say what an unnamed contract is, by asking it. A call target that resolves to
+ * neither a deployments.json entry nor a documented constant is not actionable —
+ * "this unattested address called 0xb857…" tells an auditor nothing. Probing a few
+ * view functions turns it into "an ERC-20 called aKHRt" or "an ICTT token bridge",
+ * which is enough to judge whether an operator address is behaving as one.
+ *
+ * Every probe is wrapped: a contract that does not implement a getter simply moves
+ * on, and a non-contract is reported as an EOA rather than guessed at.
+ */
+async function identifyContract(ethers, provider, addr) {
+  let code;
+  try { code = await provider.getCode(addr); } catch { return null; }
+  if (!code || code.length <= 2) return "plain address (no code)";
+
+  const probes = [
+    // ICM / ICTT first: these are the addresses most likely to be unnamed here,
+    // because they are deployed by avalanche-cli rather than by this repo.
+    ["function latestVersion() view returns (uint256)", "latestVersion",
+     (v) => `TeleporterRegistry (latest version ${v})`],
+    ["function tokenAddress() view returns (address)", "tokenAddress",
+     (v) => `ICTT token bridge for token ${v}`],
+    ["function getBlockchainID() view returns (bytes32)", "getBlockchainID",
+     () => "Warp/ICM-aware contract"],
+    ["function blockchainID() view returns (bytes32)", "blockchainID",
+     () => "ICM-aware contract"],
+    // Then the generic token shape.
+    ["function symbol() view returns (string)", "symbol",
+     (v) => `token, symbol ${v}`],
+    ["function name() view returns (string)", "name",
+     (v) => `contract named ${v}`],
+  ];
+  for (const [sig, fn, fmt] of probes) {
+    try {
+      const c = new ethers.Contract(addr, [sig], provider);
+      const v = await c[fn]();
+      return fmt(v);
+    } catch { /* not this interface */ }
+  }
+  return `contract (${(code.length - 2) / 2} bytes, no recognised getter)`;
+}
+
 async function main() {
   const { ethers } = hre;
   const provider = ethers.provider;
@@ -150,6 +192,8 @@ async function main() {
   const WELL_KNOWN = {
     "0x618FEdD9A45a8C456812ecAAE70C671c6249DfaC":
       "ICM/Teleporter deterministic deployer — expected, see docs/fuji-ictt.md",
+    "0x253b2784c75e510dD0fF1da844684a1aC0aa5fcf":
+      "ICM Messenger (Teleporter) — see docs/deployment-status.md",
   };
 
   // 3. anything named in deployments.json
@@ -225,7 +269,10 @@ async function main() {
         if (targets.length) {
           console.log(`      called:`);
           for (const t of targets.slice(0, 8)) {
-            console.log(`        ${t}${known.has(t) ? `  (${known.get(t)})` : ""}`);
+            let label = known.get(t) ?? WELL_KNOWN[t];
+            // Nothing named it, so ask the chain rather than print a bare hex string.
+            if (!label) label = await identifyContract(ethers, provider, t);
+            console.log(`        ${t}${label ? `  (${label})` : ""}`);
           }
           if (targets.length > 8) console.log(`        …and ${targets.length - 8} more`);
         }
