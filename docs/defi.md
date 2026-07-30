@@ -134,10 +134,16 @@ transfers with `eth_call` and a `from` override — no key, nothing signed:
 
 | | |
 |---|---|
-| Sender | `0x93318de699311bc7bBd994298feb25335d124f6d` — KYC active (tier 2), `txAllowList: enabled`, holding 10.00 aKHRt and no debt |
-| Recipient | `0x0Ebb8283bA8C207c832d6043858e98f10915Fbd9` — **no KYC attestation**, **`txAllowList: none`**, holding nothing |
-| `KHRt.transfer` (the asset) | **reverts** |
-| `aKHRt.transfer` (the receipt) | **succeeds** |
+| Recipient (both runs) | `0x0Ebb8283bA8C207c832d6043858e98f10915Fbd9` — **no KYC attestation**, **`txAllowList: none`**, holding nothing |
+| Sender A | `0x93318de699311bc7bBd994298feb25335d124f6d` — KYC tier 2, `txAllowList: enabled`, 10.00 aKHRt, **no debt**. Transfer of 1.00: `KHRt` **reverts**, `aKHRt` **succeeds**. |
+| Sender B | `0x70E7601Ff820042Fe05c149aA94722A4fB44ba10` — KYC tier 2, 79,990.00 aKHRt, **carrying 50,000.01 of open variable debt**. Transfer of 100.00: `KHRt` **reverts**, `aKHRt` **succeeds**. |
+
+Sender B matters on its own. The leak is not an artifact of choosing a debt-free
+holder: a borrower with a live, collateralised position can hand the receipt to an
+unattested address while the debt stays behind. Aave will refuse the transfer once
+it would push that sender's health factor below 1 — code 35, a debt limit, not a
+compliance one — so the constraint on how much exposure can be exported is the
+borrower's own solvency, and nothing to do with who the recipient is.
 
 Two limits on that, stated so nobody has to guess how strong it is. First, the
 live node returns a bare `execution reverted` for the KHRt leg without revert

@@ -28,10 +28,21 @@ active, not frozen, not paused; borrowing enabled; LTV 75%, liquidation threshol
 all KYC tier 2 with `txAllowList: enabled`; one holder carrying 50,000.01 of real
 variable debt against 79,990.00 of collateral.
 
-**Finding 3, live**, measured with `scripts/atoken-escape-test.js`: from
-`0x93318de699311bc7bBd994298feb25335d124f6d` (KYC tier 2, no debt, 10.00 aKHRt) to
-`0x0Ebb8283bA8C207c832d6043858e98f10915Fbd9` (**no KYC attestation**,
-**`txAllowList: none`**), `KHRt.transfer` reverts and `aKHRt.transfer` succeeds.
+**Live, measured with `scripts/atoken-escape-test.js`**, twice, to the same
+recipient `0x0Ebb8283bA8C207c832d6043858e98f10915Fbd9` (**no KYC attestation**,
+**`txAllowList: none`**, holding nothing). In both, `KHRt.transfer` reverts and
+`aKHRt.transfer` succeeds:
+
+- from `0x93318de699311bc7bBd994298feb25335d124f6d` — KYC tier 2, no debt,
+  10.00 aKHRt, transferring 1.00
+- from `0x70E7601Ff820042Fe05c149aA94722A4fB44ba10` — KYC tier 2, 79,990.00 aKHRt,
+  **carrying 50,000.01 of open variable debt**, transferring 100.00
+
+The second is worth its own sentence in the paper: the export of exposure is not an
+artifact of a debt-free holder. A borrower with a live collateralised position can
+hand the receipt out while the debt stays behind, and the only thing bounding how
+much is the borrower's own health factor — Aave refuses at code 35, a solvency
+limit — not anything about the recipient.
 
 Two limits to state in the paper rather than leave a reviewer to find:
 
