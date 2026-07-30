@@ -79,6 +79,13 @@
           Borrowing against your own supply is possible here because collateral
           and debt are the same asset — a real market would have several.
         </p>
+        <p class="small" style="margin-top:8px;line-height:1.7">
+          <b>Collateral is per-address.</b> The <i>Supplied</i> figure in the market
+          card above is the pool's total across everyone; the one in <i>Your
+          position</i> is yours. Aave lends only against your own, so supplying
+          from one wallet and borrowing from another is refused — with
+          <span class="mono">code 34</span>.
+        </p>
       </div>
     </div>
 
@@ -222,6 +229,39 @@ document.addEventListener("click", (e) => {
   if (b) _lastBtn = b;
 }, true);
 
+// Aave V3 reverts with a bare numeric string — a borrow with no collateral
+// surfaces as `execution reverted: "34"`, which tells a user nothing. Translate
+// the codes reachable from this page before showing them. Full list:
+// @aave/core-v3 contracts/protocol/libraries/helpers/Errors.sol
+const AAVE_CODES = {
+  "26": "Amount is zero. Enter an amount first.",
+  "27": "This reserve is not active.",
+  "28": "This reserve is frozen — no new supplies or borrows.",
+  "29": "This market is paused.",
+  "30": "Borrowing is disabled for this reserve.",
+  "31": "Stable-rate borrowing is not enabled here.",
+  "32": "You cannot withdraw more than you supplied.",
+  "33": "Invalid interest-rate mode.",
+  "34": "You hold no collateral, so there is nothing to borrow against. "
+      + "Note the pool's total supplied is everyone's — Aave lends against YOUR "
+      + "own supply. If you supplied from a different address, switch to it, or "
+      + "supply from this one first.",
+  "35": "This would put your health factor below the liquidation threshold.",
+  "36": "Not enough collateral to cover this borrow. Supply more, or borrow less.",
+  "37": "Stable-rate borrowing of your own collateral asset is not allowed. "
+      + "This page borrows at the variable rate, so you should not see this.",
+  "39": "You have no debt of that type to repay.",
+};
+
+function explainAave(e) {
+  const raw = e?.shortMessage ?? e?.message ?? String(e);
+  // The code arrives quoted, as reverted: "34" — match a standalone 1-2 digit
+  // string so an address or amount in the message cannot be mistaken for one.
+  const m = raw.match(/reverted:?\s*["']?(\d{1,2})["']?/);
+  if (m && AAVE_CODES[m[1]]) return `Aave refused this (code ${m[1]}). ${AAVE_CODES[m[1]]}`;
+  return explainError(e);
+}
+
 async function run(fn) {
   const msg = $("msg");
   const btn = _lastBtn;
@@ -232,7 +272,7 @@ async function run(fn) {
     banner(msg, "ok", await fn());
     await refreshMarket(); await refreshMe();
   } catch (e) {
-    banner(msg, "err", explainError(e));
+    banner(msg, "err", explainAave(e));
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = label; }
     msg.scrollIntoView({ block: "nearest", behavior: "smooth" });
