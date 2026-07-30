@@ -55,6 +55,46 @@ const IDENTITY_ABI = [
 ];
 const ALLOWLIST_ABI = ["function readAllowList(address) view returns (uint256)"];
 
+// Selectors split into two groups deliberately. PARTICIPANT calls move or commit
+// value and are what an address with no attestation should not be doing. ADMIN
+// calls configure a contract and are exactly what an institutional operator
+// address does. Anything unlisted is reported as unknown rather than assumed.
+const PARTICIPANT_SELECTORS = {
+  "0xa9059cbb": "transfer(address,uint256)",
+  "0x23b872dd": "transferFrom(address,address,uint256)",
+  "0x095ea7b3": "approve(address,uint256)",
+  "0x617ba037": "supply(address,uint256,address,uint16)",
+  "0x69328dec": "withdraw(address,uint256,address)",
+  "0xa415bcad": "borrow(address,uint256,uint256,uint16,address)",
+  "0x573ade81": "repay(address,uint256,uint256,address)",
+};
+const ADMIN_SELECTORS = {
+  "0x2f2ff15d": "grantRole(bytes32,address)",
+  "0xd547741f": "revokeRole(bytes32,address)",
+  "0x36568abe": "renounceRole(bytes32,address)",
+  "0x8456cb59": "pause()",
+  "0x3f4ba83a": "unpause()",
+  "0xe0823be0": "setSystemContract(address,bool)",
+  "0x983b2d56": "addMinter(address)",
+  "0x3092afd5": "removeMinter(address)",
+  // Issuance and enforcement are role-gated in this repo, so they are operator
+  // actions, not participant ones. Classifying mint as "participant" was wrong:
+  // an address that can mint holds ISSUER_ROLE by definition.
+  "0x40c10f19": "mint(address,uint256)",
+  "0x867904b4": "issue(address,uint256)",
+  "0xdadfea3c": "confiscate(address,address,uint256,bytes32)",
+  "0xd9d5f8f2": "forcedTransfer(address,address,uint256,bytes32)",
+  "0x5b5ba2fd": "recoveryAddress(address,address,bytes32)",
+  "0xc69c09cf": "setAddressFrozen(address,bool)",
+};
+const READ_ONLY_SELECTORS = {
+  "0x18160ddd": "totalSupply()",
+  "0x70a08231": "balanceOf(address)",
+  "0x06fdde03": "name()",
+  "0x95d89b41": "symbol()",
+  "0x313ce567": "decimals()",
+};
+
 /**
  * Say what an unnamed contract is, by asking it. A call target that resolves to
  * neither a deployments.json entry nor a documented constant is not actionable —
@@ -154,7 +194,7 @@ async function main() {
   const activity = new Map();   // address -> { count, targets:Set, creates:number }
   const act = (from) => {
     const k = ethers.getAddress(from);
-    if (!activity.has(k)) activity.set(k, { count: 0, targets: new Set(), creates: 0 });
+    if (!activity.has(k)) activity.set(k, { count: 0, targets: new Set(), creates: 0, calls: new Map() });
     return activity.get(k);
   };
   let scanned = 0;
@@ -170,7 +210,18 @@ async function main() {
         const a = act(t.from);
         a.count++;
         if (!t.to) a.creates++;
-        else a.targets.add(ethers.getAddress(t.to));
+        else {
+          const to = ethers.getAddress(t.to);
+          a.targets.add(to);
+          // The selector is the difference between administering a contract and
+          // transacting on it, and that distinction decides whether an unattested
+          // address is an operator or a participant.
+          const sel = (t.data ?? "0x").slice(0, 10);
+          if (sel.length === 10) {
+            if (!a.calls.has(to)) a.calls.set(to, new Set());
+            a.calls.get(to).add(sel);
+          }
+        }
       } catch { /* prefetch miss; skip */ }
     }
   }
@@ -273,6 +324,32 @@ async function main() {
             // Nothing named it, so ask the chain rather than print a bare hex string.
             if (!label) label = await identifyContract(ethers, provider, t);
             console.log(`        ${t}${label ? `  (${label})` : ""}`);
+            for (const sel of (a?.calls.get(t) ?? [])) {
+              const pn = PARTICIPANT_SELECTORS[sel];
+              const an = ADMIN_SELECTORS[sel];
+              const rn = READ_ONLY_SELECTORS[sel];
+              const kind = pn ? "PARTICIPANT" : an ? "admin" : rn ? "read" : "unknown";
+              console.log(`          ${sel}  ${pn ?? an ?? rn ?? "(selector not in dictionary)"}`
+                + `  [${kind}]`);
+            }
+            // Role membership settles the ambiguity that a selector cannot: an
+            // address holding an admin role on the contract is an operator by
+            // construction, whatever it happened to call.
+            for (const [rn, rid] of [
+              ["DEFAULT_ADMIN_ROLE", ethers.ZeroHash],
+              ["ISSUER_ROLE", ethers.id("ISSUER_ROLE")],
+              ["ENFORCER_ROLE", ethers.id("ENFORCER_ROLE")],
+              ["AGENT_ROLE", ethers.id("AGENT_ROLE")],
+              ["REGISTRAR_ROLE", ethers.id("REGISTRAR_ROLE")],
+            ]) {
+              try {
+                const c = new ethers.Contract(t,
+                  ["function hasRole(bytes32,address) view returns (bool)"], provider);
+                if (await c.hasRole(rid, r.addr)) {
+                  console.log(`          holds ${rn} on this contract -> operator, not participant`);
+                }
+              } catch { /* not an AccessControl contract */ }
+            }
           }
           if (targets.length > 8) console.log(`        …and ${targets.length - 8} more`);
         }

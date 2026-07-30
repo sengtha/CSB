@@ -260,14 +260,33 @@ infrastructure rather than participants:
 | `0x618FEdD9A45a8C456812ecAAE70C671c6249DfaC` | ICM/Teleporter **deterministic deployer** | needed the deployer allow-list to install `TeleporterMessenger`; `docs/fuji-ictt.md` |
 | `0x416d4DE5333F31E950C73c92c52C9b8A36e1cE2B` | the **ICM relayer** | its only call target is `0x253b2784c75e510dD0fF1da844684a1aC0aa5fcf`, the ICM Messenger (`docs/deployment-status.md`); holds 11,979 tRIEL, consistent with paying gas to deliver messages |
 
-The remaining two (`0x0E1A7Bc8…`, `0x6aD62D8c…`) call contracts that are in neither
-`deployments.json` nor the docs, and each holds ~90 tRIEL — the shape of ICM/ICTT
-infrastructure deployed by avalanche-cli rather than by this repo. The audit now
-probes unnamed call targets on chain (TeleporterRegistry, ICTT token bridge, Warp,
-then ERC-20 `symbol`/`name`) so they identify themselves; re-run it to close this
-out. **None of the four has called `KHRStablecoin` or the Aave pool**, which is the
-test that matters — an operator address that only touches infrastructure is
-behaving as one.
+The remaining two are **not** infrastructure, and an earlier draft of this note
+said none of the four had touched a participant-facing asset. That was wrong:
+
+| Address | Called | Identified as |
+|---|---|---|
+| `0x0E1A7Bc8A24c9ac6EB89343668EECa4F11dA88ae` | `0xb8571bdd0fBA0790CDB5D9D28C75C877486F046c` | a token with symbol **KHRt** |
+| `0x6aD62D8cE5Cb79316BdA435d5841c993C63f6255` | `0xa7f089C3…`, `0x4f54f0D9…` | two tokens with symbol **LAND1** |
+
+Two things to resolve before either is described in the paper:
+
+1. **`0xb8571bdd…` is not the `KHRStablecoin` in `deployments.json`** — that is
+   `0xEAE160F6f9a4D626A5A94402E87F0EB7f89A88C1`, which the audit resolves by name.
+   So a second contract on 8555 reports symbol KHRt. Most likely an earlier
+   deployment left in place, but that is a guess, and an orphaned KHRt is worth
+   knowing about independently of this audit.
+2. **Calling a participant-facing asset does not by itself make an address a
+   participant.** The land registrar and the KHRt issuer are institutional
+   addresses that administer these contracts and legitimately hold no personal KYC
+   attestation. What separates the cases is *which function* was called and *what
+   role* the address holds — `issue`/`confiscate`/`grantRole` with a matching role
+   is an operator; `transfer`/`approve`/`supply` without one is a participant.
+
+The audit now reports both, so this is answerable rather than arguable: per call
+target it prints each selector, classified `PARTICIPANT` / `admin` / `read`, and
+checks `hasRole` for `DEFAULT_ADMIN_ROLE`, `ISSUER_ROLE`, `ENFORCER_ROLE`,
+`AGENT_ROLE` and `REGISTRAR_ROLE` on that contract. Re-run it and read the
+selectors before drawing a conclusion.
 
 So the honest claim is not "the perimeter fails on receipts" but something more
 precise and more defensible:
