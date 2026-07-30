@@ -92,6 +92,24 @@ async function main() {
   }
   if (!who) throw new Error("Set CSB_ADDR=0x... to choose an address to diagnose.");
 
+  // Check every address BEFORE handing it to ethers. Anything that is not a
+  // valid address gets treated as an ENS name, and the failure surfaces as
+  // "Method 'HardhatEthersProvider.resolveName' is not implemented" — which says
+  // nothing about the actual mistake. The usual mistakes are pasting a truncated
+  // address (0x70e7...ba10) and a deployments.json `aave` block missing a key.
+  if (!ethers.isAddress(who)) {
+    throw new Error(`CSB_ADDR is not a valid address: "${who}"\n`
+      + `  It must be the full 42-character address (0x + 40 hex characters).\n`
+      + `  An abbreviated one copied from a UI — 0x70e7...ba10 — will not work.`);
+  }
+  for (const k of ["pool", "aToken", "variableDebtToken", "underlying"]) {
+    if (!ethers.isAddress(a[k] ?? "")) {
+      throw new Error(`deployments.json aave.${k} is missing or not an address: `
+        + `${JSON.stringify(a[k])}\n  Present keys: ${Object.keys(a).join(", ")}\n`
+        + `  Re-run scripts/aave-live.js, or add the key by hand.`);
+    }
+  }
+
   const pool = new ethers.Contract(a.pool, POOL, provider);
   const aToken = new ethers.Contract(a.aToken, ERC20, provider);
   const vDebt = new ethers.Contract(a.variableDebtToken, ERC20, provider);
