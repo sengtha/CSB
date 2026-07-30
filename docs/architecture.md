@@ -72,6 +72,35 @@ Powers are deliberately split across institutions and enforced in code:
 | Egress token allowlist, caps, circuit breaker | Governing Council | `EgressGateway` |
 | Validator set, protocol upgrades, precompile admin | Governing Council | Validator Manager + genesis admin keys |
 
+> **Revocation does not remove the ability to transact.** The two gates are
+> independent and nothing connects them: `IdentityRegistry.revoke()` and
+> `suspend()` change only the attestation, while `txAllowList` (precompile
+> `0x…02`) decides who may send a transaction and is granted and removed by hand
+> (`scripts/allow-dev.js`). A revoked address therefore keeps its allow-list entry
+> until an operator explicitly calls `setNone`.
+>
+> KHRt itself is safe — its transfer hook checks the registry, so a revoked
+> address cannot hold the asset. What a revoked address *can* still do is send
+> transactions, receive **uncompliant receipt tokens** (Aave aTokens, Uniswap LP
+> shares — see `docs/defi.md`), and call `pool.withdraw(asset, amount, attested)`
+> to convert such a claim into real KHRt in an attested party's hands. So the
+> receipt-composability leak documented for DeFi becomes *realisable* exactly for
+> this class of address, where for a genuinely unlisted address it is inert.
+>
+> Audit the current state with `npx hardhat run scripts/audit-allowlist.js`, which
+> compares both gates and lists every address that can transact without an active
+> attestation.
+>
+> Two ways to close it, and the choice is a real trade:
+>
+> 1. **Operator procedure** — revocation includes `txAllowList.setNone(addr)`.
+>    Cheap and changes no code, but it is a manual step, and manual steps are what
+>    produced this gap.
+> 2. **Give `IdentityRegistry` allow-list admin** so `revoke()` removes access
+>    atomically. Correct behaviour, but it makes that one contract able to gate
+>    every transaction on the chain — a genuine concentration of power to weigh
+>    against the separation-of-powers design above.
+
 The point, once the roles are held by different institutions: the Identity Authority can stop *new* activity (revoke KYC) but cannot seize assets; the enforcement authority can freeze/confiscate but cannot touch identity or issuance. Due process, auditable by construction.
 
 Of that, the order reference is the part in force today: every enforcement action carries a court/AML reference on chain, and the contracts revert without one (`EnforcementRegistry`, `KHRStablecoin.confiscate`, `LandTitleToken.forcedTransfer`/`recoveryAddress`). The mutual-exclusion property is not, because one key holds both roles.

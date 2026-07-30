@@ -216,6 +216,48 @@ supported.
 
 ---
 
+## 3. The gap that matters more than the aToken finding
+
+**Revoking a KYC attestation does not stop the address transacting.** Measured by
+reading the code and confirmed by `scripts/audit-allowlist.js`:
+`IdentityRegistry.revoke()` and `suspend()` change only the attestation; nothing
+calls `setNone` on the `txAllowList` precompile, and allow-list entries are granted
+and removed by hand.
+
+Why this is the sharper version of the composability finding:
+
+- For an address that is **not** allow-listed, an aToken holding is **inert**. It
+  cannot send any transaction, so it can never transfer, approve, or redeem; nobody
+  else can move the balance because it can never grant an approval; and Aave's only
+  involuntary transfer (`transferOnLiquidation`) requires the holder to have debt.
+  Selling the private key does not help — the buyer inherits an address that still
+  cannot transact. **Realising the value requires re-entering the perimeter, which
+  the council controls.** So that leak is one-way and terminal.
+- For an address that **is** allow-listed but holds no active attestation — a
+  revoked or suspended one — the same holding **is** realisable: it can move the
+  receipt and call `pool.withdraw(asset, amount, attestedAddress)` to convert it
+  into real KHRt in an attested party's hands.
+
+So the honest claim is not "the perimeter fails on receipts" but something more
+precise and more defensible:
+
+> Identity is enforced on custody of the regulated asset and on every transaction
+> sender. It is not enforced on derivative claims. An unattested holder of such a
+> claim cannot realise it without an allow-list grant, which the state controls —
+> unless the address retains an allow-list entry after its attestation was
+> withdrawn, which the current implementation permits because the two gates are not
+> wired together.
+
+What to recommend rather than a fork: do not make the aToken compliance-aware,
+because that costs the "unmodified DeFi runs here" property that separates this
+design from a closed CBDC. Close the revocation gap instead, and reframe the
+guarantee as **observability** — every allow-list holder and every aToken holder is
+enumerable on this chain, so the state can always see who holds exposure and act.
+That is a claim no public chain can make, and it survives a reviewer who punctures
+the universal-KYC claim.
+
+---
+
 ## Standing caveats for anything quoted from this repo
 
 - **Validator count: one.** Three nodes, one registered validator. No fault
