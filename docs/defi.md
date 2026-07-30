@@ -103,7 +103,7 @@ supply / withdraw / borrow / repay.
 > | | Status |
 > |---|---|
 > | Market deployed and in use on 8555 | ✅ **live** — reserve active, LTV 75%, borrowing enabled, 580,000.01 aKHRt outstanding across three holders, one address carrying real variable debt |
-> | Finding: the receipt escapes the perimeter | ✅ **live** — `aKHRt.transfer` to an unattested address is permitted by the contracts. Was disputed 2026-07-30 by a failed executed transfer; that failure was measured to be a gas shortfall, not a refusal. See the note above. **Not yet executed on chain** — the evidence is a gas-corrected simulation. |
+> | Finding: the receipt escapes the perimeter | ✅ **live, and executed** — tx `0xc5306114…85ad83a`, block 500, `SUCCESS`; the unattested recipient holds 20.00 aKHRt on chain. Was disputed by an earlier failed transfer, measured to be a gas shortfall rather than a refusal. |
 > | Finding: the perimeter holds on the asset | ✅ **live** — `KHRt.transfer` to the unattested address reverts. Not affected by the dispute; both the simulation and the executed transactions agree the asset does not move. |
 > | Findings on accrual and on liquidation | ⚠️ still **local** (`test/defi-aave.test.js`, where the allow-list precompiles are mocked) |
 > | Deployment cost | ⚠️ still a **local** measurement |
@@ -185,14 +185,41 @@ it would push that sender's health factor below 1 — code 35, a debt limit, not
 compliance one — so the constraint on how much exposure can be exported is the
 borrower's own solvency, and nothing to do with who the recipient is.
 
-Two limits on that, stated so nobody has to guess how strong it is. First, the
-live node returns a bare `execution reverted` for the KHRt leg without revert
-data; the local run decodes the same call to `NotKycActive(0x0Ebb…)`. So the
-*refusal* is live-measured and the *stated reason* is inferred from the
-recipient's measured status. Second, this is a simulation of chain state, not an
-executed transfer — it establishes that the chain permits the transfer, not that
-one happened. Executing it would leave an on-chain record; the sender holds
-10.00 aKHRt, so it is one transaction away.
+**Executed on chain, 2026-07-30.** No longer a simulation. The holder carrying open
+variable debt transferred 20.00 aKHRt to the unattested address in transaction
+`0xc5306114cca7210bfabbde99dce6e4f03b7e69e9e4aba4f120bb52b0685ad83a`, block 500,
+`status SUCCESS`, 183,469 gas of a 250,000 limit. The recipient's balance is
+therefore non-zero on chain and independently checkable:
+
+```
+0x0Ebb8283bA8C207c832d6043858e98f10915Fbd9
+  supplied (aToken balance)     20.00
+  wallet (underlying KHRt)       0.00
+  compliance status              NO KYC ATTESTATION, txAllowList: none
+```
+
+The gas figure corroborates the earlier failure: 183,469 executed against the
+182,013 the wallet had provided, which is why that attempt reverted.
+
+**Aave granted it a collateral position.** The same reading shows
+`flagged as using collateral: true`, `totalCollateralBase` 2.0e19 and
+`availableBorrowsBase` 1.5e19 — **15.00 KHRt of borrowing power**, being 20.00 at
+the 75% LTV, verified against the oracle price of 1e18 per whole KHRt. So the
+protocol has not merely let an unattested address hold a claim; it has enrolled that
+address as a collateralised borrower eligible to draw on the reserve.
+
+It cannot exercise that today, because `txAllowList: none` means the chain accepts no
+transaction from it. But the capacity is pre-computed and sitting in protocol state,
+and it activates the moment the address is admitted to the allow-list — which the
+allow-list audit shows can happen through operator provisioning without an
+attestation ever being issued (`scripts/audit-allowlist.js`; 4 of 20 addresses on
+this chain are allow-listed with no attestation). Inertness is therefore "cannot move
+it **yet**", not "cannot move it".
+
+One limit remains: the live node returns a bare `execution reverted` for the refused
+KHRt leg with no revert data, where the identical call against the local suite decodes
+to `NotKycActive(0x0Ebb…)`. The refusal is live-measured; its stated reason is
+inferred from the recipient's measured attestation status.
 
 This is not patchable at the base layer. `txAllowList` governs who may send a
 transaction, not who may hold a claim, and the claim is a contract that was never

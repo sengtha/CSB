@@ -65,9 +65,36 @@ Three limits to state rather than leave a reviewer to find:
    revert data. Locally the identical call decodes to `NotKycActive(0x0Ebb…)`. So
    the refusal is live-measured; the stated *reason* is inferred from the
    recipient's measured attestation status.
-2. It is an `eth_call` simulation of live chain state, not an executed transfer.
-   It establishes that the chain permits the transfer. It does not establish that
-   one occurred, and leaves no on-chain record. One transaction would fix that.
+2. ~~It is an `eth_call` simulation, not an executed transfer.~~ **Closed
+   2026-07-30.** Executed: tx
+   `0xc5306114cca7210bfabbde99dce6e4f03b7e69e9e4aba4f120bb52b0685ad83a`, block 500,
+   `status SUCCESS`, 183,469 gas of a 250,000 limit. The unattested recipient holds
+   **20.00 aKHRt** on chain, KHRt balance 0.00, `txAllowList: none`. Citable by hash.
+
+**A further live reading, sharper than the escape itself.** The same address shows
+`flagged as using collateral: true`, `totalCollateralBase` 2.0e19 and
+`availableBorrowsBase` 1.5e19 — **15.00 KHRt of borrowing power** (20.00 at 75% LTV;
+arithmetic checked against the oracle's 1e18 per whole KHRt). Aave has not merely let
+an unattested address hold a claim, it has **enrolled it as a collateralised borrower
+eligible to draw on the reserve.**
+
+It cannot exercise that while `txAllowList: none` blocks every transaction from it.
+But the capacity is already computed and held in protocol state, and it activates on
+allow-list admission — which the audit shows can occur through operator provisioning
+with no attestation ever issued (4 of 20 addresses on this chain). So the inertness
+argument should be stated as **"cannot move it yet"**, not "cannot move it". That is
+a better sentence for the paper than either the bare escape or an unqualified
+inertness claim, because it names what stands between the exposure and its
+realisation: a single administrative act, held by the state, that the deployment
+already performs for reasons unrelated to identity.
+
+**Aggregate accrual is live-observable.** Pool total moved 580,000.01 → 580,000.05
+between the two readings. A transfer cannot change an aToken's total supply, so the
++0.04 is interest. Accrual is therefore occurring on the live chain; what remains
+local is accrual *at the leaked holding*, because 20.00 aKHRt at this utilisation
+will not move a 0.01 increment for a long time — the limit is the token's two-decimal
+precision, not the absence of the mechanism. Worth stating that way rather than as
+"accrual is local", which implies less than is known.
 
 **Addresses for Appendix A** are recorded in `docs/defi.md` §Appendix — all nine
 validated as correctly-checksummed and distinct. The `Pool` entry is the proxy;
