@@ -56,15 +56,28 @@ supply / withdraw / borrow / repay.
 
 **Reproduce locally** — `npx hardhat test test/defi-aave.test.js`
 
-> **Status: LIVE on chain 8555, with two findings live-verified and two still
-> local.** This block said "local only" until 2026-07-29, which was true when
+> ⚠️ **DISPUTED — 2026-07-30. Do not cite the escape finding as live.** An
+> executed MetaMask transaction contradicts the `eth_call` simulation this section
+> rests on. From `0x70E7601Ff820042Fe05c149aA94722A4fB44ba10`, 10 aKHRt to the
+> unattested `0x0Ebb8283bA8C207c832d6043858e98f10915Fbd9` **FAILED**
+> (`0x6e5f0…8a903`), while 10 aKHRt to the KYC-active
+> `0x93318de699311bc7bBd994298feb25335d124f6d` **CONFIRMED**
+> (`0x9b341…24878`) — same sender, same token, same amount. The simulation said
+> the first would succeed. Until the revert reason is known, treat the live status
+> of the escape finding as **unresolved**, not confirmed. It remains established
+> LOCALLY (`test/defi-aave.test.js`). There is also a confound: the KYC'd recipient
+> already held aKHRt while the unattested one held none, and Aave takes a different
+> path when the recipient's balance is zero — so KYC status and first-time-holder
+> status both differ between those two transactions. See §Disputed below.
+
+> **Status: market LIVE on chain 8555; finding statuses as marked.** This block said "local only" until 2026-07-29, which was true when
 > written and is not now. Keep the distinction, because it is not all-or-nothing:
 >
 > | | Status |
 > |---|---|
 > | Market deployed and in use on 8555 | ✅ **live** — reserve active, LTV 75%, borrowing enabled, 580,000.01 aKHRt outstanding across three holders, one address carrying real variable debt |
-> | Finding: the receipt escapes the perimeter | ✅ **live** — see below |
-> | Finding: the perimeter holds on the asset | ✅ **live** — measured in the same run, which is what makes the pair a finding rather than two separate claims |
+> | Finding: the receipt escapes the perimeter | ⚠️ **DISPUTED live** — simulation says yes, an executed transaction says no. Local result stands. |
+> | Finding: the perimeter holds on the asset | ✅ **live** — `KHRt.transfer` to the unattested address reverts. Not affected by the dispute; both the simulation and the executed transactions agree the asset does not move. |
 > | Findings on accrual and on liquidation | ⚠️ still **local** (`test/defi-aave.test.js`, where the allow-list precompiles are mocked) |
 > | Deployment cost | ⚠️ still a **local** measurement |
 >
