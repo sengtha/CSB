@@ -302,12 +302,8 @@ async function main() {
 
   console.log(`\nTHE TOKENS ARE NOT ON CSB YET. That transaction locked them in the Home`);
   console.log(`and emitted an ICM message; a relayer has to deliver it. Check in a minute:`);
-  console.log(`  node -e "const{ethers}=require('ethers');const d=require('./app/deployments.json');`);
-  console.log(`  (async()=>{const p=new ethers.JsonRpcProvider(process.env.CSB_RPC_URL);`);
-  console.log(`  const t=new ethers.Contract(d.bridged.${key}.address,['function balanceOf(address) view returns (uint256)'],p);`);
-  console.log(`  console.log(await t.balanceOf('${recipient}'))})()"`);
-  console.log(`\nIf it stays zero, the relayer is not delivering Fuji -> CSB:`);
-  console.log(`  avalanche interchain relayer logs`);
+  console.log(`  node scripts/bridged-balance.js ${recipient}`);
+  console.log(`\nThat reports total supply as well as the balance, which separates "nothing`);
+  console.log(`was delivered" from "delivered to the wrong address".`);
 }
-
 main().catch((e) => { console.error("\n" + (e.shortMessage ?? e.message ?? e)); process.exitCode = 1; });
