@@ -46,7 +46,15 @@ const DEFAULT_ARTIFACT = path.join(
 const DEFAULT_RELAYER_CONFIG = path.join(
   CLI_HOME, "runs", "Fuji", "local-relayer", "icm-relayer-config.json");
 
-const REGISTRY_ABI = ["function getLatestVersion() view returns (uint256)"];
+/**
+ * `latestVersion` is a PUBLIC STATE VARIABLE on `TeleporterRegistry`, so the getter
+ * is `latestVersion()`. It is not `getLatestVersion()` — that name appears in
+ * docs/fuji-ictt.md and is wrong. Calling the wrong one reverts with no data, which
+ * looks exactly like "this is not a registry" and produces a confident, false
+ * accusation against a perfectly good contract. Verified against
+ * ava-labs/icm-contracts `contracts/teleporter/registry/TeleporterRegistry.sol:51`.
+ */
+const REGISTRY_ABI = ["function latestVersion() view returns (uint256)"];
 const TOKEN_ABI = [
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
@@ -126,7 +134,7 @@ async function main() {
   console.log(`Base fee   ${block.baseFeePerGas ?? 0n} wei\n`);
 
   // --- check the registry BEFORE using it ----------------------------------
-  // TokenHome's constructor calls getLatestVersion() on this address. If it has no
+  // TokenHome's constructor calls latestVersion() on this address. If it has no
   // code, or is the wrong contract, the constructor reverts and every downstream
   // symptom is about gas instead.
   if ((await provider.getCode(registry)).length <= 2) {
@@ -137,10 +145,16 @@ async function main() {
   }
   let version;
   try {
-    version = await new ethers.Contract(registry, REGISTRY_ABI, provider).getLatestVersion();
+    version = await new ethers.Contract(registry, REGISTRY_ABI, provider).latestVersion();
   } catch (e) {
-    throw new Error(`${registry} has code but does not answer getLatestVersion() — `
+    throw new Error(`${registry} has code but does not answer latestVersion() — `
       + `it is not an ICM registry.\n  ${e.shortMessage ?? e.message}`);
+  }
+  // The constructor's own check, run here so it fails with a sentence rather than
+  // as unexplained revert data: require(registry.latestVersion() > 0).
+  if (version === 0n) {
+    throw new Error(`${registry} is a registry with NO registered Teleporter version. `
+      + `The constructor requires latestVersion() > 0 and will revert.`);
   }
   console.log(`ICM registry ${registry}  latest version ${version}`);
 

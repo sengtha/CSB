@@ -61,9 +61,16 @@ avalanche key transfer --fuji --key ewoq --destination-key cli-awm-relayer \
 
 ## Step 1 — Deploy ICM on CSB
 
-ICTT rides on ICM (Teleporter). `ERC20TokenHome`'s constructor calls
-`registry.getLatestVersion()`, so with no ICM registry deployed the deploy fails
+ICTT rides on ICM (Teleporter). `ERC20TokenHome`'s constructor requires
+`registry.latestVersion() > 0`, so with no ICM registry deployed the deploy fails
 with a bare `execution reverted` that says nothing about registries.
+
+> The getter is **`latestVersion()`** — a public state variable on
+> `TeleporterRegistry` (`contracts/teleporter/registry/TeleporterRegistry.sol:51`),
+> not `getLatestVersion()`, which this document previously claimed and which does
+> not exist. Probing a registry with the wrong name reverts with no data, which is
+> indistinguishable from "this address is not a registry" — so the wrong name turns
+> a healthy contract into a confident false accusation.
 
 **The fee-floor collision.** ICM deploys via a *pre-signed* transaction — that is
 how the messenger lands on the same address on every chain. Its gas price is
