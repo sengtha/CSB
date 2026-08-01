@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Staking — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    @media (max-width: 800px) { .vs { grid-template-columns: 1fr; } }
+    .pool { border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; background: var(--card); }
+    .pool.ungated { border-top: 3px solid var(--red); }
+    .pool.gated { border-top: 3px solid var(--warn); }
+    .pool h3 { font-size: 14px; color: var(--blue); margin-bottom: 2px; }
+    .pool .sub { font-size: 11.5px; color: var(--muted); margin-bottom: 12px; }
+    .finding { border-left: 3px solid var(--warn); background: #fef8ec; padding: 13px 15px; border-radius: 0 9px 9px 0; margin: 16px 0; font-size: 13px; line-height: 1.7; }
+    .finding h3 { font-size: 13.5px; margin-bottom: 5px; }
+    .setup { font-size: 13px; line-height: 1.8; color: var(--muted); }
+    .setup code { background: #eef1f5; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+    .out { font-size: 12.5px; line-height: 1.7; margin-top: 10px; }
+    .out .yes { color: var(--red); font-weight: 700; }
+    .out .no { color: var(--ok, #15803d); font-weight: 700; }
+  </style>
+  <script src="vendor/ethers.umd.min.js"></script>
+  <script src="common.js"></script>
+  <script src="shell.js" defer></script>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB Staking</h1>
+    <span class="sub">unmodified Synthetix StakingRewards, in two configurations</span>
+    <nav></nav>
+  </header>
+  <main>
+    <div class="card">
+      <h2>What this is</h2>
+      <p class="small" style="line-height:1.8">
+        The contract is Synthetix's <b>StakingRewards</b>, compiled from the genuine
+        upstream source — the most-forked staking contract in DeFi, and the ancestor
+        of nearly every "farm". Two pools run it against the same staking token and
+        differ only in <b>what they pay out</b>: one rewards an ordinary ERC-20 with
+        no compliance hooks, the other rewards KHRt.
+      </p>
+      <p class="small" style="line-height:1.8">
+        This is the first experiment here whose reward is a <i>separate asset</i>
+        from the gated one, and that changes what can go wrong. The two pools fail in
+        opposite directions.
+      </p>
+    </div>
+
+    <div id="no-pools" class="card" style="display:none">
+      <h2>No staking pools deployed yet</h2>
+      <div class="setup">
+        Deploy both with:<br/>
+        <code>source ops/csb-env.sh</code><br/>
+        <code>npx hardhat run scripts/experiments-live.js --network csbRemote</code>
+      </div>
+    </div>
+
+    <div id="live" style="display:none">
+      <div class="vs">
+        <div class="pool ungated">
+          <h3>Ungated reward</h3>
+          <div class="sub">pays a plain ERC-20 — nothing in the perimeter is consulted</div>
+          <div class="statrow">
+            <div class="stat"><div class="v" id="u-total">—</div><div class="k">staked</div></div>
+            <div class="stat"><div class="v" id="u-mine">—</div><div class="k">your stake</div></div>
+            <div class="stat"><div class="v" id="u-earned">—</div><div class="k">you have earned</div></div>
+          </div>
+          <div class="small mono" id="u-addr" style="margin-top:10px"></div>
+        </div>
+        <div class="pool gated">
+          <h3>KHRt reward</h3>
+          <div class="sub">pays the gated asset — collection goes through the perimeter</div>
+          <div class="statrow">
+            <div class="stat"><div class="v" id="g-total">—</div><div class="k">staked</div></div>
+            <div class="stat"><div class="v" id="g-mine">—</div><div class="k">your stake</div></div>
+            <div class="stat"><div class="v" id="g-earned">—</div><div class="k">you have earned</div></div>
+          </div>
+          <div class="small mono" id="g-addr" style="margin-top:10px"></div>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:18px">
+        <div class="card">
+          <h2>Stake, withdraw, collect</h2>
+          <label>Pool</label>
+          <select id="a-pool">
+            <option value="ungated">Ungated reward</option>
+            <option value="gated">KHRt reward</option>
+          </select>
+          <label>Amount of the staking token</label>
+          <input id="a-amount" placeholder="e.g. 100" />
+          <button id="a-stake">Stake</button>
+          <button id="a-withdraw" class="ghost">Withdraw my stake</button>
+          <button id="a-collect" class="ghost">Collect rewards</button>
+          <p class="small" style="margin-top:10px">
+            The staking token is an ordinary ERC-20 with no compliance hooks and no
+            faucet here — the deployer holds the supply and has to send you some
+            before any of this does anything.
+          </p>
+          <p class="small" style="margin-top:8px">
+            Both plain tokens are Uniswap's test ERC-20, whose symbol happens to be
+            <b>UNI-V2</b>. They are <i>not</i> LP tokens and have nothing to do with
+            the pool on the Liquidity page — check the addresses above rather than
+            the symbols.
+          </p>
+        </div>
+
+        <div class="card">
+          <h2>Can this address collect?</h2>
+          <p class="small" style="line-height:1.75">
+            Whoever holds a stake accrues a reward. Whether they can ever
+            <i>take</i> it depends on which token the pool pays. Check any address
+            against both pools.
+          </p>
+          <label>Address</label>
+          <input id="t-addr" placeholder="0x… any address" />
+          <button id="t-me" class="ghost">Use my address</button>
+          <button id="t-run">Check both pools</button>
+          <div class="out" id="t-out"></div>
+          <p class="small" style="margin-top:8px">
+            Simulated with <code>eth_call</code> — sends nothing, costs nothing. An
+            address with no stake earns nothing, so it will report zero rather than a
+            refusal; stake first to see the difference.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div id="msg" class="banner"></div>
+
+    <div class="finding">
+      <h3>What the experiment found</h3>
+      <b>1. The ungated pool leaks the asset itself.</b> The staking token has no
+      compliance hooks, so an attested holder can simply hand some to an address with
+      no attestation, which then stakes, earns, and <i>collects</i>. Every earlier
+      experiment here leaked a claim whose redemption stayed blocked. This leaks
+      spendable value — and it is then transferable onward to anyone, with no gate
+      anywhere.<br/>
+      <b>2. The gated pool manufactures a debt it can never pay.</b> Rewards accrue
+      to the unattested staker exactly as normal, and <code>getReward()</code>
+      reverts, because paying means transferring KHRt. The protocol's books record an
+      obligation to a party that cannot receive it. That is not a leak — it is a
+      <b>stranded liability</b>, and the perimeter causes it rather than preventing
+      it. The debt does not lapse; it keeps growing.<br/>
+      <b>3. The refusal arrives unlabelled.</b> Synthetix is built on OpenZeppelin
+      2.3.0, which predates custom errors: its <code>SafeERC20</code> makes a
+      low-level call and checks only whether it succeeded, discarding the revert
+      data. So the failure surfaces as
+      <code>SafeERC20: low-level call failed</code> and an operator or auditor gets
+      no on-chain indication that identity was the cause.<br/>
+      <b>4. The stake is not trapped, only the reward.</b>
+      <code>withdraw()</code> moves the staking token, which is ungated, so it
+      succeeds. <code>exit()</code> also tries to collect, so it fails. The same
+      position, two entry points, opposite outcomes — a front-end offering only
+      "exit" would appear broken for this user while "withdraw" worked.
+      <br/><br/>
+      Worth stating plainly: a compliance perimeter placed under an unmodified
+      protocol does not only fail to contain value. It can also create obligations
+      that nobody can discharge.
+    </div>
+  </main>
+  <div class="footer">CSB v0 prototype — a personal experiment; not affiliated with or endorsed by any government. Test tokens only.</div>
+
+<script>
+"use strict";
+
+const POOL_ABI = [
+  "function stakingToken() view returns (address)",
+  "function rewardsToken() view returns (address)",
+  "function totalSupply() view returns (uint256)",
+  "function balanceOf(address) view returns (uint256)",
+  "function earned(address) view returns (uint256)",
+  "function rewardRate() view returns (uint256)",
+  "function periodFinish() view returns (uint256)",
+  "function stake(uint256)",
+  "function withdraw(uint256)",
+  "function getReward()",
+  "function exit()",
+];
+const ERC20_ABI = [
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address,address) view returns (uint256)",
+  "function approve(address,uint256) returns (bool)",
+];
+
+const $ = (id) => document.getElementById(id);
+let CFG = null;
+const P = {};                 // { ungated, gated } -> { c, addr, rewardDec, rewardSym }
+let STAKE_DEC = 18;
+
+const fmt = (v, d) =>
+  Number(ethers.formatUnits(v, d)).toLocaleString("en-US", { maximumFractionDigits: 4 });
+
+async function signer() {
+  if (!window.ethereum) throw new Error("No wallet found. Use the Connect button in the header.");
+  await window.ethereum.request({ method: "eth_requestAccounts" });
+  return await new ethers.BrowserProvider(window.ethereum).getSigner();
+}
+
+async function me() {
+  if (!window.ethereum) return null;
+  const a = await window.ethereum.request({ method: "eth_accounts" }).catch(() => []);
+  return a?.[0] ?? null;
+}
+
+async function refresh() {
+  const who = await me();
+  for (const [key, prefix] of [["ungated", "u"], ["gated", "g"]]) {
+    const p = P[key];
+    $(`${prefix}-total`).textContent = fmt(await p.c.totalSupply(), STAKE_DEC);
+    $(`${prefix}-mine`).textContent = who ? fmt(await p.c.balanceOf(who), STAKE_DEC) : "—";
+    $(`${prefix}-earned`).textContent = who
+      ? `${fmt(await p.c.earned(who), p.rewardDec)}` : "—";
+    $(`${prefix}-addr`).textContent = `${p.addr}\nrewards in ${p.rewardSym}`;
+  }
+}
+
+/**
+ * The question is not "does this address have a stake" but "if it did, could it be
+ * paid". Simulated per pool, because the answer differs by pool and not by address.
+ */
+async function runTest() {
+  const out = $("t-out");
+  out.innerHTML = "";
+  const addr = $("t-addr").value.trim();
+  if (!ethers.isAddress(addr)) { out.textContent = "Enter a valid address."; return; }
+
+  const lines = [];
+  for (const [key, label] of [["ungated", "Ungated pool"], ["gated", "KHRt pool"]]) {
+    const p = P[key];
+    const owed = await p.c.earned(addr);
+    if (owed === 0n) {
+      lines.push(`<b>${label}</b> — nothing accrued to this address yet, so there is `
+        + `nothing to collect and nothing to refuse. Stake first.`);
+      continue;
+    }
+    try {
+      await p.c.getReward.staticCall({ from: addr });
+      lines.push(`<b>${label}</b> — owed ${fmt(owed, p.rewardDec)} ${p.rewardSym}, and `
+        + `<span class="yes">CAN COLLECT</span> it.`);
+    } catch (e) {
+      // Expect "SafeERC20: low-level call failed" from the gated pool, NOT a
+      // compliance error — OpenZeppelin 2.3.0 discards the revert data. Report
+      // whatever actually came back rather than the reason we assume.
+      const reason = e?.reason ?? e?.revert?.name ?? e?.shortMessage ?? e?.message ?? "reverted";
+      lines.push(`<b>${label}</b> — owed ${fmt(owed, p.rewardDec)} ${p.rewardSym}, `
+        + `<span class="no">CANNOT COLLECT</span> — ${reason}. `
+        + `The debt stands and keeps growing.`);
+    }
+  }
+  out.innerHTML = lines.join("<br/><br/>");
+}
+
+async function act(what) {
+  const key = $("a-pool").value;
+  const p = P[key];
+  const s = await signer();
+  const who = await s.getAddress();
+
+  if (what === "collect") {
+    banner($("msg"), "ok", "Collecting…");
+    await (await p.c.connect(s).getReward(await feeOverrides())).wait();
+    banner($("msg"), "ok", "Collected.");
+  } else if (what === "withdraw") {
+    const bal = await p.c.balanceOf(who);
+    if (bal === 0n) { banner($("msg"), "err", "You have nothing staked in that pool."); return; }
+    banner($("msg"), "ok", "Withdrawing…");
+    await (await p.c.connect(s).withdraw(bal, await feeOverrides())).wait();
+    banner($("msg"), "ok", `Withdrew ${fmt(bal, STAKE_DEC)}.`);
+  } else {
+    const amount = ethers.parseUnits($("a-amount").value.trim() || "0", STAKE_DEC);
+    if (amount <= 0n) { banner($("msg"), "err", "Enter an amount above zero."); return; }
+    const tok = new ethers.Contract(CFG.staking.stakeToken, ERC20_ABI, s);
+    if (await tok.balanceOf(who) < amount) {
+      banner($("msg"), "err", "You do not hold that much of the staking token. The "
+        + "deployer holds the supply and has to send you some first.");
+      return;
+    }
+    if (await tok.allowance(who, p.addr) < amount) {
+      banner($("msg"), "ok", "Approving the pool…");
+      await (await tok.approve(p.addr, amount, await feeOverrides())).wait();
+    }
+    banner($("msg"), "ok", "Staking…");
+    await (await p.c.connect(s).stake(amount, await feeOverrides())).wait();
+    banner($("msg"), "ok", `Staked ${fmt(amount, STAKE_DEC)}.`);
+  }
+  await refresh();
+}
+
+async function init() {
+  try {
+    CFG = await loadConfig();
+    if (!CFG.staking?.ungatedPool || !CFG.staking?.gatedPool) {
+      $("no-pools").style.display = ""; return;
+    }
+    const provider = getProvider();
+    for (const [key, addr] of [["ungated", CFG.staking.ungatedPool], ["gated", CFG.staking.gatedPool]]) {
+      const c = new ethers.Contract(addr, POOL_ABI, provider);
+      const reward = new ethers.Contract(await c.rewardsToken(), ERC20_ABI, provider);
+      P[key] = {
+        c, addr,
+        rewardDec: Number(await reward.decimals().catch(() => 18)),
+        rewardSym: await reward.symbol().catch(() => "???"),
+      };
+    }
+    const stakeTok = new ethers.Contract(CFG.staking.stakeToken, ERC20_ABI, provider);
+    STAKE_DEC = Number(await stakeTok.decimals().catch(() => 18));
+
+    $("live").style.display = "";
+    await refresh();
+  } catch (e) {
+    banner($("msg"), "err", explainError(e));
+  }
+}
+
+const guard = (fn) => () => fn().catch((e) => banner($("msg"), "err", explainError(e)));
+$("a-stake").onclick = guard(() => act("stake"));
+$("a-withdraw").onclick = guard(() => act("withdraw"));
+$("a-collect").onclick = guard(() => act("collect"));
+$("t-run").onclick = guard(runTest);
+$("t-me").onclick = guard(async () => { $("t-addr").value = (await me()) ?? ""; });
+
+init();
+</script>
+</body>
+</html>

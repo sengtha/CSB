@@ -40,6 +40,9 @@
       items: [
         ["defi.html", "Liquidity pool", "Unmodified Uniswap V2 on CSB"],
         ["lend.html", "Lending", "Unmodified Aave V3 — supply, borrow, repay"],
+        ["vaults.html", "Vaults", "ERC-4626 over KHRt — one plain, one gated"],
+        ["staking.html", "Staking", "Unmodified Synthetix, two reward tokens"],
+        ["oracle.html", "Oracles", "An administered rate beside a market one"],
         ["wallet.html#swap", "Swap KHRt ⇄ tRIEL", "The governed converter"],
       ],
     },

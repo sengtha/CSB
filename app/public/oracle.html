@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Oracles — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    @media (max-width: 800px) { .vs { grid-template-columns: 1fr; } }
+    .ora { border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; background: var(--card); }
+    .ora.admin { border-top: 3px solid var(--blue); }
+    .ora.market { border-top: 3px solid var(--warn); }
+    .ora h3 { font-size: 14px; color: var(--blue); margin-bottom: 2px; }
+    .ora .sub { font-size: 11.5px; color: var(--muted); margin-bottom: 12px; }
+    .price { font-size: 26px; font-weight: 700; color: var(--blue); font-variant-numeric: tabular-nums; }
+    .finding { border-left: 3px solid var(--warn); background: #fef8ec; padding: 13px 15px; border-radius: 0 9px 9px 0; margin: 16px 0; font-size: 13px; line-height: 1.7; }
+    .finding h3 { font-size: 13.5px; margin-bottom: 5px; }
+    .setup { font-size: 13px; line-height: 1.8; color: var(--muted); }
+    .setup code { background: #eef1f5; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+    .gap { text-align: center; padding: 16px; }
+    .gap .v { font-size: 30px; font-weight: 700; color: var(--warn); font-variant-numeric: tabular-nums; }
+  </style>
+  <script src="vendor/ethers.umd.min.js"></script>
+  <script src="common.js"></script>
+  <script src="shell.js" defer></script>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB Oracles</h1>
+    <span class="sub">what an authority says the rate is, beside what the market did</span>
+    <nav></nav>
+  </header>
+  <main>
+    <div class="card">
+      <h2>What this is</h2>
+      <p class="small" style="line-height:1.8">
+        Two price sources with the same interface. One reports an
+        <b>administered rate</b> — a figure a publishing role sets, within a bound,
+        with a citation attached. The other reads a <b>market rate</b> straight out
+        of this chain's own Uniswap pool, with no publisher and no off-chain
+        infrastructure at all.
+      </p>
+      <p class="small" style="line-height:1.8">
+        The point of having both is the gap between them. On a sovereign chain, the
+        divergence between an official rate and a traded rate is the monetary
+        question itself — and here it can be read off the ledger instead of
+        surveyed.
+      </p>
+    </div>
+
+    <div id="none" class="card" style="display:none">
+      <h2>No oracle deployed yet</h2>
+      <div class="setup">
+        <code>source ops/csb-env.sh</code><br/>
+        <code>npx hardhat run scripts/oracle-deploy.js --network csbRemote</code>
+        &nbsp;— the administered rate<br/>
+        <code>npx hardhat run scripts/experiments-live.js --network csbRemote</code>
+        &nbsp;— the TWAP, against the existing pool
+      </div>
+    </div>
+
+    <div class="vs" id="live" style="display:none">
+      <div class="ora admin" id="admin-card">
+        <h3>Administered rate</h3>
+        <div class="sub">ReferenceRateOracle — someone is accountable for this number</div>
+        <div class="price" id="a-price">—</div>
+        <div class="kv" id="a-detail" style="margin-top:10px"></div>
+      </div>
+      <div class="ora market" id="market-card">
+        <h3>Market rate</h3>
+        <div class="sub">UniswapV2TwapOracle — time-weighted, from this chain's pool</div>
+        <div class="price" id="m-price">—</div>
+        <div class="kv" id="m-detail" style="margin-top:10px"></div>
+        <button id="m-update" style="margin-top:12px">Fold in elapsed time (update)</button>
+      </div>
+    </div>
+
+    <div class="card gap" id="gap-card" style="display:none;margin-top:18px">
+      <div class="small">Divergence, official against traded</div>
+      <div class="v" id="gap-v">—</div>
+      <div class="small" id="gap-note" style="margin-top:6px"></div>
+    </div>
+
+    <div class="card" id="publish-card" style="display:none;margin-top:18px">
+      <h2>Publish a rate</h2>
+      <p class="small" style="line-height:1.75">
+        Only the publishing role can do this, and the contract will not accept a
+        figure without a <b>source reference</b> — an administered number with no
+        stated source is indistinguishable from an invented one. Moves larger than
+        the configured deviation bound are refused outright.
+      </p>
+      <label>Asset</label>
+      <input id="p-asset" placeholder="0x… token address" />
+      <label>Price, in whole units of the base currency</label>
+      <input id="p-price" placeholder="e.g. 1.0" />
+      <label>Source reference — what publication this figure comes from</label>
+      <input id="p-source" placeholder="e.g. reference-rate-2026-08-01" />
+      <button id="p-go">Publish</button>
+      <p class="small" id="p-role" style="margin-top:10px"></p>
+    </div>
+
+    <div id="msg" class="banner"></div>
+
+    <div class="finding">
+      <h3>Two things worth understanding before trusting either number</h3>
+      <b>The administered oracle fails closed.</b> If nobody republishes within its
+      max age, it stops answering — and if it is wired into the lending market, every
+      Aave read reverts: supply, borrow, withdraw, liquidate, and the health-factor
+      display. That is the right behaviour for a credit market running on a rate
+      nobody is standing behind, and it is also a way to halt the market by
+      forgetting. The liveness of the market becomes a duty of the publisher.<br/>
+      <b>The TWAP is a measurement instrument here, not a valuation source.</b> A
+      time-weighted price costs as much to manipulate as the liquidity behind it, and
+      this pool is small. A longer window raises the attack cost and makes the price
+      staler; neither end of that trade is safe at this size. Nothing points the
+      lending market at it, deliberately.<br/>
+      <b>And it is not a feed.</b> The pair accumulates the price by itself, but
+      somebody must read the accumulator and divide, or there is no average to quote.
+      The update button above is permissionless — anyone may call it, which is what
+      makes the price trustless — but "anyone can" is not "someone does".
+      <br/><br/>
+      An honest caveat about the divergence: the pool trades KHRt against a plain
+      test token that nobody else trades, so the market rate is currently whatever
+      the pool was seeded at. It becomes a real measurement when something other
+      than this experiment moves that pool.
+    </div>
+  </main>
+  <div class="footer">CSB v0 prototype — a personal experiment; not affiliated with or endorsed by any government. Test tokens only.</div>
+
+<script>
+"use strict";
+
+const REF_ABI = [
+  "function getAssetPrice(address) view returns (uint256)",
+  "function describe(address) view returns (uint256 price, uint64 publishedAt, bytes32 sourceRef, bool stale)",
+  "function BASE_CURRENCY() view returns (address)",
+  "function BASE_CURRENCY_UNIT() view returns (uint256)",
+  "function maxAge() view returns (uint256)",
+  "function maxDeviationBps() view returns (uint256)",
+  "function publish(address asset, uint256 price, bytes32 sourceRef)",
+  "function hasRole(bytes32,address) view returns (bool)",
+  "function RATE_PUBLISHER_ROLE() view returns (bytes32)",
+];
+const TWAP_ABI = [
+  "function describe() view returns (uint256 price, uint64 lastUpdate, bool stale, bool hasAverage)",
+  "function timeSinceUpdate() view returns (uint256)",
+  "function minWindow() view returns (uint256)",
+  "function maxAge() view returns (uint256)",
+  "function quotedAsset() view returns (address)",
+  "function BASE_CURRENCY() view returns (address)",
+  "function pair() view returns (address)",
+  "function update()",
+];
+const ERC20_ABI = ["function symbol() view returns (string)"];
+
+const $ = (id) => document.getElementById(id);
+let CFG = null, REF = null, TWAP = null, TWAP_QUOTED = null, ADMIN_ASSET = null, SYM = {};
+
+const UNIT = 10n ** 18n;
+const fmt18 = (v) =>
+  Number(ethers.formatUnits(v, 18)).toLocaleString("en-US", { maximumFractionDigits: 6 });
+const when = (ts) => ts ? new Date(Number(ts) * 1000).toLocaleString() : "never";
+
+async function sym(addr) {
+  if (!addr) return "?";
+  if (!SYM[addr]) {
+    SYM[addr] = await new ethers.Contract(addr, ERC20_ABI, getProvider())
+      .symbol().catch(() => addr.slice(0, 8) + "…");
+  }
+  return SYM[addr];
+}
+
+async function me() {
+  if (!window.ethereum) return null;
+  const a = await window.ethereum.request({ method: "eth_accounts" }).catch(() => []);
+  return a?.[0] ?? null;
+}
+
+/**
+ * Which asset to show, and why it is not simply "the one the TWAP prices".
+ *
+ * The two oracles are only comparable on an asset BOTH have a rate for, and out of
+ * the box they do not overlap: `oracle-deploy.js` publishes the base currency at
+ * parity, while the TWAP prices whatever the pool's other token is. Showing the
+ * quoted asset unconditionally would render "no rate" for an oracle that is working
+ * perfectly, which reads as broken. So: prefer the quoted asset when a rate exists,
+ * fall back to the base currency, and say plainly which one is on screen.
+ */
+async function loadAdmin() {
+  const base = await REF.BASE_CURRENCY();
+  let asset = TWAP_QUOTED ?? base;
+  let [price, publishedAt, sourceRef, stale] = await REF.describe(asset);
+  let comparable = true;
+
+  if (price === 0n && asset !== base) {
+    const fallback = await REF.describe(base);
+    if (fallback[0] !== 0n) {
+      asset = base;
+      [price, publishedAt, sourceRef, stale] = fallback;
+      comparable = false;
+    }
+  }
+
+  $("a-price").textContent = price === 0n ? "no rate" : fmt18(price);
+  $("a-detail").innerHTML =
+    `<div><b>Asset</b> ${await sym(asset)} <span class="mono">${asset}</span></div>`
+    + `<div><b>Quoted in</b> ${await sym(base)}</div>`
+    + `<div><b>Published</b> ${when(publishedAt)}</div>`
+    + `<div><b>Source</b> <span class="mono">${sourceRef === ethers.ZeroHash ? "—" : sourceRef}</span></div>`
+    + `<div><b>Status</b> ${price === 0n
+        ? '<span class="badge warn">never published</span>'
+        : stale ? '<span class="badge bad">STALE — reads revert</span>'
+                : '<span class="badge ok">fresh</span>'}</div>`
+    + `<div><b>Contract</b> <span class="mono">${CFG.oracle.referenceRate}</span></div>`
+    + (comparable || price === 0n ? ""
+        : `<div class="small" style="margin-top:6px">No rate has been published for `
+          + `${await sym(TWAP_QUOTED)}, the asset the TWAP prices, so this is the base `
+          + `currency at parity instead. Publish one below to make the two comparable.</div>`);
+
+  ADMIN_ASSET = asset;
+  return (price === 0n || stale || !comparable) ? null : price;
+}
+
+async function loadMarket() {
+  const [price, lastUpdate, stale, hasAverage] = await TWAP.describe();
+  const [since, minWindow, base] = await Promise.all([
+    TWAP.timeSinceUpdate(), TWAP.minWindow(), TWAP.BASE_CURRENCY(),
+  ]);
+
+  $("m-price").textContent = hasAverage ? fmt18(price) : "no average yet";
+  $("m-detail").innerHTML =
+    `<div><b>Asset</b> ${await sym(TWAP_QUOTED)} <span class="mono">${TWAP_QUOTED}</span></div>`
+    + `<div><b>Quoted in</b> ${await sym(base)}</div>`
+    + `<div><b>Last update</b> ${hasAverage ? when(lastUpdate) : "never"}</div>`
+    + `<div><b>Status</b> ${!hasAverage
+        ? '<span class="badge warn">needs a first update</span>'
+        : stale ? '<span class="badge bad">STALE — reads revert</span>'
+                : '<span class="badge ok">fresh</span>'}</div>`
+    + `<div><b>Pool</b> <span class="mono">${await TWAP.pair()}</span></div>`
+    + `<div><b>Contract</b> <span class="mono">${CFG.oracle.twap}</span></div>`;
+
+  const btn = $("m-update");
+  if (since < minWindow) {
+    btn.disabled = true;
+    btn.textContent = `Too soon — ${Number(minWindow) - Number(since)}s to go`;
+  } else {
+    btn.disabled = false;
+    btn.textContent = `Fold in ${since}s of elapsed time (update)`;
+  }
+  return hasAverage && !stale ? price : null;
+}
+
+function showGap(official, market) {
+  const card = $("gap-card");
+  if (official === null || market === null || market === 0n) {
+    // Say why rather than hiding it — "no number" and "the two oracles do not yet
+    // price the same thing" are very different situations for a reader.
+    if (REF && TWAP) {
+      card.style.display = "";
+      $("gap-v").textContent = "—";
+      $("gap-note").textContent = market === null
+        ? "The TWAP has no fresh average yet — run an update above."
+        : "The two oracles do not yet price the same asset. Publish an administered "
+          + "rate for the token the TWAP quotes, and the divergence appears here.";
+    }
+    return;
+  }
+  card.style.display = "";
+  const bps = Number(((official - market) * 10000n) / market);
+  $("gap-v").textContent = `${bps >= 0 ? "+" : ""}${(bps / 100).toFixed(2)}%`;
+  $("gap-note").textContent = `${bps} basis points. The official rate is `
+    + `${bps >= 0 ? "above" : "below"} what this chain's pool actually traded at.`;
+}
+
+async function doUpdate() {
+  if (!window.ethereum) throw new Error("No wallet found. Use the Connect button in the header.");
+  await window.ethereum.request({ method: "eth_requestAccounts" });
+  const s = await new ethers.BrowserProvider(window.ethereum).getSigner();
+  banner($("msg"), "ok", "Folding elapsed time into the average…");
+  await (await TWAP.connect(s).update(await feeOverrides())).wait();
+  banner($("msg"), "ok", "Updated.");
+  await refresh();
+}
+
+async function doPublish() {
+  const asset = $("p-asset").value.trim();
+  if (!ethers.isAddress(asset)) throw new Error("Enter a valid asset address.");
+  const source = $("p-source").value.trim();
+  if (!source) throw new Error("A source reference is required — the contract refuses without one.");
+  const price = ethers.parseUnits($("p-price").value.trim() || "0", 18);
+  if (price <= 0n) throw new Error("Enter a price above zero.");
+
+  await window.ethereum.request({ method: "eth_requestAccounts" });
+  const s = await new ethers.BrowserProvider(window.ethereum).getSigner();
+  banner($("msg"), "ok", "Publishing…");
+  await (await REF.connect(s).publish(asset, price, ethers.id(source), await feeOverrides())).wait();
+  banner($("msg"), "ok", `Published ${$("p-price").value.trim()} for ${asset}.`);
+  await refresh();
+}
+
+async function refresh() {
+  const official = REF ? await loadAdmin() : null;
+  const market = TWAP ? await loadMarket() : null;
+  showGap(official, market);
+
+  if (REF) {
+    const who = await me();
+    const note = $("p-role");
+    if (!who) {
+      note.textContent = "Connect a wallet to see whether it holds the publishing role.";
+    } else {
+      const can = await REF.hasRole(await REF.RATE_PUBLISHER_ROLE(), who).catch(() => false);
+      note.textContent = can
+        ? "Your address holds RATE_PUBLISHER_ROLE."
+        : "Your address does NOT hold RATE_PUBLISHER_ROLE — publishing will revert.";
+    }
+  }
+}
+
+async function init() {
+  try {
+    CFG = await loadConfig();
+    const provider = getProvider();
+    if (CFG.oracle?.referenceRate) REF = new ethers.Contract(CFG.oracle.referenceRate, REF_ABI, provider);
+    if (CFG.oracle?.twap) {
+      TWAP = new ethers.Contract(CFG.oracle.twap, TWAP_ABI, provider);
+      TWAP_QUOTED = await TWAP.quotedAsset();
+    }
+    if (!REF && !TWAP) { $("none").style.display = ""; return; }
+
+    $("live").style.display = "";
+    if (!REF) { $("admin-card").style.display = "none"; }
+    if (!TWAP) { $("market-card").style.display = "none"; }
+    if (REF) {
+      $("publish-card").style.display = "";
+      $("p-asset").value = TWAP_QUOTED ?? await REF.BASE_CURRENCY();
+    }
+    await refresh();
+  } catch (e) {
+    banner($("msg"), "err", explainError(e));
+  }
+}
+
+const guard = (fn) => () => fn().catch((e) => banner($("msg"), "err", explainError(e)));
+$("m-update").onclick = guard(doUpdate);
+$("p-go").onclick = guard(doPublish);
+
+init();
+</script>
+</body>
+</html>

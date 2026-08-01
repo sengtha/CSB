@@ -140,6 +140,17 @@ error, so it can sit in a cron entry without generating noise.
 `experiments-live.js` deliberately does **not** point Aave at this oracle, for the
 reason immediately above.
 
+**Use** — DeFi → Oracles (`oracle.html`). Both oracles side by side with their
+freshness, an `update()` button for the TWAP, a publishing panel for the
+administered rate, and the divergence between them in basis points.
+
+One thing that page has to handle honestly, and it is worth knowing before reading
+it: out of the box **the two oracles do not price the same asset**.
+`oracle-deploy.js` publishes the base currency at parity, while the TWAP prices
+whatever the pool's other token is. Until an administered rate is published for
+*that* token there is no divergence to report, and the page says so rather than
+comparing two unrelated numbers.
+
 ### Two implementation notes worth keeping
 
 **It is not Uniswap's oracle library.** The `UniswapV2OracleLibrary` in v2-periphery

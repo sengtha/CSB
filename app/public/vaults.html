@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vaults — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    @media (max-width: 800px) { .vs { grid-template-columns: 1fr; } }
+    .vault { border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; background: var(--card); }
+    .vault.plain { border-top: 3px solid var(--warn); }
+    .vault.compliant { border-top: 3px solid var(--ok, #15803d); }
+    .vault h3 { font-size: 14px; color: var(--blue); margin-bottom: 2px; }
+    .vault .sub { font-size: 11.5px; color: var(--muted); margin-bottom: 12px; }
+    .finding { border-left: 3px solid var(--warn); background: #fef8ec; padding: 13px 15px; border-radius: 0 9px 9px 0; margin: 16px 0; font-size: 13px; line-height: 1.7; }
+    .finding h3 { font-size: 13.5px; margin-bottom: 5px; }
+    .setup { font-size: 13px; line-height: 1.8; color: var(--muted); }
+    .setup code { background: #eef1f5; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+    .out { font-size: 12.5px; line-height: 1.7; margin-top: 10px; white-space: pre-wrap; }
+    .out .yes { color: var(--red); font-weight: 700; }
+    .out .no { color: var(--ok, #15803d); font-weight: 700; }
+  </style>
+  <script src="vendor/ethers.umd.min.js"></script>
+  <script src="common.js"></script>
+  <script src="shell.js" defer></script>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB Vaults</h1>
+    <span class="sub">ERC-4626 over KHRt — one plain, one gated, side by side</span>
+    <nav></nav>
+  </header>
+  <main>
+    <div class="card">
+      <h2>What this is</h2>
+      <p class="small" style="line-height:1.8">
+        Two vaults holding the same asset, deployed together, differing by
+        <b>one function</b>. The plain one is OpenZeppelin's ERC-4626 with nothing
+        added. The compliant one adds a single hook that checks identity before a
+        <i>share</i> moves. Everything else — the maths, the interface, the
+        rounding — is identical.
+      </p>
+      <p class="small" style="line-height:1.8">
+        That makes this a controlled comparison rather than a demonstration. Run the
+        same action against both and the only thing that can explain a difference in
+        outcome is the hook.
+      </p>
+    </div>
+
+    <div id="no-vaults" class="card" style="display:none">
+      <h2>No vaults deployed yet</h2>
+      <div class="setup">
+        Deploy both with:<br/>
+        <code>source ops/csb-env.sh</code><br/>
+        <code>npx hardhat run scripts/experiments-live.js --network csbRemote</code>
+      </div>
+    </div>
+
+    <div id="live" style="display:none">
+      <div class="vs">
+        <div class="vault plain">
+          <h3>Plain vault</h3>
+          <div class="sub">OpenZeppelin ERC-4626, unmodified</div>
+          <div class="statrow">
+            <div class="stat"><div class="v" id="p-assets">—</div><div class="k">KHRt held</div></div>
+            <div class="stat"><div class="v" id="p-shares">—</div><div class="k">shares out</div></div>
+            <div class="stat"><div class="v" id="p-mine">—</div><div class="k">your shares</div></div>
+          </div>
+          <div class="small mono" id="p-addr" style="margin-top:10px"></div>
+        </div>
+        <div class="vault compliant">
+          <h3>Compliant vault</h3>
+          <div class="sub">the same contract, plus one identity check on the share</div>
+          <div class="statrow">
+            <div class="stat"><div class="v" id="c-assets">—</div><div class="k">KHRt held</div></div>
+            <div class="stat"><div class="v" id="c-shares">—</div><div class="k">shares out</div></div>
+            <div class="stat"><div class="v" id="c-mine">—</div><div class="k">your shares</div></div>
+          </div>
+          <div class="small mono" id="c-addr" style="margin-top:10px"></div>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:18px">
+        <div class="card">
+          <h2>Deposit and redeem</h2>
+          <label>Vault</label>
+          <select id="d-vault">
+            <option value="plain">Plain</option>
+            <option value="compliant">Compliant</option>
+          </select>
+          <label>Amount of KHRt</label>
+          <input id="d-amount" placeholder="e.g. 100" />
+          <button id="d-deposit">Deposit</button>
+          <button id="d-redeem" class="ghost">Redeem all my shares</button>
+          <p class="small" style="margin-top:10px">
+            Depositing needs an approval first; the button does both and will ask
+            twice.
+          </p>
+        </div>
+
+        <div class="card">
+          <h2>The test that matters</h2>
+          <p class="small" style="line-height:1.75">
+            ERC-4626's <code>deposit</code> takes a <b>receiver</b>. You pay the
+            assets; somebody else gets the shares. Point it at an address with no
+            KYC attestation and see which vault allows it.
+          </p>
+          <label>Receiver address</label>
+          <input id="t-receiver" placeholder="0x… an address with no KYC" />
+          <button id="t-random" class="ghost">Use a fresh random address</button>
+          <label>Amount of KHRt</label>
+          <input id="t-amount" placeholder="e.g. 10" value="10" />
+          <button id="t-approve" class="ghost">Approve both vaults</button>
+          <button id="t-run">Simulate against both vaults</button>
+          <div class="out" id="t-out"></div>
+          <p class="small" style="margin-top:8px">
+            Simulated with <code>eth_call</code> — it sends nothing and costs
+            nothing. It reports what each vault <i>would</i> do.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div id="msg" class="banner"></div>
+
+    <div class="finding">
+      <h3>What the experiment found</h3>
+      <b>1. The plain vault hands exposure over in a single call.</b> No transfer of
+      the share is needed and no second step is involved: an attested holder deposits
+      KHRt and names an unattested receiver, who ends up holding a claim on pooled
+      regulated money. This is the sharpest version of the finding, because the
+      escape is not a loophole in the protocol — it is a documented parameter of the
+      standard, present in every conforming implementation.<br/>
+      <b>2. Redemption still fails.</b> The unattested holder cannot pull KHRt out,
+      because the vault's transfer of the underlying hits the perimeter. So no riel
+      escapes; what escapes is the economic exposure to it, exactly as with Uniswap
+      LP tokens and Aave's aTokens.<br/>
+      <b>3. One hook closes it.</b> The compliant vault gates the share itself, so
+      the same call reverts before anything is issued. The cost is that the vault is
+      no longer a standard ERC-4626 — a composing protocol that assumed shares move
+      freely will break against it, and that trade is the whole architectural
+      question in one function.
+      <br/><br/>
+      The perimeter governs <b>custody</b>; composability governs <b>exposure</b>.
+      Three protocols now say the same thing, by three different mechanisms.
+    </div>
+  </main>
+  <div class="footer">CSB v0 prototype — a personal experiment; not affiliated with or endorsed by any government. Test tokens only.</div>
+
+<script>
+"use strict";
+
+const VAULT_ABI = [
+  "function asset() view returns (address)",
+  "function name() view returns (string)",
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function totalAssets() view returns (uint256)",
+  "function totalSupply() view returns (uint256)",
+  "function balanceOf(address) view returns (uint256)",
+  "function deposit(uint256 assets, address receiver) returns (uint256)",
+  "function redeem(uint256 shares, address receiver, address owner) returns (uint256)",
+  "function previewDeposit(uint256 assets) view returns (uint256)",
+  // The compliant vault's own errors. Without these fragments a refusal decodes as
+  // "unknown custom error", which is exactly the information the comparison exists
+  // to surface — the whole point is WHICH check refused.
+  "error NotKycActive(address account)",
+  "error AccountFrozen(address account)",
+  "error ERC20InsufficientAllowance(address spender, uint256 allowance, uint256 needed)",
+  "error ERC20InsufficientBalance(address sender, uint256 balance, uint256 needed)",
+];
+const ERC20_ABI = [
+  "function decimals() view returns (uint8)",
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address,address) view returns (uint256)",
+  "function approve(address,uint256) returns (bool)",
+];
+
+const $ = (id) => document.getElementById(id);
+let CFG = null, V = {}, KHR_DEC = 2;
+
+const fmt = (v, d) =>
+  Number(ethers.formatUnits(v, d)).toLocaleString("en-US", { maximumFractionDigits: 2 });
+
+async function signer() {
+  if (!window.ethereum) throw new Error("No wallet found. Use the Connect button in the header.");
+  await window.ethereum.request({ method: "eth_requestAccounts" });
+  return await new ethers.BrowserProvider(window.ethereum).getSigner();
+}
+
+async function me() {
+  if (!window.ethereum) return null;
+  const a = await window.ethereum.request({ method: "eth_accounts" }).catch(() => []);
+  return a?.[0] ?? null;
+}
+
+async function refresh() {
+  const who = await me();
+  for (const [key, prefix] of [["plain", "p"], ["compliant", "c"]]) {
+    const c = V[key];
+    const [assets, shares] = await Promise.all([c.totalAssets(), c.totalSupply()]);
+    $(`${prefix}-assets`).textContent = fmt(assets, KHR_DEC);
+    $(`${prefix}-shares`).textContent = fmt(shares, KHR_DEC);
+    $(`${prefix}-mine`).textContent = who ? fmt(await c.balanceOf(who), KHR_DEC) : "—";
+    $(`${prefix}-addr`).textContent = await c.getAddress();
+  }
+}
+
+/**
+ * The comparison, run as two eth_calls with a `from` override. Nothing is sent.
+ *
+ * Simulation is the right instrument here and not a shortcut: the question is
+ * whether each vault WOULD accept the deposit, and executing it against the plain
+ * vault would leave a real unattested holder of a real claim on this chain. The
+ * revert reason is what is being measured, and eth_call returns it exactly.
+ */
+async function runTest() {
+  const out = $("t-out");
+  out.innerHTML = "";
+  const receiver = $("t-receiver").value.trim();
+  if (!ethers.isAddress(receiver)) { out.textContent = "Enter a valid receiver address."; return; }
+
+  const who = await me();
+  if (!who) { out.textContent = "Connect a wallet first — the simulation runs as your address."; return; }
+
+  let amount;
+  try { amount = ethers.parseUnits($("t-amount").value.trim() || "0", KHR_DEC); }
+  catch { out.textContent = "Enter a valid amount."; return; }
+  if (amount <= 0n) { out.textContent = "Enter an amount above zero."; return; }
+
+  const provider = getProvider();
+  const khr = new ethers.Contract(CFG.contracts.KHRStablecoin, ERC20_ABI, provider);
+  const lines = [];
+
+  for (const [key, label] of [["plain", "Plain vault"], ["compliant", "Compliant vault"]]) {
+    const addr = await V[key].getAddress();
+    // An insufficient allowance would revert first and mask the answer entirely,
+    // so say so rather than reporting a compliance result that was never reached.
+    const allowance = await khr.allowance(who, addr);
+    if (allowance < amount) {
+      lines.push(`<b>${label}</b> — cannot tell: the allowance is short, so the call `
+        + `would revert on allowance before identity is ever consulted. Use `
+        + `<b>Approve both vaults</b> first, or the answer here would be about the `
+        + `wrong thing.`);
+      continue;
+    }
+    try {
+      // Through the contract rather than provider.call, so ethers decodes the
+      // revert against this ABI and names the error instead of reporting an
+      // opaque failure.
+      await V[key].deposit.staticCall(amount, receiver, { from: who });
+      lines.push(`<b>${label}</b> — <span class="yes">ACCEPTS IT</span>. `
+        + `${receiver.slice(0, 10)}… would hold a claim on pooled KHRt without an attestation.`);
+    } catch (e) {
+      const named = e?.revert?.name
+        ? `${e.revert.name}${e.revert.args?.length ? `(${e.revert.args[0]})` : ""}`
+        : (e?.reason ?? e?.shortMessage ?? e?.message ?? "reverted");
+      lines.push(`<b>${label}</b> — <span class="no">REFUSES</span> — ${named}`);
+    }
+  }
+  out.innerHTML = lines.join("<br/><br/>");
+}
+
+/**
+ * Approve both vaults for the test amount, so the simulation measures compliance
+ * rather than an allowance the deposit above just consumed.
+ */
+async function approveBoth() {
+  const amount = ethers.parseUnits($("t-amount").value.trim() || "0", KHR_DEC);
+  if (amount <= 0n) { banner($("msg"), "err", "Enter an amount above zero."); return; }
+  const s = await signer();
+  const who = await s.getAddress();
+  const khr = new ethers.Contract(CFG.contracts.KHRStablecoin, ERC20_ABI, s);
+  for (const key of ["plain", "compliant"]) {
+    const addr = await V[key].getAddress();
+    if (await khr.allowance(who, addr) >= amount) continue;
+    banner($("msg"), "ok", `Approving the ${key} vault…`);
+    await (await khr.approve(addr, amount, await feeOverrides())).wait();
+  }
+  banner($("msg"), "ok", "Both vaults approved. Run the simulation.");
+}
+
+async function deposit() {
+  const key = $("d-vault").value;
+  const amount = ethers.parseUnits($("d-amount").value.trim() || "0", KHR_DEC);
+  if (amount <= 0n) { banner($("msg"), "err", "Enter an amount above zero."); return; }
+
+  const s = await signer();
+  const addr = await V[key].getAddress();
+  const khr = new ethers.Contract(CFG.contracts.KHRStablecoin, ERC20_ABI, s);
+  if (await khr.allowance(await s.getAddress(), addr) < amount) {
+    banner($("msg"), "ok", "Approving the vault to move your KHRt…");
+    await (await khr.approve(addr, amount, await feeOverrides())).wait();
+  }
+  banner($("msg"), "ok", "Depositing…");
+  const tx = await V[key].connect(s).deposit(amount, await s.getAddress(), await feeOverrides());
+  await tx.wait();
+  banner($("msg"), "ok", `Deposited ${fmt(amount, KHR_DEC)} KHRt into the ${key} vault.`);
+  await refresh();
+}
+
+async function redeem() {
+  const key = $("d-vault").value;
+  const s = await signer();
+  const who = await s.getAddress();
+  const shares = await V[key].balanceOf(who);
+  if (shares === 0n) { banner($("msg"), "err", "You hold no shares in that vault."); return; }
+  banner($("msg"), "ok", "Redeeming…");
+  await (await V[key].connect(s).redeem(shares, who, who, await feeOverrides())).wait();
+  banner($("msg"), "ok", `Redeemed ${fmt(shares, KHR_DEC)} shares.`);
+  await refresh();
+}
+
+async function init() {
+  try {
+    CFG = await loadConfig();
+    if (!CFG.vaults?.plain || !CFG.vaults?.compliant) { $("no-vaults").style.display = ""; return; }
+
+    const provider = getProvider();
+    V.plain = new ethers.Contract(CFG.vaults.plain, VAULT_ABI, provider);
+    V.compliant = new ethers.Contract(CFG.vaults.compliant, VAULT_ABI, provider);
+    KHR_DEC = Number(CFG.vaults.decimals ?? 2);
+
+    $("live").style.display = "";
+    await refresh();
+  } catch (e) {
+    banner($("msg"), "err", explainError(e));
+  }
+}
+
+$("d-deposit").onclick = () => deposit().catch((e) => banner($("msg"), "err", explainError(e)));
+$("d-redeem").onclick = () => redeem().catch((e) => banner($("msg"), "err", explainError(e)));
+$("t-run").onclick = () => runTest().catch((e) => banner($("msg"), "err", explainError(e)));
+$("t-approve").onclick = () => approveBoth().catch((e) => banner($("msg"), "err", explainError(e)));
+$("t-random").onclick = () => { $("t-receiver").value = ethers.Wallet.createRandom().address; };
+
+init();
+</script>
+</body>
+</html>

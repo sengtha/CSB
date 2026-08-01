@@ -356,6 +356,16 @@ nothing else. `test/defi-vault-compliant.test.js` runs both side by side.
 The second row is the one the base layer could never reach. `txAllowList` governs
 who *sends* a transaction, and in that call the unattested party sends nothing.
 
+**Use** — DeFi → Vaults (`vaults.html`). Both vaults side by side with deposit and
+redeem, plus a panel that simulates `deposit(assets, receiver)` against each with an
+`eth_call` and reports which one accepts an unattested receiver. Simulated rather
+than executed on purpose: running it for real against the plain vault would leave a
+genuine unattested holder of a genuine claim on this chain.
+
+**Use (staking)** — DeFi → Staking (`staking.html`). Both pools, stake and withdraw
+and collect, and a check that asks whether a given address could actually be paid
+what it is owed — which is the whole difference between the two configurations.
+
 **And it costs composability, measured rather than asserted.** Compose the gated
 vault into an ordinary one — the shape of every yield aggregator — and the deposit
 reverts, because the outer vault is a contract holding no attestation. Exactly the
