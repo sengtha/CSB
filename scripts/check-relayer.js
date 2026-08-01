@@ -95,6 +95,26 @@ async function main() {
     }
   }
 
+  // --- the APIs the relayer needs before it can relay anything -------------
+  // Signature aggregation needs the source chain's validator set from the P-Chain,
+  // and connections to enough of that stake. A message FROM CSB needs CSB's handful
+  // of validators; a message FROM the C-Chain needs the PRIMARY NETWORK's, which is
+  // thousands. So an unreachable or slow P-Chain API stops inbound traffic dead while
+  // outbound keeps working — the same half-broken shape as a fee cap or a missing
+  // allow-list entry, from a completely different cause.
+  console.log(`APIS`);
+  for (const which of ["p-chain-api", "info-api"]) {
+    const url = cfg[which]?.["base-url"] ?? "(unset)";
+    const isPublic = /api\.avax(-test)?\.network/.test(url);
+    console.log(`  ${which.padEnd(12)} ${url}${isPublic
+      ? "   <-- public endpoint: rate-limited and the usual cause of"
+      : ""}`);
+    if (isPublic) {
+      console.log(`  ${" ".repeat(12)}      \"context deadline exceeded\" during aggregation`);
+    }
+  }
+  console.log("");
+
   console.log(`\nDESTINATIONS — chains it delivers to (${dests.length})`);
   for (const dd of dests) {
     const id = dd["blockchain-id"];

@@ -354,6 +354,32 @@ than assuming, since guessing wrong sends 100× or 1/100th of the intended amoun
   funds inside the verified perimeter but does not let the council rate-limit or
   halt inbound flow the way it can outbound. An `IngressGateway` escrow is future
   work.
+- **Signature aggregation needs the P-Chain, and that is where inbound traffic
+  breaks.** To relay a message the relayer fetches the SOURCE chain's validator set
+  from the P-Chain and then connects to enough of that stake to collect BLS
+  signatures. Coming from CSB that is a handful of local validators. Coming from the
+  C-Chain it is the **Primary Network** — thousands of validators. So a slow or
+  unreachable P-Chain API stops Fuji → CSB dead while CSB → Fuji keeps working, which
+  looks like a bridge fault and is not one:
+
+  ```
+  failed to get validator set at P-Chain height ...:
+    Post "https://api.avax-test.network/ext/P": context deadline exceeded
+  Failed to connect to sufficient stake
+  ```
+
+  It is fatal at startup, so the relayer will not run at all. The generated config
+  points `p-chain-api` and `info-api` at the public endpoint, which is rate-limited.
+  Point them at the node already running on this machine — an AvalancheGo node syncs
+  the P-Chain by definition:
+
+  ```json
+  "p-chain-api": { "base-url": "http://127.0.0.1:9650" },
+  "info-api":    { "base-url": "http://127.0.0.1:9650" }
+  ```
+
+  `scripts/check-relayer.js` prints both endpoints and flags the public one.
+
 - **Fees.** ICTT primary/secondary fees are zero — a state-run relayer needs no
   incentive. That is the bridge's own fee and is separate from CSB gas; the
   transaction still costs about 1 riel like any other.
