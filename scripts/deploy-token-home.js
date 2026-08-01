@@ -260,6 +260,34 @@ async function main() {
   await sent.waitForDeployment();
   const addr = await sent.getAddress();
 
+  // Record it. The Home lives on Fuji rather than CSB, so it is not part of the CSB
+  // contract suite — but losing this address means the remote cannot be deployed and
+  // the collateral has no reachable owner, and an address that exists only in
+  // terminal scrollback is an address that will be lost.
+  const file = process.env.CSB_DEPLOYMENTS_FILE
+    ?? path.join(__dirname, "..", "app", "deployments.json");
+  try {
+    const d = JSON.parse(fs.readFileSync(file, "utf8"));
+    d.bridgeHomes = {
+      ...(d.bridgeHomes ?? {}),
+      [process.env.CSB_BRIDGED_KEY ?? "usdc"]: {
+        address: addr,
+        chainId: Number(net.chainId),
+        token, symbol, decimals,
+        teleporterRegistry: registry,
+        teleporterManager: wallet.address,
+        note: "ERC20TokenHome on the FOREIGN chain — it holds the locked collateral. "
+          + "Not a CSB contract. See docs/usdc-ingress.md.",
+      },
+    };
+    fs.writeFileSync(file, JSON.stringify(d, null, 2));
+    console.log(`\nRecorded as bridgeHomes.${process.env.CSB_BRIDGED_KEY ?? "usdc"} `
+      + `in ${path.basename(file)}.`);
+  } catch (e) {
+    console.log(`\nCould not record it in ${path.basename(file)} (${e.message}).`);
+    console.log(`WRITE THE ADDRESS DOWN — the remote's constructor needs it.`);
+  }
+
   console.log(`\n${"=".repeat(68)}`);
   console.log(`ERC20TokenHome deployed on chain ${net.chainId}`);
   console.log(`  ${addr}`);

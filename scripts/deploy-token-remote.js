@@ -7,10 +7,12 @@ const path = require("path");
  * Deploy the matching ICTT `ERC20TokenRemote` on CSB, when the CLI will not.
  *
  *   source ops/csb-env.sh
- *   CSB_TOKEN_HOME=0x… node scripts/deploy-token-remote.js
+ *   node scripts/deploy-token-remote.js 0xHomeAddressOnFuji
  *
  * Environment:
- *   CSB_TOKEN_HOME        the ERC20TokenHome on Fuji                    (required)
+ *   (argv[1])             the ERC20TokenHome on Fuji — simplest, paste-proof
+ *   CSB_TOKEN_HOME        same, as an environment variable
+ *                         (falls back to bridgeHomes.<key>.address in deployments.json)
  *   CSB_HOME_BLOCKCHAIN_ID  32-byte hex of the home chain  (default Fuji C-Chain)
  *   CSB_HOME_DECIMALS     decimals of the home token                    (default 6)
  *   CSB_REMOTE_NAME       ERC-20 name on CSB          (default "Bridged USD Coin")
@@ -79,15 +81,29 @@ function loadArtifact(p) {
 }
 
 async function main() {
+  const bridgeKey = process.env.CSB_BRIDGED_KEY ?? "usdc";
   const rpc = process.env.CSB_RPC_URL;
   const key = process.env.CSB_DEPLOYER_KEY;
   if (!rpc || !key) throw new Error("Run `source ops/csb-env.sh` first — CSB_RPC_URL "
     + "and CSB_DEPLOYER_KEY are not set.");
 
-  const home = process.env.CSB_TOKEN_HOME;
+  // Three ways to supply it, in order, because a multi-line env-var invocation is
+  // easy to mangle on paste and the resulting "not undefined" says nothing useful:
+  // an argument, the environment, or the record deploy-token-home.js wrote.
+  const recorded = (() => {
+    try {
+      const f = process.env.CSB_DEPLOYMENTS_FILE
+        ?? path.join(__dirname, "..", "app", "deployments.json");
+      return JSON.parse(fs.readFileSync(f, "utf8")).bridgeHomes?.[bridgeKey]?.address ?? null;
+    } catch { return null; }
+  })();
+  const home = process.argv[2] ?? process.env.CSB_TOKEN_HOME ?? recorded;
   if (!home || !ethers.isAddress(home)) {
-    throw new Error(`CSB_TOKEN_HOME must be the ERC20TokenHome address on Fuji, `
-      + `not ${JSON.stringify(home)}. scripts/deploy-token-home.js printed it.`);
+    throw new Error(`No ERC20TokenHome address (got ${JSON.stringify(home)}).\n`
+      + `  Pass it as an argument — simplest, and survives copy-paste:\n`
+      + `    node scripts/deploy-token-remote.js 0xYourHomeAddress\n`
+      + `  Or set CSB_TOKEN_HOME. scripts/deploy-token-home.js prints it on success `
+      + `and records it in deployments.json, from which this reads automatically.`);
   }
 
   const registry = process.env.CSB_TELEPORTER_REGISTRY ?? registryForCSB();
