@@ -112,6 +112,33 @@ This is a genuine sovereignty decision rather than a tuning knob: it sets how mu
 someone else's validator set CSB trusts before admitting foreign value. Decide it, and
 write down why. It is fixed at genesis for practical purposes.
 
+### It is not about how much AVAX is staked
+
+Worth stating because it is the natural assumption and it would waste money.
+
+**The 67% is of the SOURCE chain's stake.** For a message arriving from the C-Chain,
+the source is Avalanche's Primary Network, so the quorum is measured against
+*Avalanche's* validators. Nothing CSB stakes, holds, or spends changes that number.
+Ingress is a **connectivity** problem, start to finish.
+
+**For egress the source is CSB — and there, weight is assigned, not purchased.** Under
+ACP-77 an L1 validator's weight is a value the chain owner sets when registering it
+(`RegisterL1ValidatorTx`). CSB's validator carries weight **100** because that is what
+it was given, not because of any AVAX balance. Adding validators redistributes that
+weight; adding AVAX does not.
+
+**Where AVAX genuinely matters is liveness, not weight.** ACP-77 charges a continuous
+fee per validator, and at zero balance the validator is **deactivated** — which is
+exactly what happened on 2026-07-28, when the chain fell to 0% connected stake against
+an 80% consensus threshold and stopped producing blocks. That is the same shape of
+failure as the Warp quorum, one layer down: a threshold measured against stake, and a
+validator that stopped counting.
+
+So the budget line is: **enough AVAX to keep every validator's continuous fee funded,
+indefinitely, with alerting well before zero.** More than that buys nothing for the
+bridge. What the bridge needs is network reachability, which is bought from a hosting
+provider rather than from the P-Chain.
+
 ### Requirement 4 — run more than one relayer
 
 Relayers are stateless with respect to each other and duplicate deliveries are
