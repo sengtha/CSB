@@ -108,6 +108,32 @@ function main() {
       console.log(`    any destination`);
     }
     console.log(`    signing key: ${dd["account-private-key"] ? "present (not shown)" : "MISSING"}`);
+
+    // THE FEE TRAP, and it is direction-specific, which is what makes it confusing.
+    // The relayer submits transactions ON the destination chain. CSB's base fee floor
+    // is 47,619 gwei; a relayer capped below that produces transactions the node
+    // ACCEPTS and never mines. Messages then flow perfectly in the other direction --
+    // where the relayer pays ordinary Fuji fees -- so the bridge looks half-broken in
+    // a way that points at the contracts rather than at a fee cap.
+    const maxBase = dd["max-base-fee"];
+    const prio = dd["max-priority-fee-per-gas"];
+    const isCSB = (KNOWN[id] ?? "") === "CSB";
+    if (maxBase !== undefined || prio !== undefined) {
+      console.log(`    max-base-fee: ${maxBase ?? "(unset)"}`
+        + `   max-priority-fee-per-gas: ${prio ?? "(unset)"}`);
+    }
+    if (isCSB) {
+      const floor = BigInt(process.env.CSB_MIN_BASE_FEE_WEI ?? 47_619_047_619_047n);
+      if (maxBase !== undefined && BigInt(maxBase) < floor) {
+        warnings.push(`CSB's max-base-fee is ${maxBase}, BELOW the chain's ~47,619 gwei `
+          + `floor (${floor}). Deliveries INTO CSB will be accepted and never mined. `
+          + `This does not affect CSB -> Fuji, so registration can succeed while `
+          + `transfers never arrive.`);
+      } else if (maxBase === undefined) {
+        console.log(`    (no max-base-fee set for CSB — the relayer will use its own`);
+        console.log(`     estimate, which must land above ~47,619 gwei)`);
+      }
+    }
   }
 
   // Both directions must exist or half the flow silently stalls: registration goes
