@@ -69,8 +69,18 @@ function main() {
     } else {
       console.log(`    any sender`);
     }
-    const contracts = Object.keys(s["message-contracts"] ?? {});
-    if (contracts.length) console.log(`    messenger: ${contracts.join(", ")}`);
+    // avalanche-cli always emits a zero-address entry for the off-chain-registry
+    // message format alongside the real Teleporter messenger. It is standard and
+    // means nothing is wrong — label it, because an unexplained 0x000…0 in a
+    // routing table reads like a misconfiguration and invites a wild goose chase.
+    for (const [c, v] of Object.entries(s["message-contracts"] ?? {})) {
+      const fmt = v?.["message-format"];
+      const note = /^0x0{40}$/i.test(c)
+        ? "off-chain registry (normal — not a misconfiguration)"
+        : (c.toLowerCase() === "0x253b2784c75e510dd0ff1da844684a1ac0aa5fcf"
+            ? "Teleporter messenger" : (fmt ?? "custom"));
+      console.log(`    messenger ${c}  ${note}`);
+    }
   }
 
   console.log(`\nDESTINATIONS — chains it delivers to (${dests.length})`);
