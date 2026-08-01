@@ -292,6 +292,53 @@ And it only delays the leak: a KYC'd liquidator can take the collateral as
 aTokens (`receiveAToken = true`) and pass those on. Same destination, one hop
 later.
 
+### The remedy, built and measured
+
+Everything above diagnoses. `contracts/experiments/CompliantKHRtVault.sol` is the
+control: the **same** ERC-4626 over the **same** asset, differing in exactly one
+hook — the rule `KHRStablecoin` applies to the asset, applied instead to the share.
+A difference in outcome is therefore attributable to the rule's *placement* and to
+nothing else. `test/defi-vault-compliant.test.js` runs both side by side.
+
+**It works, and it is small.** Every escape route closes:
+
+| Action, identical in both | Plain vault | Gated vault |
+|---|---|---|
+| transfer the share to an unattested address | **succeeds** | reverts `NotKycActive` |
+| `deposit(assets, receiver=unattested)` — one call, holder never sends | **succeeds** | reverts `NotKycActive` |
+| `mint(shares, receiver=unattested)` | **succeeds** | reverts `NotKycActive` |
+| frozen holder moves the share | **succeeds** | reverts `AccountFrozen` |
+| attested holder transfers, redeems | succeeds | succeeds |
+
+The second row is the one the base layer could never reach. `txAllowList` governs
+who *sends* a transaction, and in that call the unattested party sends nothing.
+
+**And it costs composability, measured rather than asserted.** Compose the gated
+vault into an ordinary one — the shape of every yield aggregator — and the deposit
+reverts, because the outer vault is a contract holding no attestation. Exactly the
+position Uniswap's pair and Aave's aToken were in with respect to KHRt, reproduced
+one level further out. The council can restore it with `setSystemContract` per
+counterparty, after the fact, for an address that did not exist until it was
+deployed. **The fix does not introduce a new kind of decision; it multiplies an
+existing one.**
+
+Two consequences worth stating rather than discovering later:
+
+- **The question recurses.** Once the outer vault is exempted, *its* shares are
+  ungated, and the leak reappears one level up. Each layer of composition needs its
+  own gate, or the perimeter ends wherever the gating stopped.
+- **A revocation can strand a position.** A revoked holder of a gated share cannot
+  transfer it *or* redeem it, because the burn checks the owner. The ungated share
+  never does this. That is a policy choice wearing technical clothes, and it should
+  be made deliberately.
+
+**What this is not.** It is not a fix for third-party protocols. It works because
+the vault is ours to write. Nothing here applies to Uniswap's pair or Aave's aToken
+without forking them, which forfeits the "unmodified" property the whole argument
+rests on. **The remedy is available exactly where the state controls the code, and
+unavailable exactly where composability is the reason for having an open contract
+layer.**
+
 ### The honest summary
 
 **The perimeter governs custody. Composability governs exposure.** A design in
