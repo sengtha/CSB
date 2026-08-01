@@ -120,12 +120,20 @@ async function main() {
     console.log(`  registered    ${registered}`);
     console.log(`  collateralized ${collateralized}`);
     if (registered === false) {
-      console.log(`\n  NOT REGISTERED with its home. Tokens cannot be bridged until`);
-      console.log(`  registerWithHome() has been called and the message delivered.`);
-      console.log(`  Registration runs on the chain the REMOTE is on — CSB, here:`);
+      // `false` here is NOT evidence that registration failed. TokenRemote's own
+      // comment: isRegistered is "set to true when the first message is received from
+      // the home contract", and "will still be false after the remote contract is
+      // registered on the home contract until the first message is received back".
+      // So it flips on the first TRANSFER, not on registration — and reading it as a
+      // registration status sends people hunting a relayer fault that does not exist.
+      console.log(`\n  isRegistered() is false — EXPECTED until the first transfer lands.`);
+      console.log(`  This flag means "a message has been received from the home", not`);
+      console.log(`  "the home knows about me". The home is the authority, and it lives`);
+      console.log(`  on Fuji, so this chain cannot answer the question.`);
+      console.log(`\n  If registration has not been done yet, it runs on CSB:`);
       console.log(`    CSB_REGISTER_ON=csb node scripts/register-remote.js ${addr}`);
-      console.log(`  It sends an ICM message to the home on Fuji; the relayer carries it,`);
-      console.log(`  so this flips to true a minute or two after the call, not instantly.`);
+      console.log(`  To check whether the home accepted it, run bridge-in.js — it asks`);
+      console.log(`  the home directly and refuses to send if the answer is no.`);
     }
   }
 

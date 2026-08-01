@@ -134,14 +134,48 @@ async function main() {
         + `  Admit the address first:\n`
         + `    CSB_DEV_ADDR=${recipient} npx hardhat run scripts/allow-dev.js --network csbRemote`);
     }
-    // The remote must know its home, or the delivery has nowhere to mint from.
-    const registered = await new ethers.Contract(remoteRec.address,
+    // DO NOT ask the remote whether it is registered. TokenRemote.isRegistered() is
+    // "set to true when the first message is received from the home contract" — so it
+    // stays FALSE after registration completes, until the first transfer arrives. An
+    // earlier version of this script refused to send until it was true, which is a
+    // deadlock: the transfer being blocked is the one that would set it.
+    //
+    // The home is the authority. It records the remote when the REGISTER_REMOTE
+    // message is delivered, and that is what must be true before sending.
+    const remoteFlag = await new ethers.Contract(remoteRec.address,
       ["function isRegistered() view returns (bool)"], csb).isRegistered().catch(() => null);
-    console.log(`  remote registered with its home:   ${registered}`);
-    if (registered === false) {
-      throw new Error(`The remote is not registered yet. registerWithHome() has been sent `
-        + `but the ICM message has not been delivered, or was never sent:\n`
-        + `    CSB_REGISTER_ON=csb node scripts/register-remote.js ${remoteRec.address}`);
+    console.log(`  remote isRegistered() (false until first transfer): ${remoteFlag}`);
+  }
+
+  // --- ask the HOME, on Fuji, whether it knows this remote ------------------
+  {
+    const { abi: homeAbi } = loadArtifact(process.env.CSB_ICTT_ARTIFACT ?? DEFAULT_ARTIFACT);
+    const hasGetter = homeAbi.some((x) => x.type === "function"
+      && x.name === "getRemoteTokenTransferrerSettings");
+    if (!hasGetter) {
+      console.log(`  home registration: cannot check — this ICTT version has no `
+        + `getRemoteTokenTransferrerSettings()`);
+    } else {
+      const settings = await new ethers.Contract(homeRec.address, homeAbi, fuji)
+        .getRemoteTokenTransferrerSettings(CSB_HEX, remoteRec.address).catch(() => null);
+      if (settings === null) {
+        console.log(`  home registration: unreadable`);
+      } else {
+        console.log(`  home has registered this remote:   ${settings.registered}`);
+        if (settings.collateralNeeded > 0n) {
+          console.log(`  collateral still needed:           `
+            + `${ethers.formatUnits(settings.collateralNeeded, decimals)} ${symbol}`);
+          console.log(`  (the first sends go to collateral, NOT to the recipient)`);
+        }
+        if (!settings.registered) {
+          throw new Error(`The home does not know this remote yet, so a transfer would `
+            + `have nowhere to be delivered.\n`
+            + `  Either registerWithHome() has not been called, or its ICM message has `
+            + `not been delivered from CSB to Fuji:\n`
+            + `    CSB_REGISTER_ON=csb node scripts/register-remote.js ${remoteRec.address}\n`
+            + `  If it was called, check the relayer is carrying CSB -> Fuji.`);
+        }
+      }
     }
   }
 

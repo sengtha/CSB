@@ -256,6 +256,29 @@ in the Home on Fuji and emits an ICM message; they appear on CSB only when the r
 delivers it. The script prints the balance check to run a minute later, and says to
 look at `avalanche interchain relayer logs` if the balance stays zero.
 
+### `isRegistered()` on the remote is not a registration status
+
+It reads `false` immediately after a successful registration, and that is correct
+behaviour rather than a failure. From `TokenRemote`'s own comment:
+
+> Whether or not the contract is known to be registered with its specified home
+> contract. This is set to true **when the first message is received from the home
+> contract**. Note that `isRegistered` will still be false after the remote contract
+> **is registered on the home contract** until the first message is received back.
+
+So it flips on the first *transfer*, not on registration. Reading it as a
+registration status sends you hunting a relayer fault that does not exist.
+
+**The home is the authority**, and it lives on Fuji, so CSB cannot answer the
+question. Ask the home:
+`getRemoteTokenTransferrerSettings(<csb blockchain id>, <remote address>)` — the
+`registered` field is the real answer. `scripts/bridge-in.js` does exactly this before
+sending and refuses if the answer is no.
+
+This bit an earlier version of `bridge-in.js`, which refused to send until the
+remote's flag was true — a deadlock, since the blocked transfer is the one that would
+set it.
+
 ## Step 4 — Build the market
 
 ```bash
