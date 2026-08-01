@@ -66,8 +66,14 @@ Expect `USDC`, `6` decimals. Anything else, stop.
 > **Checked 2026-08-01** against Fuji (chainId 43113) at block 57,491,619:
 > `USD Coin` / `USDC` / 6 decimals, supply ≈ 90.09 billion. The large supply is
 > ordinary for a faucet-minted testnet token and is not a signal of anything.
-> Re-run the script rather than relying on this note — it is a record of one
-> observation, not a guarantee about a contract that can change.
+>
+> **Provenance confirmed independently**: tokens received at this address from
+> Circle's own faucet the same day. That is the part the script cannot establish —
+> it proves a contract answers correctly, not who deployed it — so a faucet
+> transfer, or a Snowtrace listing, is what actually closes the question.
+>
+> Re-run the script rather than relying on this note. It records one observation,
+> not a guarantee about a contract that can change.
 
 This is worth a script rather than a glance because **the Home wraps whatever address
 it is given**, and it wraps a wrong one just as happily. The result is a market that
@@ -88,7 +94,24 @@ CSB_FUJI_ADDR=0xYourFujiAddress node scripts/check-fuji-usdc.js
 ```
 
 It flags an empty balance on either side rather than leaving you to read two numbers
-and remember which matters. On the CSB side, the same three allow-list grants
+and remember which matters.
+
+**Size the plan to the faucet, not to the defaults.** Circle's faucet hands out small
+amounts, so a realistic balance is tens of dollars rather than thousands, and
+`scripts/usdc-market.js` defaults to seeding the pool with **1,000 USDC**. With less
+than that it records the pair and stops without seeding — safe, but a wasted run. A
+workable split for ~40 USDC:
+
+| Purpose | Amount | Why |
+|---|---|---|
+| Bridge to CSB | 35 | leave a few on Fuji to test the return path later |
+| Seed the pool | 20 | with 80,000 KHRt at 4,000 riel — sets the initial price |
+| Aave collateral | 10 | enough to post and borrow against |
+| Spare | 5 | second bridge transfer, fee headroom |
+
+So `CSB_SEED_USD=20`, not the default. The pool is thin, which is fine for what it is:
+`docs/oracle.md` already says a pool this size is a measurement instrument and not a
+valuation source, and nothing points the lending market at its TWAP. On the CSB side, the same three allow-list grants
 `docs/fuji-ictt.md` §"Before you start" lists — they are per-address, not per-token,
 so if the KHRt bridge already works these are already in place.
 
