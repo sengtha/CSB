@@ -57,11 +57,17 @@ node scripts/check-fuji-usdc.js
 ```
 
 It defaults to `0x5425890298aed601595a70AB815c96711a31Bc65` — Circle's testnet USDC on
-Fuji, as commonly published — and checks it: code present, `symbol`, `decimals`,
-non-zero supply, and whether it proxies to an implementation that actually exists.
-Read-only, no key, no CSB configuration. Override with `CSB_FUJI_USDC`.
+Fuji — and checks it: code present, `symbol`, `decimals`, non-zero supply, and whether
+it proxies to an implementation that actually exists. Read-only, no key, no CSB
+configuration. Override with `CSB_FUJI_USDC`.
 
 Expect `USDC`, `6` decimals. Anything else, stop.
+
+> **Checked 2026-08-01** against Fuji (chainId 43113) at block 57,491,619:
+> `USD Coin` / `USDC` / 6 decimals, supply ≈ 90.09 billion. The large supply is
+> ordinary for a faucet-minted testnet token and is not a signal of anything.
+> Re-run the script rather than relying on this note — it is a record of one
+> observation, not a guarantee about a contract that can change.
 
 This is worth a script rather than a glance because **the Home wraps whatever address
 it is given**, and it wraps a wrong one just as happily. The result is a market that
