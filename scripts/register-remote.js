@@ -6,10 +6,14 @@ const path = require("path");
 /**
  * Make an already-deployed ERC20TokenRemote register itself with its TokenHome.
  *
- *   CSB_TOKEN_REMOTE=0x… \
- *   [CSB_FUJI_RPC=https://api.avax-test.network/ext/bc/C/rpc] \
- *   [CSB_REMOTE_KEY_NAME=ewoq] \
- *     node scripts/register-remote.js
+ *   node scripts/register-remote.js 0xRemoteAddress            # remote on Fuji
+ *   CSB_REGISTER_ON=csb node scripts/register-remote.js 0x…    # remote on CSB
+ *
+ * WORKS IN BOTH DIRECTIONS. The KHRt bridge puts the remote on Fuji; the bridged
+ * dollar puts it on CSB. Registration always runs on whichever chain the REMOTE is
+ * deployed to, so `CSB_REGISTER_ON=csb` switches the RPC, the signing key and the
+ * gas handling together — getting one of those right and another wrong is how this
+ * ends up as a transaction that never mines.
  *
  * WHY THIS IS SEPARATE FROM THE DEPLOY. `avalanche interchain tokenTransferrer
  * deploy` deploys both halves and then calls registerWithHome() on the remote.
@@ -29,6 +33,7 @@ const path = require("path");
  * shell history.
  */
 const FUJI_C = process.env.CSB_FUJI_RPC ?? "https://api.avax-test.network/ext/bc/C/rpc";
+const ON_CSB = (process.env.CSB_REGISTER_ON ?? "").toLowerCase() === "csb";
 
 function loadKey(name) {
   const p = path.join(os.homedir(), ".avalanche-cli", "key", `${name}.pk`);
@@ -39,24 +44,52 @@ function loadKey(name) {
 }
 
 async function main() {
-  const remoteAddr = process.env.CSB_TOKEN_REMOTE;
+  const remoteAddr = process.argv[2] ?? process.env.CSB_TOKEN_REMOTE;
   if (!remoteAddr || !ethers.isAddress(remoteAddr)) {
-    throw new Error("Set CSB_TOKEN_REMOTE=0x… (the ERC20TokenRemote on Fuji C-Chain).");
+    throw new Error("Pass the ERC20TokenRemote address:\n"
+      + "  node scripts/register-remote.js 0xRemoteAddress\n"
+      + "  (add CSB_REGISTER_ON=csb when the remote is on CSB rather than Fuji)");
   }
-  const keyName = process.env.CSB_REMOTE_KEY_NAME ?? "ewoq";
 
-  const provider = new ethers.JsonRpcProvider(FUJI_C);
-  const wallet = new ethers.Wallet(loadKey(keyName), provider);
-  console.log(`Fuji C-Chain ${FUJI_C}`);
-  console.log(`Signer       ${wallet.address}  (${keyName})`);
+  // Which chain the REMOTE is on decides everything else.
+  let rpc, wallet, label, unit, provider, overrides = {};
+  if (ON_CSB) {
+    rpc = process.env.CSB_RPC_URL;
+    if (!rpc || !process.env.CSB_DEPLOYER_KEY) {
+      throw new Error("CSB_REGISTER_ON=csb needs `source ops/csb-env.sh` first.");
+    }
+    provider = new ethers.JsonRpcProvider(rpc);
+    wallet = new ethers.Wallet(process.env.CSB_DEPLOYER_KEY, provider);
+    label = "CSB";
+    unit = "tRIEL";
+    // CSB's fee floor is far above what ethers estimates from a quiet chain, and an
+    // under-priced transaction is ACCEPTED and then never mined — which looks like
+    // the bridge hanging rather than like a fee problem. Same reason
+    // hardhat.config.js pins a gas price for this chain.
+    overrides = { gasPrice: BigInt(process.env.CSB_GAS_PRICE_WEI ?? 55_000_000_000_000) };
+  } else {
+    rpc = FUJI_C;
+    provider = new ethers.JsonRpcProvider(rpc);
+    const keyName = process.env.CSB_REMOTE_KEY_NAME ?? "ewoq";
+    wallet = new ethers.Wallet(loadKey(keyName), provider);
+    label = `Fuji C-Chain (${keyName})`;
+    unit = "AVAX";
+  }
+
+  console.log(`${label.padEnd(12)} ${rpc}`);
+  console.log(`Signer       ${wallet.address}`);
 
   const code = await provider.getCode(remoteAddr);
-  if (code.length <= 2) throw new Error(`No contract at ${remoteAddr} on Fuji C-Chain.`);
+  if (code.length <= 2) {
+    throw new Error(`No contract at ${remoteAddr} on ${label}.\n`
+      + `  Registration runs on the chain the REMOTE is deployed to. If the remote is `
+      + `on CSB, add CSB_REGISTER_ON=csb.`);
+  }
   console.log(`Remote       ${remoteAddr}  (${code.length / 2 - 1} bytes)`);
 
   const bal = await provider.getBalance(wallet.address);
-  console.log(`Balance      ${ethers.formatEther(bal)} AVAX`);
-  if (bal === 0n) throw new Error("Signer has no Fuji AVAX for gas.");
+  console.log(`Balance      ${ethers.formatEther(bal)} ${unit}`);
+  if (bal === 0n) throw new Error(`Signer has no ${unit} for gas.`);
 
   const remote = new ethers.Contract(remoteAddr, [
     "function registerWithHome((address feeTokenAddress, uint256 amount) feeInfo)",
@@ -73,15 +106,18 @@ async function main() {
   }
 
   console.log("\nSending registerWithHome…");
-  const tx = await remote.registerWithHome({ feeTokenAddress: ethers.ZeroAddress, amount: 0n });
+  const tx = await remote.registerWithHome(
+    { feeTokenAddress: ethers.ZeroAddress, amount: 0n }, overrides);
   console.log(`  tx ${tx.hash}`);
   const rc = await tx.wait();
   console.log(`  ✓ mined in block ${rc.blockNumber}`);
 
-  console.log("\nThat sent an ICM message from Fuji to CSB. A relayer must deliver it.");
+  const from = ON_CSB ? "CSB" : "Fuji";
+  const to = ON_CSB ? "Fuji" : "CSB";
+  console.log(`\nThat sent an ICM message from ${from} to ${to}. A relayer must deliver it.`);
   console.log("Confirm it landed by looking for a new event on the TokenHome:");
   console.log("  the Home should gain a RemoteRegistered event within a minute or two.");
-  console.log("If nothing appears, the relayer is not delivering C-Chain -> csb —");
+  console.log(`If nothing appears, the relayer is not delivering ${from} -> ${to} —`);
   console.log("check `avalanche interchain relayer logs`.");
 }
 

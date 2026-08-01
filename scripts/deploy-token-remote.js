@@ -236,8 +236,9 @@ async function main() {
   console.log(`\n${"=".repeat(68)}`);
   console.log(`ERC20TokenRemote deployed on CSB`);
   console.log(`  ${addr}`);
-  console.log(`\nIt is NOT yet registered with its home, so nothing can bridge yet:`);
-  console.log(`  CSB_TOKEN_REMOTE=${addr} node scripts/register-remote.js`);
+  console.log(`\nIt is NOT yet registered with its home, so nothing can bridge yet.`);
+  console.log(`Registration runs on the chain the remote is on — CSB, here:`);
+  console.log(`  CSB_REGISTER_ON=csb node scripts/register-remote.js ${addr}`);
   console.log(`\nThen record it:`);
   console.log(`  CSB_BRIDGED_TOKEN=${addr} CSB_EXPECT_SYMBOL=${symbol} \\`);
   console.log(`    npx hardhat run scripts/usdc-ingress.js --network csbRemote`);

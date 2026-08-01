@@ -281,6 +281,7 @@ directly. Addresses from 2026-08-01, chain 43113 / 8555:
 |---|---|
 | Fuji USDC (Circle) | `0x5425890298aed601595a70AB815c96711a31Bc65` |
 | `ERC20TokenHome` (Fuji C-Chain) | `0xdd3de04fEf14e07283aB0139D52defE76f5ea674` |
+| `ERC20TokenRemote` (CSB) | `0xcF8C6A5659D2765f910217b1E4dd3348cFa9a601` |
 | ICM registry (Fuji C-Chain) | `0xF86Cb19Ad8405AEFa7d09C778215D2Cb6eBfB228` |
 | ICM registry (CSB) | `0x22C75bE6Cbe94050c16D5944a08144a81a54ED35` |
 | Home deploy key `fuji-home` | `0x541a73bdf723A49d1281e333bc0f8e51832f50cc` |
@@ -299,6 +300,11 @@ on a C-Chain whose block gas limit is **32,000,000**. The deployment needs
 never the problem. That string is go-ethereum's txpool rejecting `tx.Gas() >
 blockGasLimit`, which means the CLI submitted a gas value larger than 32M for a 3.8M
 deployment. Upgrading does not help; 1.9.6 is the latest.
+
+The CSB half would very likely have failed the same way: 8555's block gas limit is
+**8,000,000**, not the 20,000,000 `docs/chain-config.md` documents, and the remote
+deployment needed 3,926,949. That discrepancy was found during this deployment and is
+recorded there.
 
 Use `scripts/deploy-token-home.js` instead. It builds the same transaction from the
 artifacts the CLI itself downloaded and compiled — identical bytecode — but estimates

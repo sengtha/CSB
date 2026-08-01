@@ -33,13 +33,31 @@ the current policy.
 
 | Field | Value | Meaning |
 |---|---|---|
-| `gasLimit` | 20,000,000 | Max gas per block (~20M ≈ hundreds of transfers per block) |
+| `gasLimit` | 20,000,000 *(configured)* — **live chain reports 8,000,000** | Max gas per block. See the note below: what 8555 actually enforces is not what this table says |
 | `targetBlockRate` | 2 | Target seconds between blocks when there's traffic |
 | `minBaseFee` | **47,619 gwei** | Floor of the dynamic base fee, chosen so an ordinary 21,000-gas payment costs ~1 tRIEL. Setting it to 0 gives free gas — that was the original design and is no longer the policy |
 | `targetGas` | 100,000,000 | Gas per ~10s window the fee algorithm treats as "normal load"; above it the base fee rises (from 0, it stays 0 unless raised via feeManager) |
 | `baseFeeChangeDenominator` | 48 | How gently the base fee adjusts (higher = slower changes) |
 | `minBlockGasCost` / `maxBlockGasCost` | 0 / 10,000,000 | Bounds of the block-production gas cost mechanism |
 | `blockGasCostStep` | 500,000 | How fast block gas cost reacts to faster/slower blocks |
+
+> **`gasLimit` is documented as 20,000,000 and the live chain reports 8,000,000.**
+> Measured 2026-08-01 while deploying an ICTT remote: `eth_getBlockByNumber` on 8555
+> returns a block gas limit of **8,000,000**. Subnet-EVM's own default is 8,000,000,
+> so the most likely explanation is that the 20M value was never applied — it may sit
+> in a chain-config file that was not picked up, rather than in the genesis the
+> running chain uses.
+>
+> Consequences, both real. A single transaction cannot exceed 8M gas on this chain,
+> which is roughly twice what a large contract deployment needs — the ICTT remote used
+> 3,926,949 — so there is headroom but less than half of what this table implies.
+> And any capacity planning done from the 20M figure is wrong by a factor of 2.5.
+>
+> **Not yet fixed, and worth deciding rather than patching.** Raising it means
+> reapplying chain config to every validator and restarting them, which is the
+> procedure in `ops/csb-apply-l1-config.sh`. 8M is ample for current use. What is not
+> acceptable is the table saying one thing and the chain doing another, so this note
+> stands until the two agree.
 
 `allowFeeRecipients: false` — validators cannot collect fees for themselves. Validator institutions validate as a duty, not for revenue; any (currently zero) fees are burned.
 
