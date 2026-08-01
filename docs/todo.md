@@ -85,6 +85,57 @@ The egress gateway has no inbound counterpart (`docs/fuji-ictt.md` §7). Nothing
 inspects or limits what arrives from Fuji. An `IngressGateway` escrow is the design
 intent; nothing is built.
 
+**This stops being hypothetical the moment a second asset is bridged in.** The
+proposal on the table is testnet USDC from Fuji, which would be the first asset to
+enter the perimeter rather than leave it, and it is worth doing for reasons unrelated
+to compliance — see item 3a. But note what arrives: `ERC20TokenRemote` is a plain
+ERC-20 minted by the bridge, with no identity hook and no freeze. Inside a chain whose
+entire claim is that every holder is known, it would be a **bearer asset**. Any address
+on `txAllowList` could hold and move it with no attestation at all.
+
+That is the exact mirror of every finding so far. Until now the perimeter held a gated
+asset and composability leaked *claims* on it. Here an ungated asset enters and the
+perimeter has no say whatsoever — not a leak outward but an unpoliced inflow. The same
+asymmetry already noted for prices in `docs/oracle.md` ("the egress gateway governs
+value leaving, while nothing governs prices arriving"), now for value itself.
+
+Three options, and they are genuinely different designs:
+
+- **Accept it and document it.** Cheapest, and honest: a sovereign chain that admits
+  foreign money admits foreign money's properties. Say so rather than implying the
+  perimeter covers everything.
+- **Wrap it.** A `CompliantWrapper` holding the raw remote token and issuing a gated
+  claim, with the raw token only ever held by the wrapper. Same shape as
+  `CompliantKHRtVault` and testable as the same controlled comparison. Costs
+  composability with anything expecting the standard token.
+- **Gate at the door.** An `IngressGateway` that only releases to attested addresses.
+  Strongest, and the most work: it needs a custom `TokenRemote` or a receiver hook,
+  because plain ICTT delivers straight to the recipient.
+
+### 3a. No second asset, so no real price and no real collateral
+
+Every experiment so far prices KHRt against either itself or a test token nobody
+trades. Consequences, all of them limiting:
+
+- Aave has **one reserve**, so "borrow" means depositing KHRt to borrow KHRt, and
+  liquidation can only be demonstrated by tightening the liquidation threshold rather
+  than by moving a price.
+- The Uniswap pool's ratio is whatever it was seeded at, so the TWAP measures a number
+  we chose.
+- The administered-vs-market divergence in `docs/oracle.md` is therefore vacuous — two
+  numbers we set, subtracted.
+
+A bridged dollar stablecoin fixes all three at once, because a riel–dollar rate is a
+real quantity with an official figure and a traded figure that genuinely differ. That
+is the measurement the whole oracle section exists to make and currently cannot.
+
+Practical notes for whoever does it: it is a **second, independent ICTT pair** in the
+opposite direction from the existing one — Home on Fuji wrapping the USDC contract,
+Remote on CSB — and the relayer configured in `docs/fuji-ictt.md` §3 already carries
+both directions, so it does not need re-deploying. Decimals differ (USDC 6, KHRt 2);
+`UniswapV2TwapOracle` already scales by each token's decimals and its tests use
+mismatched decimals deliberately, so that part is covered.
+
 ---
 
 ## The orphaned deployment on 8555
