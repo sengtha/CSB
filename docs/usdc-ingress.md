@@ -111,9 +111,11 @@ workable split for ~40 USDC:
 
 So `CSB_SEED_USD=20`, not the default. The pool is thin, which is fine for what it is:
 `docs/oracle.md` already says a pool this size is a measurement instrument and not a
-valuation source, and nothing points the lending market at its TWAP. On the CSB side, the same three allow-list grants
-`docs/fuji-ictt.md` §"Before you start" lists — they are per-address, not per-token,
-so if the KHRt bridge already works these are already in place.
+valuation source, and nothing points the lending market at its TWAP.
+
+**On the CSB side** you need the same three allow-list grants `docs/fuji-ictt.md`
+§"Before you start" lists. They are per-address, not per-token, so if the KHRt bridge
+already works these are already in place.
 
 **The relayer does not need redeploying** — the one from `docs/fuji-ictt.md` §3
 carries `csb ↔ C-Chain` in both directions, which is what this needs. But confirm two
@@ -269,6 +271,53 @@ Four modules, each skippable with `CSB_SKIP=pool,twap,rate,aave`:
    reserve, and passing an existing proxy lists a reserve backed by another reserve's
    storage, which deploys cleanly and then misbehaves. It also refuses to list an
    asset the live oracle cannot price, because every read on such a reserve reverts.
+
+## Recorded values from this deployment
+
+The CLI could not deploy either half — see the note below — so both were deployed
+directly. Addresses from 2026-08-01, chain 43113 / 8555:
+
+| What | Address |
+|---|---|
+| Fuji USDC (Circle) | `0x5425890298aed601595a70AB815c96711a31Bc65` |
+| `ERC20TokenHome` (Fuji C-Chain) | `0xdd3de04fEf14e07283aB0139D52defE76f5ea674` |
+| ICM registry (Fuji C-Chain) | `0xF86Cb19Ad8405AEFa7d09C778215D2Cb6eBfB228` |
+| ICM registry (CSB) | `0x22C75bE6Cbe94050c16D5944a08144a81a54ED35` |
+| Home deploy key `fuji-home` | `0x541a73bdf723A49d1281e333bc0f8e51832f50cc` |
+
+### The CLI cannot deploy the Home, and says the wrong thing about why
+
+`avalanche interchain tokenTransferrer deploy` (v1.9.6, the current release) fails
+with:
+
+```
+Error: failure deploying ERC20 Home: exceeds block gas limit
+```
+
+on a C-Chain whose block gas limit is **32,000,000**. The deployment needs
+**3,774,976** — measured, once the transaction was built by hand. So the ceiling was
+never the problem. That string is go-ethereum's txpool rejecting `tx.Gas() >
+blockGasLimit`, which means the CLI submitted a gas value larger than 32M for a 3.8M
+deployment. Upgrading does not help; 1.9.6 is the latest.
+
+Use `scripts/deploy-token-home.js` instead. It builds the same transaction from the
+artifacts the CLI itself downloaded and compiled — identical bytecode — but estimates
+gas properly and, when estimation fails, reports the revert reason rather than
+substituting a maximum. `scripts/deploy-token-remote.js` does the CSB half.
+
+Both read the constructor's parameters **from the artifact ABI** rather than from a
+signature read elsewhere, because avalanche-cli pins its own `icm-contracts` checkout
+and that constructor has changed shape across versions. The pinned one here takes
+four arguments with trailing underscores and no `minTeleporterVersion`:
+
+```
+(address teleporterRegistryAddress, address teleporterManager,
+ address tokenAddress_, uint8 tokenDecimals_)
+```
+
+Filling by name means a different version either works or refuses with the full
+signature — never silently maps values onto the wrong positions, which would deploy
+something that looks fine and is wired wrong.
 
 ## What is evidence here, and what is not
 
