@@ -368,15 +368,32 @@ than assuming, since guessing wrong sends 100× or 1/100th of the intended amoun
   Failed to connect to sufficient stake
   ```
 
-  It is fatal at startup, so the relayer will not run at all. The generated config
-  points `p-chain-api` and `info-api` at the public endpoint, which is rate-limited.
-  Point them at the node already running on this machine — an AvalancheGo node syncs
-  the P-Chain by definition:
+  It is fatal at startup, so the relayer will not run at all.
+
+  The generated config points `p-chain-api` and `info-api` at the public endpoint,
+  which is rate-limited, so the first thing to try is the node already running on
+  this machine — an AvalancheGo node syncs the P-Chain by definition:
 
   ```json
   "p-chain-api": { "base-url": "http://127.0.0.1:9650" },
   "info-api":    { "base-url": "http://127.0.0.1:9650" }
   ```
+
+  **That was not sufficient here, and the reason is worth understanding rather than
+  working around.** `platform.getHeight` against the local node returns instantly
+  while the validator-set query still times out, and the subnet named in the error
+  narrows to `11111111111111111111111111111111LpoYY` — the Primary Network. Fuji's
+  Primary Network has thousands of validators, so building that set at the proposed
+  height is an expensive call, and aggregating signatures then requires P2P
+  connections to enough of that stake.
+
+  **This is an asymmetry the architecture cannot remove.** Outbound messages are
+  signed by CSB's own validators — a handful, local, under this chain's control.
+  Inbound messages are signed by the *foreign* chain's validator set, and on a public
+  network that is large, remote, and entirely outside the sovereign perimeter. Egress
+  costs what this chain decides it costs; ingress costs whatever the other chain's
+  validator set costs to talk to. A sovereign chain can govern what leaves. It cannot
+  make what arrives cheap.
 
   `scripts/check-relayer.js` prints both endpoints and flags the public one.
 
