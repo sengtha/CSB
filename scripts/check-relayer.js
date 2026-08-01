@@ -69,6 +69,17 @@ function main() {
     } else {
       console.log(`    any sender`);
     }
+    // The relayer config is the authoritative source for each chain's ICM registry
+    // address. `avalanche blockchain describe` shows an ICM table whose addresses are
+    // Fuji C-Chain's even while describing CSB (docs/fuji-ictt.md §1), so checking
+    // those against CSB reports code: NONE for a registry that deployed perfectly
+    // well somewhere else. Anything deploying a TokenHome or TokenRemote by hand
+    // needs the right one, because it is a constructor argument.
+    const reg = s["teleporter-registry-address"]
+      ?? Object.values(s["message-contracts"] ?? {})
+        .map((v) => v?.settings?.["teleporter-registry-address"]).find(Boolean);
+    if (reg) console.log(`    ICM registry ${reg}`);
+
     // avalanche-cli always emits a zero-address entry for the off-chain-registry
     // message format alongside the real Teleporter messenger. It is standard and
     // means nothing is wrong — label it, because an unexplained 0x000…0 in a
