@@ -176,34 +176,72 @@ async function main() {
   }
 
   // --- ask the HOME, on Fuji, whether it knows this remote ------------------
+  // Find the getter BY SHAPE rather than by name. This is the third ICTT internal
+  // whose name differs between the pinned checkout and upstream, so look for any
+  // view function taking (bytes32, address) that reports a `registered` flag, and
+  // fall back to the RemoteRegistered event if there is none.
   {
     const { abi: homeAbi } = loadArtifact(process.env.CSB_ICTT_ARTIFACT ?? DEFAULT_ARTIFACT);
-    const hasGetter = homeAbi.some((x) => x.type === "function"
-      && x.name === "getRemoteTokenTransferrerSettings");
-    if (!hasGetter) {
-      console.log(`  home registration: cannot check — this ICTT version has no `
-        + `getRemoteTokenTransferrerSettings()`);
-    } else {
-      const settings = await new ethers.Contract(homeRec.address, homeAbi, fuji)
-        .getRemoteTokenTransferrerSettings(CSB_HEX, remoteRec.address).catch(() => null);
-      if (settings === null) {
-        console.log(`  home registration: unreadable`);
+    const home = new ethers.Contract(homeRec.address, homeAbi, fuji);
+
+    const getter = homeAbi.find((x) => x.type === "function"
+      && (x.stateMutability === "view" || x.stateMutability === "pure")
+      && x.inputs?.length === 2
+      && x.inputs[0].type === "bytes32" && x.inputs[1].type === "address"
+      && JSON.stringify(x.outputs ?? []).includes('"registered"'));
+
+    let registered = null, collateralNeeded = null;
+    if (getter) {
+      const res = await home[getter.name](CSB_HEX, remoteRec.address).catch(() => null);
+      if (res) {
+        registered = res.registered ?? res[0];
+        collateralNeeded = res.collateralNeeded ?? res[1] ?? null;
+        console.log(`  home has registered this remote:   ${registered}  (via ${getter.name})`);
+      }
+    }
+
+    if (registered === null) {
+      // No usable getter — read the event the home emits on registration instead.
+      const ev = homeAbi.find((x) => x.type === "event" && /RemoteRegistered/i.test(x.name));
+      if (!ev) {
+        console.log(`  home registration: CANNOT CHECK — no getter and no RemoteRegistered`);
+        console.log(`  event in this artifact. Proceeding blind; if the tokens do not`);
+        console.log(`  arrive, registration is the first thing to suspect.`);
       } else {
-        console.log(`  home has registered this remote:   ${settings.registered}`);
-        if (settings.collateralNeeded > 0n) {
-          console.log(`  collateral still needed:           `
-            + `${ethers.formatUnits(settings.collateralNeeded, decimals)} ${symbol}`);
-          console.log(`  (the first sends go to collateral, NOT to the recipient)`);
-        }
-        if (!settings.registered) {
-          throw new Error(`The home does not know this remote yet, so a transfer would `
-            + `have nowhere to be delivered.\n`
-            + `  Either registerWithHome() has not been called, or its ICM message has `
-            + `not been delivered from CSB to Fuji:\n`
-            + `    CSB_REGISTER_ON=csb node scripts/register-remote.js ${remoteRec.address}\n`
-            + `  If it was called, check the relayer is carrying CSB -> Fuji.`);
+        const topic = home.interface.getEvent(ev.name).topicHash;
+        const logs = await fuji.getLogs({
+          address: homeRec.address, topics: [topic], fromBlock: 0, toBlock: "latest",
+        }).catch(() => null);
+        if (logs === null) {
+          console.log(`  home registration: log query failed — proceeding without the check`);
+        } else {
+          const mine = logs.filter((l) => {
+            try {
+              const parsed = home.interface.parseLog(l);
+              const a = parsed.args;
+              return String(a[0]).toLowerCase() === CSB_HEX.toLowerCase()
+                && String(a[1]).toLowerCase() === remoteRec.address.toLowerCase();
+            } catch { return false; }
+          });
+          registered = mine.length > 0;
+          console.log(`  home has registered this remote:   ${registered}  `
+            + `(via ${ev.name} events: ${logs.length} total, ${mine.length} matching)`);
         }
       }
+    }
+
+    if (registered === false) {
+      throw new Error(`The home does not know this remote yet, so a transfer would `
+        + `have nowhere to be delivered.\n`
+        + `  Either registerWithHome() has not been called, or its ICM message has `
+        + `not been delivered from CSB to Fuji:\n`
+        + `    CSB_REGISTER_ON=csb node scripts/register-remote.js ${remoteRec.address}\n`
+        + `  If it was called, check the relayer is carrying CSB -> Fuji.`);
+    }
+    if (collateralNeeded !== null && collateralNeeded > 0n) {
+      console.log(`  collateral still needed:           `
+        + `${ethers.formatUnits(collateralNeeded, decimals)} ${symbol}`);
+      console.log(`  (the first sends go to collateral, NOT to the recipient)`);
     }
   }
 
