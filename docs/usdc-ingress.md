@@ -115,15 +115,32 @@ valuation source, and nothing points the lending market at its TWAP. On the CSB 
 `docs/fuji-ictt.md` §"Before you start" lists — they are per-address, not per-token,
 so if the KHRt bridge already works these are already in place.
 
-**The relayer does not need redeploying.** The one configured in `docs/fuji-ictt.md`
-§3 carries `csb ↔ C-Chain` in both directions, which is exactly what this needs.
-Confirm it is actually running before starting — a bridge with no relayer looks like a
-bridge that hangs:
+**The relayer does not need redeploying** — the one from `docs/fuji-ictt.md` §3
+carries `csb ↔ C-Chain` in both directions, which is what this needs. But confirm two
+things, because a bridge whose relayer is not carrying its messages looks exactly like
+a bridge that hangs.
+
+Is it running:
 
 ```bash
 ps aux | grep -i icm-relayer | grep -v grep
-ss -ltnp | grep 9095
 ```
+
+And will it carry a *new* pair:
+
+```bash
+node scripts/check-relayer.js
+```
+
+The config supports `allowed-origin-sender-addresses` and
+`allowed-destination-addresses`, and **when either is populated it is the only address
+relayed**. A new TokenHome/TokenRemote then emits messages nobody delivers: the send
+succeeds, gas is spent, the event fires, the tokens never arrive — and everyone
+inspects the bridge contracts, because the relayer is visibly running. The script
+prints the routing table, flags both restrictions, and warns if a chain is configured
+in one direction only (registration and transfers travel opposite ways, so a one-way
+config stalls one of them). It never prints the per-destination signing keys the
+config holds.
 
 ## Step 1 — Deploy the ICTT pair, this time with the Home on Fuji
 
