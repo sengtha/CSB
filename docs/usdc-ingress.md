@@ -153,9 +153,53 @@ avalanche interchain tokenTransferrer deploy
 - Home RPC: `https://api.avax-test.network/ext/bc/C/rpc`
 - Token: **"Deploy a new Home for the token"** → **"An ERC-20 token"** → the **USDC
   address you verified above**
-- Home key: any key with Fuji AVAX
+- Home key: see the table below
 - Remote: **csb**, with its RPC
-- Remote key: a key with contract-deploy rights on CSB and tRIEL
+- Remote key: see the table below
+
+**Expect to be offered an existing Home, and decline it.** USDC is widely bridged, so
+the CLI will very likely report that a Home for this token already exists on Fuji —
+an address that is *not* the USDC address — and ask whether to use it. Answer **"No,
+deploy my own Home."** Reusing a stranger's Home puts your collateral in a contract on
+a chain you do not control, with no say over its lifecycle. The saved gas is not worth
+it.
+
+### Which key at which prompt
+
+The wizard asks for two keys and offers every key in the store at each one. Most of
+the answers are wrong, and one of them is wrong in a way that breaks something else
+that is currently working.
+
+| Prompt | Use | Why |
+|---|---|---|
+| Home deployment fees (Fuji) | a **fresh key**, e.g. `fuji-home`, funded with ~0.5 AVAX | needs Fuji AVAX and nothing else |
+| Remote deployment (CSB) | `csb-deployer` | the only key with contract-deploy rights and tRIEL |
+
+Do **not** pick:
+
+- **`cli-awm-relayer`** — the relayer is running and holds its own nonce. Using its
+  key concurrently collides with it (`docs/fuji-ictt.md` §4). This breaks message
+  delivery for the bridge that already works.
+- **`cli-teleporter-deployer`** — its private key was exposed in terminal output.
+  Treat it as public.
+- **`ewoq`** — avalanche-cli's built-in test key, published in Avalanche's own
+  documentation. Anyone can spend what it holds.
+
+**Do not import a personal wallet key to get past this prompt.** `avalanche key
+import` writes the private key to `~/.avalanche-cli/key/` in plain text, and
+`avalanche blockchain describe` prints keys from that directory. Create a throwaway
+instead:
+
+```bash
+avalanche key create fuji-home
+avalanche key list --fuji          # note the address, send it ~0.5 AVAX
+```
+
+**The USDC does not need to be on that key.** Collateral for a new ERC-20 Home
+accrues as tokens are sent rather than up front, so the deploy key pays gas only. The
+USDC stays wherever it is and is spent later by whatever address calls `send()`.
+
+### Keep the right address
 
 **Write down both addresses.** The one you want for everything below is the **remote
 on CSB**, not the home on Fuji. The CLI prints both and its ICM table shows Fuji's
