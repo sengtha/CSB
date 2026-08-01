@@ -184,6 +184,67 @@ The **single authorized exit** to public blockchains, and the load-bearing requi
 - **Explicit boundary:** everything crossing the gateway becomes permanently world-public on external chains. Wallet UX must surface this to users at the moment of egress.
 - **Staged rollout:** caps start small and widen with operational confidence.
 
+### 7.1 Ingress — the boundary does not exist in the other direction
+
+The gateway governs value **leaving**. Nothing governs value **arriving**, and the
+first asset bridged *in* makes that concrete rather than theoretical.
+
+Avalanche ICTT delivers by deploying an `ERC20TokenRemote` on the destination chain
+and minting to whatever recipient the sender named. That contract is a plain ERC-20:
+no identity check, no freeze, no confiscate. Inside a chain whose entire claim is that
+every holder is known, a bridged asset is therefore a **bearer instrument**, and none
+of §4's separation of powers reaches it — the enforcement authority has no function to
+call.
+
+**Decision (2026-08-01): accept it.** The bridged token stays the stock contract. Two
+things make that defensible, and they are worth stating precisely because the second
+is weaker than it looks:
+
+1. **Holding without transacting is inert.** `send()` and `transfer()` take the holder
+   as `msg.sender`, and delegating requires an `approve()` that is itself a
+   transaction. So an address absent from `txAllowList` can receive the asset and do
+   nothing else with it — it cannot spend, bridge out, or authorise anyone else to.
+   The perimeter does not govern the asset, but the chain still governs the actor.
+2. **Admission to `txAllowList` is an act of the authority.** Entries are granted
+   deliberately, and every transfer is permanently on chain. Visibility and
+   traceability survive even where control does not.
+
+**What is given up, and it is not nothing.** Control. There is no freeze, no
+confiscate, no forced transfer, no tier limit and no daily cap — every instrument §7
+provides for KHRt is unavailable for an asset issued elsewhere. A judicial order that
+works against the sovereign currency has nothing to act on against a bridged one. The
+honest analogy is cash: traceable through records, seizable only through courts and
+physical action, never by the ledger itself.
+
+Two consequences follow and should be treated as operating constraints:
+
+- **The traceability argument is a property of procedure, not of the system.** Nothing
+  on chain links an allow-list entry to an attestation; the allow list and
+  `IdentityRegistry` are separate stores maintained separately (§4, and item 2 in
+  `docs/todo.md` is the same gap seen from the other side). "Whoever can move it was
+  admitted knowingly" holds only while admission is recorded against an identity —
+  which makes `scripts/audit-allowlist.js` a routine control rather than an occasional
+  check.
+- **The only available lever is chain-wide.** Removing an address from `txAllowList`
+  stops it transacting in *everything*, sovereign currency included. The perimeter can
+  exclude a person; it cannot restrain an asset. There is nothing in between.
+
+**Why the obvious fixes were rejected.** A compliant `TokenRemote` overriding
+`_update` would close this completely and was designed in full — it is the same single
+hook that gates the ERC-4626 share — but it requires vendoring Ava Labs' bridge code,
+which is licensed under the Ecosystem License rather than MIT and would freeze a copy
+of the one component where a defect is stolen collateral (`docs/todo.md` item 3a).
+Wrapping is *not* a middle option: a wrapper offers a gated alternative nobody is
+compelled to use, while the bridge mints the raw token to the recipient regardless.
+**The hole cannot be closed without controlling the mint.**
+
+**The general result.** A sovereign perimeter cannot govern an asset whose issuance it
+does not control. Bridging value in cedes exactly that, and the remaining lever
+excludes the person rather than the asset. This is the second structural limit found
+here — the first being that the perimeter governs custody while composability governs
+exposure (`docs/defi.md`) — and unlike that one it admits no fix at this layer, only a
+choice.
+
 ## 8. Gas: about 1 riel per transaction, funding public good
 
 **Decision: a transaction costs about 1 tRIEL (= 1 riel), and every riel of it goes to a public-good fund.**
