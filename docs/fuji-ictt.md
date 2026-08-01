@@ -385,20 +385,42 @@ than assuming, since guessing wrong sends 100× or 1/100th of the intended amoun
   validators in 6 ms**. Fuji's Primary Network is small and the query is instant, so
   neither the set nor the node is the bottleneck.
 
-  What the same machine reports is **4 peers**. That is the number to look at. The
-  relayer does not merely read the validator set — it must *connect* to enough of
-  that set's stake to collect BLS signatures, over P2P, on its own connections. A
-  host that reaches only four peers cannot assemble a supermajority of 85 validators
-  no matter which API endpoint it reads from, and the failure surfaces as
-  `context deadline exceeded` on the preceding call rather than as "not enough
-  peers".
+  What the same machine reports is **4 peers**, and the cause is one line:
+
+  ```
+  LISTEN  127.0.0.1:9651        <- staking port bound to localhost
+  info.getNodeIP -> 127.0.0.1:9651
+  ```
+
+  The staking port accepts no external connections, and the node advertises
+  `127.0.0.1` as its address. Avalanche peering is largely **inbound** — other
+  validators dial you — so nothing can ever connect, and the node is left with the
+  handful of outbound links it makes to bootstrappers. The same shortage is why
+  `info.isBootstrapped` reports **true for P but false for C and X**.
+
+  That is enough to follow the P-Chain, and not enough to relay. The relayer does not
+  merely read the validator set; it must *connect* to enough of that set's stake to
+  collect BLS signatures over its own P2P links. Four peers cannot supply a
+  supermajority of 85 validators from any API endpoint, and the failure surfaces as
+  `context deadline exceeded` on the preceding call rather than as anything
+  mentioning peers — which is what makes every other explanation look plausible
+  first.
 
   ```bash
+  ss -ltnp | grep 9651        # want 0.0.0.0:9651, not 127.0.0.1:9651
   curl -s -X POST -H 'content-type:application/json' \
     --data '{"jsonrpc":"2.0","id":1,"method":"info.peers","params":{}}' \
     http://127.0.0.1:9650/ext/info \
     | python3 -c "import sys,json;print(len(json.load(sys.stdin)['result']['peers']))"
   ```
+
+  **This is a property of the deployment, not of the bridge.** Nodes started as an
+  avalanche-cli *local cluster* bind to localhost by design; they are development
+  nodes that happen to track a public network. Making ingress work needs a node run
+  with `--public-ip=<reachable address>`, its staking port bound to `0.0.0.0`, and
+  9651 open — which is what `docs/architecture.md` §9 already says the posture should
+  be: RPC (9650) private, P2P (9651) public. The running node has neither half of
+  that arrangement.
 
   **The asymmetry is real even though the size argument was not.** Outbound messages
   are signed by CSB's own validators — local, few, under this chain's control, and
