@@ -5,6 +5,7 @@ const { ethers } = require("ethers");
  *
  *   node scripts/check-fuji-usdc.js
  *   CSB_FUJI_USDC=0x… CSB_EXPECT_SYMBOL=USDC node scripts/check-fuji-usdc.js
+ *   CSB_FUJI_ADDR=0x… node scripts/check-fuji-usdc.js     # also report your balances
  *
  * Runs against FUJI, not CSB, so it is plain node rather than a hardhat task and
  * takes no CSB configuration at all. Read-only: it sends no transaction and needs no
@@ -36,16 +37,36 @@ const ABI = [
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
   "function totalSupply() view returns (uint256)",
+  "function balanceOf(address) view returns (uint256)",
 ];
+
+/**
+ * Validate before ethers gets a chance to guess.
+ *
+ * ethers v6 treats ANY string that is not an address as an ENS name and tries to
+ * resolve it. Fuji has no ENS registry, so a typo — or an unsubstituted
+ * `<your address>` placeholder — surfaces as
+ * `network does not support ENS (operation="getEnsAddress")`, an error about a
+ * feature nobody asked for, several frames deep, naming neither the offending value
+ * nor the variable it came from.
+ */
+function requireAddress(value, label) {
+  if (!value) return null;
+  if (!ethers.isAddress(value)) {
+    throw new Error(`${label} is not a valid 0x address: ${JSON.stringify(value)}\n`
+      + `  It must be a full 40-hex-digit address. If that still looks like a `
+      + `placeholder, substitute your real one.`);
+  }
+  return ethers.getAddress(value);
+}
 
 // EIP-1967 implementation slot, for the common case of a proxied stablecoin.
 const IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
 async function main() {
-  const addr = process.env.CSB_FUJI_USDC ?? DEFAULT_USDC;
+  const addr = requireAddress(process.env.CSB_FUJI_USDC ?? DEFAULT_USDC, "CSB_FUJI_USDC");
+  const mine = requireAddress(process.env.CSB_FUJI_ADDR, "CSB_FUJI_ADDR");
   const expect = process.env.CSB_EXPECT_SYMBOL ?? "USDC";
-
-  if (!ethers.isAddress(addr)) throw new Error(`Not a valid address: ${addr}`);
 
   const provider = new ethers.JsonRpcProvider(FUJI);
   let net;
@@ -83,6 +104,20 @@ async function main() {
   console.log(`  symbol      ${symbol}`);
   console.log(`  decimals    ${decimals}`);
   console.log(`  totalSupply ${ethers.formatUnits(supply ?? 0n, decimals)}`);
+
+  // Optional: what the operator actually holds. Both matter before step 1 —
+  // AVAX pays for the Home deployment, USDC is what there is to bridge.
+  if (mine) {
+    const [avax, bal] = await Promise.all([
+      provider.getBalance(mine), t.balanceOf(mine).catch(() => null),
+    ]);
+    console.log(`\n  your address ${mine}`);
+    console.log(`    AVAX  ${ethers.formatEther(avax)}${avax === 0n
+      ? "   <-- no gas; the Home deploy cannot pay for itself" : ""}`);
+    console.log(`    ${symbol.padEnd(5)} ${bal === null ? "unreadable"
+      : ethers.formatUnits(bal, decimals)}${bal === 0n
+      ? "   <-- nothing to bridge; use Circle's faucet" : ""}`);
+  }
 
   const raw = await provider.getStorage(addr, IMPL_SLOT).catch(() => null);
   if (raw && raw !== ethers.ZeroHash) {

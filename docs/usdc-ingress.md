@@ -80,7 +80,15 @@ cross-check in a public explorer as well —
 `https://testnet.snowtrace.io/token/<address>`.
 
 You also need, on the Fuji side: **Fuji AVAX** for gas, and **USDC** to actually
-bridge (Circle runs a faucet). On the CSB side, the same three allow-list grants
+bridge (Circle runs a faucet at `faucet.circle.com` — pick Avalanche Fuji). Check both
+at once by passing your address to the same script:
+
+```bash
+CSB_FUJI_ADDR=0xYourFujiAddress node scripts/check-fuji-usdc.js
+```
+
+It flags an empty balance on either side rather than leaving you to read two numbers
+and remember which matters. On the CSB side, the same three allow-list grants
 `docs/fuji-ictt.md` §"Before you start" lists — they are per-address, not per-token,
 so if the KHRt bridge already works these are already in place.
 
