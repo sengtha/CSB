@@ -292,6 +292,49 @@ And it only delays the leak: a KYC'd liquidator can take the collateral as
 aTokens (`receiveAToken = true`) and pass those on. Same destination, one hop
 later.
 
+### Staking: the first protocol whose reward is a separate asset
+
+`test/defi-staking.test.js` runs Synthetix's **`StakingRewards`** — the most-forked
+staking contract in DeFi — compiled from the genuine upstream source in
+`node_modules/synthetix`, not a copy or a reimplementation. That required adding solc
+0.5.16 to the build, which is the price of keeping the "unmodified protocol" property
+the other experiments rest on.
+
+It is structurally different from the first three. Uniswap issued a static claim, Aave
+an accruing one, ERC-4626 the same shape as a standard — each a claim **on** the gated
+asset. Here the reward is its own token, and the two configurations fail in opposite
+directions.
+
+**Reward in an ungated token — the sharpest form of the leak.** An unattested address
+stakes, earns, and **collects real spendable value**. Every earlier experiment leaked a
+claim whose redemption stayed blocked; this leaks the thing itself, and it moves onward
+freely with no gate anywhere.
+
+**Reward in KHRt — a stranded liability, and the perimeter causes it.** Rewards accrue
+to an unattested holder and can **never** be collected, because `getReward()` transfers
+the gated asset and reverts. The protocol's books record an obligation to a party that
+cannot receive it, and the debt keeps growing. This is not a leak. It is the opposite
+failure, and as far as we know it is undocumented: **a compliance perimeter under an
+unmodified protocol does not only fail to contain value, it can manufacture unpayable
+debts.**
+
+Three details worth carrying:
+
+- **The compliance reason is destroyed before anyone sees it.** The revert arrives as
+  `SafeERC20: low-level call failed`, not `NotKycActive`. Synthetix builds on
+  OpenZeppelin 2.3.0, which predates custom errors: its `SafeERC20` makes a low-level
+  call and checks only success, discarding the revert data. An operator or auditor sees
+  a generic transfer failure with no on-chain indication that identity caused it. The
+  test proves the cause independently rather than trusting the message.
+- **`withdraw` works where `exit` fails.** The stake itself is ungated, so a stranded
+  holder can retrieve it; `exit` additionally claims the reward and reverts. A
+  front-end offering only "exit" would appear broken for that user while "withdraw"
+  worked.
+- **`StakingRewards` issues no transferable receipt.** The position is a mapping entry,
+  not a token, so unlike the other three there is nothing to hand over. That is the one
+  structural difference favouring the perimeter — and it is an accident of this
+  contract's design, not something the architecture arranged.
+
 ### The remedy, built and measured
 
 Everything above diagnoses. `contracts/experiments/CompliantKHRtVault.sol` is the

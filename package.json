@@ -18,6 +18,9 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.1.0",
-    "@openzeppelin/contracts-v4": "npm:@openzeppelin/contracts@^4.9.6"
+    "@openzeppelin/contracts-v4": "npm:@openzeppelin/contracts@^4.9.6",
+    "openzeppelin-solidity-2.3.0": "npm:openzeppelin-solidity@^2.3.0",
+    "solc-0_5_16": "npm:solc@^0.5.16",
+    "synthetix": "^2.102.1"
   }
 }
