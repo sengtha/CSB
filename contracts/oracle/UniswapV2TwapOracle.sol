@@ -36,7 +36,8 @@ interface IERC20Decimals {
  * in docs/oracle.md says which is which.
  *
  * PRECISION. UQ112x112 truncates, so a quoted price can be up to ONE RAW UNIT of
- * the base token below the exact ratio. With KHRt's two decimals that is 0.01 riel:
+ * the base token below the exact ratio. With KHRt's two decimals that is 1/100 of a
+ * riel — smaller than any payable amount, since the riel has no circulating subunit:
  * a pool holding exactly 4,000 KHRt per counterpart token quotes 3,999.99. This is
  * inherent to the fixed-point representation and Uniswap's own oracle has it too. It
  * is a floor, never an overstatement, and it is bounded rather than accumulating.

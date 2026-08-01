@@ -29,7 +29,13 @@ The path is **local devnet → Fuji testnet → Avalanche mainnet**. This guide 
 4. **Validator fleet ready.** Target ≥5 institutions at launch. Each: hardware in an in-country data center, keys generated in an institutional key ceremony, staking-volume backup in custody, monitoring wired to the NOC.
 5. **P-Chain funding.** A funded, custodied P-Chain wallet for creation fees and the continuous validator fees; a top-up procedure with an owner and a budget line.
 6. **Operational rehearsal on Fuji.** At minimum once: validator addition *and removal*, a feeManager fee raise/lower, a gateway pause/unpause, an ICTT round trip, a coordinated node upgrade, and a restore-from-backup of a validator identity.
-7. **Legal.** The governing legal mandate (hypothetical: e.g. a decree establishing the council) in force; KHRt issuance still gated on the issuer mandate — mainnet can launch with the stablecoin dormant (contracts deployed, ISSUER_ROLE with the council, zero supply) until the mandate exists.
+7. **Decide KHRt's decimals, and decide it here.** The riel is a **zero-decimal currency** — no circulating subunit, prices quoted in whole riel. KHRt carries **2**, so one raw unit is 1/100 riel: a quantity nobody can pay in cash. That is a defensible ledger-precision choice, not an oversight, but it must be a stated decision before real issuance rather than an inherited default.
+
+   The trade is not symmetric. **Zero decimals is faithful to the currency and hostile to every percentage-based mechanism on the chain**: a 1% levy rounds to nothing below 50 riel, and Aave's per-second interest index would take months to move a small depositor's balance by one whole riel — the accrual already measured on 8555 needs ~7,250 intervals to move a single 0.01 unit, which at 0 decimals becomes ~725,000. **Two decimals buys representability and costs faithfulness**: the ledger can express amounts that cannot be settled in cash, and rounding rules at the cash boundary become somebody's written policy rather than an accident.
+
+   Whichever is chosen, it is effectively permanent. `decimals()` is `pure`, so changing it means redeploying the token — and a redeploy **forks the compliance perimeter** rather than migrating it (item 1 in `docs/todo.md`, demonstrated live on 8555). Get it right before the first issuance, not after.
+
+8. **Legal.** The governing legal mandate (hypothetical: e.g. a decree establishing the council) in force; KHRt issuance still gated on the issuer mandate — mainnet can launch with the stablecoin dormant (contracts deployed, ISSUER_ROLE with the council, zero supply) until the mandate exists.
 
 ## Migration steps
 

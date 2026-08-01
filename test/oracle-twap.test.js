@@ -75,7 +75,9 @@ describe("UniswapV2TwapOracle — a market rate from the chain's own pool", func
 
   /**
    * UQ112x112 truncates, so a quote can sit up to one RAW unit of the base token
-   * below the exact ratio — with KHRt's two decimals, 0.01 riel. Verified against
+   * below the exact ratio — with KHRt's two decimals, 1/100 of a riel, which is
+   * smaller than anything the currency can express (the riel has no subunit).
+   * Verified against
    * the contract's integer math: a pool at exactly 4,000 KHRt per counterpart quotes
    * 3,999.99. Asserting exact equality would be asserting something the fixed-point
    * representation cannot deliver, so assert the bound instead — and assert it is a

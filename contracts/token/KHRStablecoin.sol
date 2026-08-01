@@ -117,7 +117,26 @@ contract KHRStablecoin is ERC20, AccessControl {
         _grantRole(ISSUER_ROLE, issuer);
     }
 
-    /// @dev Riel has no circulating subunit; 2 decimals follow fiat-token convention.
+    /**
+     * @dev THE RIEL IS A ZERO-DECIMAL CURRENCY. It has no circulating subunit — the
+     *      sen is long gone and prices are quoted in whole riel. The two decimals
+     *      here are therefore LEDGER PRECISION, not a claim that centimes exist, and
+     *      one raw unit of this token is 1/100 of a riel: a quantity that cannot be
+     *      paid in cash.
+     *
+     *      Kept at 2 rather than 0 because every percentage-based mechanism on this
+     *      chain needs sub-unit room to be representable at ordinary amounts. At 0
+     *      decimals a 1% levy rounds to nothing below 50 riel, and Aave's interest
+     *      index — which accrues per second against a scaled balance — would move a
+     *      small depositor's balance by a whole riel only after months. The observed
+     *      accrual on 8555 already needs ~7,250 intervals to move one 0.01 unit
+     *      (docs/defi.md); at 0 decimals that becomes ~725,000.
+     *
+     *      A zero-decimal currency is, in this specific sense, hostile to DeFi
+     *      arithmetic, and choosing 2 buys representability at the cost of modelling
+     *      amounts the currency cannot express. Revisit before any real issuance —
+     *      see docs/testnet-to-mainnet.md.
+     */
     function decimals() public pure override returns (uint8) {
         return 2;
     }

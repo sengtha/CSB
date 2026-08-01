@@ -176,7 +176,9 @@ places where wrapping is intended and nowhere else.
 
 **Precision is bounded at one raw base unit.** UQ112x112 truncates, so a quote can
 sit up to one raw unit of the base token below the exact ratio — with KHRt's two
-decimals, 0.01 riel. A pool holding exactly 4,000 KHRt per counterpart quotes
+decimals, 1/100 of a riel — a quantity the currency itself cannot express, since the
+riel has no circulating subunit, so the error is strictly smaller than the smallest
+payable amount. A pool holding exactly 4,000 KHRt per counterpart quotes
 3,999.99. This is inherent to the representation, Uniswap's own oracle has it too,
 and it is always a floor rather than an overstatement. The tests assert the bound and
 assert the direction, because asserting exact equality would be asserting something

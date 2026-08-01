@@ -337,8 +337,23 @@ function explainError(e) {
   return e?.shortMessage ?? e?.message ?? String(e);
 }
 
+/**
+ * THE RIEL HAS NO SUBUNIT. There is no circulating fraction of a riel — prices are
+ * quoted in whole riel and always have been. The token nevertheless carries two
+ * decimals, which is a precision choice for the ledger (percentage levies and
+ * interest accrual both need sub-unit room to be representable at ordinary amounts),
+ * NOT a claim that centimes exist.
+ *
+ * So this used to force ".00" onto every figure via minimumFractionDigits, which
+ * asserted a subunit on every screen in the app. It now shows whole riel when the
+ * amount is whole and reveals the fraction only when there genuinely is one — which
+ * in practice means balances touched by Aave's index, the one mechanism here that
+ * creates sub-riel quantities. Nothing is hidden; the display simply stops claiming
+ * precision the currency does not have.
+ */
 function fmtKHR(units) {
-  return Number(ethers.formatUnits(units, 2)).toLocaleString("en-US", { minimumFractionDigits: 2 });
+  return Number(ethers.formatUnits(units, 2))
+    .toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 function parseKHR(str) {
   return ethers.parseUnits(String(str).replaceAll(",", ""), 2);
