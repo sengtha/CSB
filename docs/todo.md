@@ -88,7 +88,7 @@ intent; nothing is built.
 **This stops being hypothetical the moment a second asset is bridged in.** The
 proposal on the table is testnet USDC from Fuji, which would be the first asset to
 enter the perimeter rather than leave it, and it is worth doing for reasons unrelated
-to compliance — see item 3a. But note what arrives: `ERC20TokenRemote` is a plain
+to compliance — see item 3b. But note what arrives: `ERC20TokenRemote` is a plain
 ERC-20 minted by the bridge, with no identity hook and no freeze. Inside a chain whose
 entire claim is that every holder is known, it would be a **bearer asset**. Any address
 on `txAllowList` could hold and move it with no attestation at all.
@@ -99,61 +99,99 @@ perimeter has no say whatsoever — not a leak outward but an unpoliced inflow. 
 asymmetry already noted for prices in `docs/oracle.md` ("the egress gateway governs
 value leaving, while nothing governs prices arriving"), now for value itself.
 
-**The answer is to mint a compliant token, not to police an ungated one.** The
-premise behind "accept it" or "wrap it" was that the arriving token is fixed. It is
-not: CSB *owns* the contract that mints it. `ERC20TokenRemote` is deployed on the
-destination chain — this chain — and nothing requires it to be the stock one.
+**DECIDED 2026-08-01: accept it, do not modify Ava Labs' contract.** The bridged
+token stays the stock `ERC20TokenRemote`, ungated. Two reasons were weighed and
+neither is a shrug:
 
-Verified against `ava-labs/icm-contracts` rather than assumed:
+1. **An address that cannot transact can only hold, and a holding it cannot move is
+   inert.** Checked against the contract rather than assumed: `send()` and
+   `transfer()` both take the holder as `msg.sender`, and moving tokens on someone's
+   behalf needs an `approve()` they cannot submit. A non-allow-listed holder is
+   therefore frozen in every direction — it cannot spend, cannot bridge out, cannot
+   delegate. The perimeter does not govern the *asset*, but the chain still governs
+   the *actor*, and for an asset with no off-chain settlement path that is close to
+   the same thing.
+2. **Reaching `txAllowList` is an act of the authority.** Entries are granted by hand
+   (`scripts/allow-dev.js`), so anyone who can move the asset was admitted
+   deliberately, and every transfer is on chain and permanent. Visibility and
+   traceability survive even though control does not.
 
-- `ERC20TokenRemoteUpgradeable` extends OpenZeppelin 5.x `ERC20Upgradeable` and
-  `TokenRemote`, and its `_withdraw(recipient, amount)` is `internal virtual` — it
-  simply calls `_mint`.
-- Because the mint goes through `_mint`, it goes through **`_update`**. So the whole
-  fix is the same one hook that gated the ERC-4626 share:
+The alternative — a `CompliantERC20TokenRemote` overriding `_update` — was designed
+and costed and is recorded below, but rejected on the dependency and licensing
+grounds in item 3a. **Note that wrapping is not a middle option.** A wrapper offers a
+gated alternative nobody is compelled to use; the bridge mints the raw token straight
+to the recipient regardless, so the raw token circulates either way. The hole cannot
+be closed without controlling the mint.
 
-```solidity
-contract CompliantERC20TokenRemote is ERC20TokenRemote {
-    function _update(address from, address to, uint256 value) internal override {
-        super._update(from, to, value);
-        if (from != address(0)) _requireEligible(from);   // covers ordinary transfers
-        if (to   != address(0)) _requireEligible(to);     // covers the bridge mint
-    }
-}
-```
+**Three things this decision accepts, worth having in writing before an incident
+rather than during one:**
 
-Bind it to the **same** `IdentityRegistry` and `EnforcementRegistry` as KHRt and the
-bridged asset is inside the existing perimeter, not beside it — one rule, both
-currencies, and freeze/confiscate reach it too. This generalises: any asset entering
-over ICTT can be made to follow CSB's rules, because CSB controls the remote.
+- **Visibility without remedy.** Tracing works; acting does not. There is no freeze,
+  no confiscate, no forced transfer, because those are functions of a contract we did
+  not write. A court order that works against KHRt has nothing to act on here. That is
+  a defensible position — it is how cash behaves, seizable through courts and physical
+  action rather than by the ledger — but it must be stated in advance.
+- **Reason 2 is a property of a procedure, not of the system.** Nothing on chain links
+  an allow-list entry to an identity; the two live in different places and are
+  maintained separately. "We admitted them, so we knew who they were" holds only while
+  admission is actually recorded against an attestation. Item 2 is the same gap seen
+  from the other side, and `scripts/audit-allowlist.js` is the check — it found zero
+  gap addresses on 2026-07-30. Make it routine rather than occasional; the decision
+  above depends on it staying clean.
+- **Mis-sent funds are unrecoverable.** This is operational, not compliance. Send
+  bridged dollars to a wrong or non-allow-listed address and they are stuck
+  permanently, because the escape hatch KHRt has — `forcedTransfer` — does not exist
+  on a token we did not write. An honest typo is unfixable.
 
-**What it costs, all of it real:**
+**And the finding this produces, which is worth more than the fix would have been:**
 
-- **A vendored dependency tree.** `icm-contracts` is a Foundry project with no npm
-  package (checked: `@avalabs/icm-contracts` and three plausible variants are not
-  published). It uses foundry remappings (`@utilities/…`,
-  `@openzeppelin/contracts@5.0.2/…`) that Hardhat does not read, and pins
-  **solc 0.8.25** against this repo's 0.8.24/paris. That is the tree
-  `contracts/egress/interfaces/IERC20TokenTransferrer.sol` was deliberately written
-  to avoid. Mostly plumbing rather than logic — the contract above is ~40 lines.
-- **A deploy path outside the CLI.** `avalanche interchain tokenTransferrer deploy`
-  deploys the stock remote. Deploy this one directly, then `registerWithHome()` —
-  permissionless, and `scripts/register-remote.js` already does it.
-- **A revert lands on the other chain.** An unattested recipient makes the ICM
-  delivery revert. That failure mode is already characterised here for the KHRt
-  return path (`docs/fuji-ictt.md` §7): the burn succeeds on Fuji, the delivery
-  reverts on CSB, and the value is **recoverable** — collateral stays in the Home and
-  the message re-delivers once the recipient is verified. Not loss, but the failure
-  surfaces a chain away from the transaction that caused it, so the sending script
-  must pre-check the recipient exactly as `bridge-back.js` does.
+> A sovereign perimeter cannot govern an asset whose issuance it does not control.
+> Bridging value in cedes exactly that, and the only lever left is a chain-wide switch
+> that excludes the person rather than the asset.
 
-**What it does NOT fix, and this is the part to state plainly.** A compliant bridged
-dollar still leaks *claims* through Uniswap, Aave, ERC-4626 and staking precisely as
-KHRt does — the perimeter governs custody, composability governs exposure. Gating the
-remote closes the ingress hole; it does not touch the finding this whole project is
-about. It does, usefully, give that finding a second asset to be demonstrated on.
+That sits beside "the perimeter governs custody, composability governs exposure" as a
+second structural limit — and unlike the first, this one the architecture cannot
+solve, only choose.
 
-### 3a. No second asset, so no real price and no real collateral
+### 3a. Ava Labs' bridge code is not MIT, and that constrains the fix
+
+Read from `ava-labs/icm-contracts` `LICENSE`, not assumed. It is the **Ava Labs
+Ecosystem License v1.1**, and it permits use, modification and redistribution only:
+
+> solely (i) in connection with the Avalanche Public Blockchain platform, having a
+> NetworkID of 1 (Mainnet) or 5 (Fuji) … and any subnets linked to the P-Chain … or
+> (ii) for non-production, testing or research purposes within the Avalanche
+> ecosystem … without any commercial application
+
+and explicitly **not** for "any forks of the Avalanche Authorized Platform" or use "in
+any manner not operationally connected to" it. The licence text must be shipped
+unmodified wherever the code goes, and violation terminates the grant automatically.
+
+CSB qualifies today on both branches — it is a Fuji-linked L1, and this is research.
+Four consequences all the same:
+
+- **This repo is MIT.** Vendoring their code makes it mixed-licence, and a reader who
+  sees `LICENSE — MIT` would be misled about the vendored subtree, which cannot be
+  relicensed by us.
+- **The grant is conditional on staying attached to Avalanche.** For a project about
+  sovereignty it is worth knowing that part of the stack is licensed only while the
+  chain remains a P-Chain-linked subnet.
+- **A copy is frozen.** Upstream security fixes would not reach it, on the one
+  component where a bug is stolen collateral rather than a wrong number.
+- **It contradicts the method.** Every DeFi finding here rests on *unmodified
+  published* upstream code. Copying files and rewriting their import lines is
+  modification, at exactly the point where provenance matters most.
+
+If the custom remote is ever revisited, do it as a **git submodule plus
+`@nomicfoundation/hardhat-foundry`** (v3.0.4) rather than a copy. That plugin reads
+Foundry's `remappings.txt` and `lib/` — which is what their repo uses — so no imports
+need rewriting, nothing of theirs enters our tree, the pinned commit hash proves
+nothing was changed, and updates are one command. Their licence still governs what is
+deployed and still has to be shipped, but "we reference their audited bridge at commit
+X" is a materially better position than "we have a modified copy".
+
+
+### 3b. No second asset, so no real price and no real collateral
 
 Every experiment so far prices KHRt against either itself or a test token nobody
 trades. Consequences, all of them limiting:
