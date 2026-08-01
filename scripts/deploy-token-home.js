@@ -187,24 +187,30 @@ async function main() {
     feeTokenAddress: token,
     token: token,
   };
+  // Solidity's convention for avoiding a name clash with a state variable is a
+  // trailing underscore, and ICTT uses it inconsistently across versions —
+  // `tokenAddress` in one, `tokenAddress_` in another. Normalise rather than
+  // enumerate both, or the next rename breaks this again.
+  const canon = (n) => n.replace(/_+$/, "");
   const ctor = abi.find((x) => x.type === "constructor");
   if (!ctor) throw new Error("The artifact's ABI has no constructor entry.");
 
-  const unknown = ctor.inputs.filter((i) => !(i.name in KNOWN));
+  const unknown = ctor.inputs.filter((i) => !(canon(i.name) in KNOWN));
   if (unknown.length) {
     throw new Error(`This artifact's constructor takes parameters this script does not `
       + `know how to fill: ${unknown.map((i) => `${i.type} ${i.name}`).join(", ")}\n`
       + `  Full signature: (${ctor.inputs.map((i) => `${i.type} ${i.name}`).join(", ")})\n`
       + `  The contract version changed. Add the values rather than guessing an order.`);
   }
-  const args = ctor.inputs.map((i) => KNOWN[i.name]);
+  const args = ctor.inputs.map((i) => KNOWN[canon(i.name)]);
 
   console.log(`Constructor (${ctor.inputs.length} args, read from the artifact)`);
   for (const i of ctor.inputs) {
-    const extra = i.name === "teleporterManager" ? "   (you — can pause/upgrade config)" : "";
-    console.log(`  ${i.name.padEnd(26)} ${KNOWN[i.name]}${extra}`);
+    const extra = canon(i.name) === "teleporterManager"
+      ? "   (you — can pause/upgrade config)" : "";
+    console.log(`  ${i.name.padEnd(26)} ${KNOWN[canon(i.name)]}${extra}`);
   }
-  if (!ctor.inputs.some((i) => i.name === "tokenDecimals")) {
+  if (!ctor.inputs.some((i) => canon(i.name) === "tokenDecimals")) {
     console.log(`\n  NOTE: this version takes no tokenDecimals — it reads ${decimals} from`);
     console.log(`  the token itself. The remote must be given the same value.`);
   }
