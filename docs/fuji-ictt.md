@@ -379,57 +379,43 @@ than assuming, since guessing wrong sends 100× or 1/100th of the intended amoun
   "info-api":    { "base-url": "http://127.0.0.1:9650" }
   ```
 
-  **Repointing it was not sufficient here, and the first explanation was wrong.**
-  It is tempting to blame the size of the validator set, and measurement says
-  otherwise: `platform.getCurrentValidators` against the local node returns **85
-  validators in 6 ms**. Fuji's Primary Network is small and the query is instant, so
-  neither the set nor the node is the bottleneck.
-
-  What the same machine reports is **4 peers**, and the cause is one line:
+  **The `context deadline exceeded` is a symptom, not the cause.** It is the last
+  log line before the process dies, and reading it as the failure sends you to the
+  P-Chain API, the endpoint choice, the node's peer count and the staking port — all
+  of which can be healthy while this fails. The cause is the retry loop above it,
+  visible only at `debug`:
 
   ```
-  LISTEN  127.0.0.1:9651        <- staking port bound to localhost
-  info.getNodeIP -> 127.0.0.1:9651
+  Failed to connect to a threshold of stake, retrying...
+    quorumNumerator:      67
+    connectedWeight:      8,000,000,000
+    totalValidatorWeight: 36,400,190,220,826,205
+    numConnectedPeers:    3
   ```
 
-  The staking port accepts no external connections, and the node advertises
-  `127.0.0.1` as its address. Avalanche peering is largely **inbound** — other
-  validators dial you — so nothing can ever connect, and the node is left with the
-  handful of outbound links it makes to bootstrappers. The same shortage is why
-  `info.isBootstrapped` reports **true for P but false for C and X**.
+  To relay a message the relayer must connect to validators holding **67% of the
+  source subnet's stake**. Measured on 2026-08-01, from this machine:
 
-  That is enough to follow the P-Chain, and not enough to relay. The relayer does not
-  merely read the validator set; it must *connect* to enough of that set's stake to
-  collect BLS signatures over its own P2P links. Four peers cannot supply a
-  supermajority of 85 validators from any API endpoint, and the failure surfaces as
-  `context deadline exceeded` on the preceding call rather than as anything
-  mentioning peers — which is what makes every other explanation look plausible
-  first.
+  | Source | Connected weight | Total | Peers | Result |
+  |---|---|---|---|---|
+  | CSB | 100 | 100 | 1 | quorum on the first attempt |
+  | Fuji Primary Network | 8e9 | 3.64e16 | 3 | 0.000022% — never close |
 
-  ```bash
-  ss -ltnp | grep 9651        # want 0.0.0.0:9651, not 127.0.0.1:9651
-  curl -s -X POST -H 'content-type:application/json' \
-    --data '{"jsonrpc":"2.0","id":1,"method":"info.peers","params":{}}' \
-    http://127.0.0.1:9650/ext/info \
-    | python3 -c "import sys,json;print(len(json.load(sys.stdin)['result']['peers']))"
-  ```
+  It retries every 5 s until `initial-connection-timeout-seconds` expires, then the
+  in-flight P-Chain call is cancelled and reports a timeout. Nothing about the API,
+  the endpoint, or the node is wrong.
 
-  **This is a property of the deployment, not of the bridge.** Nodes started as an
-  avalanche-cli *local cluster* bind to localhost by design; they are development
-  nodes that happen to track a public network. Making ingress work needs a node run
-  with `--public-ip=<reachable address>`, its staking port bound to `0.0.0.0`, and
-  9651 open — which is what `docs/architecture.md` §9 already says the posture should
-  be: RPC (9650) private, P2P (9651) public. The running node has neither half of
-  that arrangement.
+  **This is the asymmetry, in numbers.** Outbound messages are signed by CSB's own
+  validator set — total weight 100, one node, local, under this chain's control.
+  Inbound messages are signed by the foreign chain's validator set — 36.4 million
+  AVAX across ~85 validators, none of them ours, and reaching two-thirds of that
+  stake requires peering this deployment cannot achieve. The relayer runs its own
+  p2p stack, so exposing avalanchego's staking port would not obviously fix it
+  either.
 
-  **The asymmetry is real even though the size argument was not.** Outbound messages
-  are signed by CSB's own validators — local, few, under this chain's control, and
-  reachable regardless of how well this host is connected to the outside world.
-  Inbound messages are signed by the *foreign* chain's validator set, which must be
-  reached across the public network. Egress depends only on infrastructure the chain
-  operates. Ingress depends on connectivity to validators it does not run and cannot
-  compel. A sovereign chain governs what leaves; what arrives depends on the outside
-  world being reachable.
+  **Egress is a property of infrastructure the chain operates. Ingress is a property
+  of how well it can reach infrastructure it does not.** A sovereign chain can
+  guarantee the first and merely hope for the second.
 
   `scripts/check-relayer.js` prints both endpoints and flags the public one.
 
