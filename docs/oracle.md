@@ -88,12 +88,56 @@ accountable. A second listed asset at a genuinely different price is what would 
 the lending market a real one, and would let liquidation be demonstrated by moving a
 price rather than by tightening the liquidation threshold.
 
-**No market-derived comparison yet.** The deployed Uniswap pair already stores
-`price0CumulativeLast` / `price1CumulativeLast`, so a TWAP oracle needs no new
-infrastructure. Running both — an administered rate and a market-derived one, over
-the same asset, on the same chain — and reporting the divergence is the sovereign
-monetary question in miniature, and nobody has published it. That is the obvious next
-piece of work.
+---
+
+# The market rate, beside it
+
+`contracts/oracle/UniswapV2TwapOracle.sol` reads the time-weighted price straight
+out of a Uniswap V2 pair. No publisher, no off-chain infrastructure, no new trust:
+V2 pairs already accumulate `price0CumulativeLast`, and the pool it reads was
+deployed by `scripts/defi-experiment.js` for an unrelated experiment.
+
+It implements the same `getAssetPrice` interface, so the two oracles are directly
+swappable and directly comparable.
+
+**The comparison is the point.** One reports what an authority says the rate is; the
+other reports what the chain's own market did. Neither substitutes for the other,
+and the gap between them is the sovereign monetary question in miniature — readable
+off the ledger rather than surveyed. `test/oracle-twap.test.js` demonstrates it: a
+pool trading at 4,000 against a published rate of 4,200 gives a divergence of 500
+basis points, computed on chain.
+
+### Do not price a lending market with this one
+
+A TWAP costs as much to manipulate as the liquidity behind it, and the CSB pool is
+small. A longer window raises the attack cost and makes the price staler; neither
+end of that trade is safe here. **This is a measurement instrument on this chain, not
+a valuation source.** The administered oracle is the one to wire into Aave; this one
+is for observing what the market says while it does.
+
+### Two implementation notes worth keeping
+
+**It is not Uniswap's oracle library.** The `UniswapV2OracleLibrary` in v2-periphery
+is written for Solidity <0.8 and its correctness *depends* on arithmetic wrapping —
+its own comments say "subtraction overflow is desired". Under 0.8 those operations
+revert instead of wrapping, so compiling it unchanged would give a contract that
+reverts exactly when the accumulator or the uint32 clock wraps: rarely, and years
+after deployment. The arithmetic is reimplemented with `unchecked` at the three
+places where wrapping is intended and nowhere else.
+
+**Precision is bounded at one raw base unit.** UQ112x112 truncates, so a quote can
+sit up to one raw unit of the base token below the exact ratio — with KHRt's two
+decimals, 0.01 riel. A pool holding exactly 4,000 KHRt per counterpart quotes
+3,999.99. This is inherent to the representation, Uniswap's own oracle has it too,
+and it is always a floor rather than an overstatement. The tests assert the bound and
+assert the direction, because asserting exact equality would be asserting something
+the fixed-point representation cannot deliver.
+
+### Still missing
+
+**A live comparison.** Both oracles are local results. Deploying them against the
+existing 8555 pool and recording the divergence over time is the measurement worth
+publishing.
 
 **Importing a real external price re-creates the dependency the design contains.**
 A Chainlink feed could be relayed from Fuji over the existing ICM path. It would give
