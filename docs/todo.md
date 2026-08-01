@@ -99,18 +99,59 @@ perimeter has no say whatsoever — not a leak outward but an unpoliced inflow. 
 asymmetry already noted for prices in `docs/oracle.md` ("the egress gateway governs
 value leaving, while nothing governs prices arriving"), now for value itself.
 
-Three options, and they are genuinely different designs:
+**The answer is to mint a compliant token, not to police an ungated one.** The
+premise behind "accept it" or "wrap it" was that the arriving token is fixed. It is
+not: CSB *owns* the contract that mints it. `ERC20TokenRemote` is deployed on the
+destination chain — this chain — and nothing requires it to be the stock one.
 
-- **Accept it and document it.** Cheapest, and honest: a sovereign chain that admits
-  foreign money admits foreign money's properties. Say so rather than implying the
-  perimeter covers everything.
-- **Wrap it.** A `CompliantWrapper` holding the raw remote token and issuing a gated
-  claim, with the raw token only ever held by the wrapper. Same shape as
-  `CompliantKHRtVault` and testable as the same controlled comparison. Costs
-  composability with anything expecting the standard token.
-- **Gate at the door.** An `IngressGateway` that only releases to attested addresses.
-  Strongest, and the most work: it needs a custom `TokenRemote` or a receiver hook,
-  because plain ICTT delivers straight to the recipient.
+Verified against `ava-labs/icm-contracts` rather than assumed:
+
+- `ERC20TokenRemoteUpgradeable` extends OpenZeppelin 5.x `ERC20Upgradeable` and
+  `TokenRemote`, and its `_withdraw(recipient, amount)` is `internal virtual` — it
+  simply calls `_mint`.
+- Because the mint goes through `_mint`, it goes through **`_update`**. So the whole
+  fix is the same one hook that gated the ERC-4626 share:
+
+```solidity
+contract CompliantERC20TokenRemote is ERC20TokenRemote {
+    function _update(address from, address to, uint256 value) internal override {
+        super._update(from, to, value);
+        if (from != address(0)) _requireEligible(from);   // covers ordinary transfers
+        if (to   != address(0)) _requireEligible(to);     // covers the bridge mint
+    }
+}
+```
+
+Bind it to the **same** `IdentityRegistry` and `EnforcementRegistry` as KHRt and the
+bridged asset is inside the existing perimeter, not beside it — one rule, both
+currencies, and freeze/confiscate reach it too. This generalises: any asset entering
+over ICTT can be made to follow CSB's rules, because CSB controls the remote.
+
+**What it costs, all of it real:**
+
+- **A vendored dependency tree.** `icm-contracts` is a Foundry project with no npm
+  package (checked: `@avalabs/icm-contracts` and three plausible variants are not
+  published). It uses foundry remappings (`@utilities/…`,
+  `@openzeppelin/contracts@5.0.2/…`) that Hardhat does not read, and pins
+  **solc 0.8.25** against this repo's 0.8.24/paris. That is the tree
+  `contracts/egress/interfaces/IERC20TokenTransferrer.sol` was deliberately written
+  to avoid. Mostly plumbing rather than logic — the contract above is ~40 lines.
+- **A deploy path outside the CLI.** `avalanche interchain tokenTransferrer deploy`
+  deploys the stock remote. Deploy this one directly, then `registerWithHome()` —
+  permissionless, and `scripts/register-remote.js` already does it.
+- **A revert lands on the other chain.** An unattested recipient makes the ICM
+  delivery revert. That failure mode is already characterised here for the KHRt
+  return path (`docs/fuji-ictt.md` §7): the burn succeeds on Fuji, the delivery
+  reverts on CSB, and the value is **recoverable** — collateral stays in the Home and
+  the message re-delivers once the recipient is verified. Not loss, but the failure
+  surfaces a chain away from the transaction that caused it, so the sending script
+  must pre-check the recipient exactly as `bridge-back.js` does.
+
+**What it does NOT fix, and this is the part to state plainly.** A compliant bridged
+dollar still leaks *claims* through Uniswap, Aave, ERC-4626 and staking precisely as
+KHRt does — the perimeter governs custody, composability governs exposure. Gating the
+remote closes the ingress hole; it does not touch the finding this whole project is
+about. It does, usefully, give that finding a second asset to be demonstrated on.
 
 ### 3a. No second asset, so no real price and no real collateral
 
