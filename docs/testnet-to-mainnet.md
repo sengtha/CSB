@@ -37,6 +37,95 @@ The path is **local devnet → Fuji testnet → Avalanche mainnet**. This guide 
 
 8. **Legal.** The governing legal mandate (hypothetical: e.g. a decree establishing the council) in force; KHRt issuance still gated on the issuer mandate — mainnet can launch with the stablecoin dormant (contracts deployed, ISSUER_ROLE with the council, zero supply) until the mandate exists.
 
+## The bridge: what mainnet actually requires
+
+Ingress failed on the testnet deployment, and the reason is worth planning around
+rather than rediscovering. Both directions are governed by one protocol rule.
+
+### The rule
+
+An ICM message is signed by the **source** chain's validator set, using BLS, and the
+**destination** chain's Warp precompile verifies the aggregate against a stake quorum.
+From `subnet-evm/precompile/contracts/warp/config.go`:
+
+```go
+WarpDefaultQuorumNumerator uint64 = 67
+WarpQuorumNumeratorMinimum uint64 = 33
+WarpQuorumDenominator      uint64 = 100
+```
+
+So delivering a message **from** chain X requires collecting signatures from validators
+holding **≥67% of X's stake** (by default), and the relayer collects them by opening
+P2P connections to those validators and asking each one directly. There is no
+intermediary and no cache to fall back on: **if the relayer cannot reach the
+validators, the message cannot be delivered.**
+
+### What that means in each direction
+
+| | Signed by | Reached how | Fragility |
+|---|---|---|---|
+| CSB → C-Chain (egress) | CSB's own validators | inside the state's network | our operational problem |
+| C-Chain → CSB (ingress) | Avalanche's validators | across the public internet | **not our infrastructure** |
+
+Measured on 2026-08-01 (`docs/fuji-ictt.md`): CSB's side reached quorum on the first
+attempt with one validator of weight 100. The Fuji side reached 8e9 of 3.64e16 — three
+validators out of ~85 — and never came close. Mainnet's Primary Network is far larger
+still.
+
+### Requirement 1 — CSB must have enough validators, and they must be reachable
+
+With **one** validator, 67% of CSB's stake *is* that one node. Every KHRt egress then
+depends on a single machine being up and reachable by the relayer. That is a
+single point of failure for the entire outward bridge, separate from block production.
+
+The ≥5-validator target in the pre-flight checklist covers this, with one addition:
+the relayer must be able to reach **≥67% of validator stake at all times**, so
+validator P2P endpoints must be stable and reachable from wherever the relayer runs.
+Losing two of five nodes stops blocks *and* stops the bridge.
+
+### Requirement 2 — the relayer host must be a real network participant
+
+This is what the testnet deployment lacked. The relayer runs its own P2P stack; it is
+not enough for the *chain* to be healthy. The host needs:
+
+- a **public static IP**, with `--public-ip` set correctly (or 1:1 NAT configured)
+- **inbound TCP on the staking port open** — peering is largely inbound, and a host
+  nothing can dial reaches only the few peers it dials itself
+- unrestricted **outbound** TCP to arbitrary peers on that port
+- `ulimit -n` raised (≥32768) — peering with a large validator set needs the sockets
+- a **fully bootstrapped local AvalancheGo** (P, X and C), so `p-chain-api` and
+  `info-api` point at localhost rather than a rate-limited public endpoint
+
+An avalanche-cli *local cluster* satisfies none of this by design: it binds to
+localhost, which is correct for development and fatal for relaying.
+
+### Requirement 3 — decide the inbound quorum deliberately
+
+`quorumNumerator` is CSB's own genesis parameter, settable from **33 to 100**. It
+governs how much of the *foreign* chain's stake must sign a message CSB will accept.
+
+- **67 (default)** — the standard assurance, and the hardest to reach.
+- **33 (minimum)** — halves the stake a relayer must contact, and halves the cost of
+  forging an inbound message.
+
+This is a genuine sovereignty decision rather than a tuning knob: it sets how much of
+someone else's validator set CSB trusts before admitting foreign value. Decide it, and
+write down why. It is fixed at genesis for practical purposes.
+
+### Requirement 4 — run more than one relayer
+
+Relayers are stateless with respect to each other and duplicate deliveries are
+rejected harmlessly, so ≥2 on separate hosts removes the single point of failure. A
+bridge with one relayer is a bridge with an operator-shaped outage waiting in it.
+
+### What this costs, honestly
+
+Egress depends only on infrastructure the state runs. **Ingress depends on reaching
+validators the state does not operate and cannot compel**, over the public internet.
+No configuration removes that dependency; it can only be met with a properly
+networked host, or accepted as a limit. A sovereign chain governs what leaves and
+depends on the outside world for what arrives.
+
 ## Migration steps
 
 ### 1. Create the mainnet L1
