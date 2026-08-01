@@ -10,6 +10,8 @@ const path = require("path");
  *   node scripts/bridge-in.js 25 0xRecipientOnCSB
  *
  * Environment, all with defaults:
+ *   CSB_TOKEN_HOME        the Home on Fuji — only if not yet recorded; then remembered
+ *   CSB_HOME_TOKEN        the token it wraps                     (default Fuji USDC)
  *   CSB_HOME_KEY_NAME     avalanche-cli key that holds the USDC   (default "fuji-home")
  *   CSB_BRIDGED_KEY       which deployments.json entry to use          (default "usdc")
  *   CSB_REQUIRED_GAS      gas the delivery may use on CSB            (default 350000)
@@ -45,6 +47,7 @@ const DEFAULT_ARTIFACT = path.join(
 const CSB_HEX = process.env.CSB_BLOCKCHAIN_ID_HEX
   ?? "0x9633e7227257f4de7dcd8e595bfafdd8cf6f88918926dd1d4e2ddfff46978a61";
 
+const DEFAULT_FUJI_USDC = "0x5425890298aed601595a70AB815c96711a31Bc65";
 const TX_ALLOWLIST = "0x0200000000000000000000000000000000000002";
 const ERC20_ABI = [
   "function symbol() view returns (string)",
@@ -87,12 +90,37 @@ async function main() {
       + `CSB_DEPLOYMENTS_FILE if yours is elsewhere.`);
   }
   const key = process.env.CSB_BRIDGED_KEY ?? "usdc";
-  const homeRec = d.bridgeHomes?.[key];
   const remoteRec = d.bridged?.[key];
-  if (!homeRec?.address) throw new Error(`No bridgeHomes.${key} in deployments.json — `
-    + `run scripts/deploy-token-home.js, or add the address by hand.`);
   if (!remoteRec?.address) throw new Error(`No bridged.${key} in deployments.json — `
     + `run scripts/usdc-ingress.js first.`);
+
+  // A Home deployed before this record existed will not be in the file. Accept it
+  // from the environment and WRITE IT BACK, so the gap closes itself rather than
+  // needing the same two variables on every future run.
+  let homeRec = d.bridgeHomes?.[key];
+  const envHome = process.env.CSB_TOKEN_HOME;
+  const envToken = process.env.CSB_HOME_TOKEN;
+  if (envHome || !homeRec?.address) {
+    const address = envHome ?? homeRec?.address;
+    const tokenAddr = envToken ?? homeRec?.token ?? DEFAULT_FUJI_USDC;
+    if (!address || !ethers.isAddress(address)) {
+      throw new Error(`No Home address. It is not recorded in deployments.json — a Home `
+        + `deployed before that record existed will not be — so supply it once:\n`
+        + `    CSB_TOKEN_HOME=0xYourHomeOnFuji node scripts/bridge-in.js ${amountArg}\n`
+        + `  It will be written to deployments.json and not needed again.`);
+    }
+    if (!ethers.isAddress(tokenAddr)) {
+      throw new Error(`CSB_HOME_TOKEN is not an address: ${tokenAddr}`);
+    }
+    homeRec = { ...(homeRec ?? {}), address, token: tokenAddr };
+    d.bridgeHomes = { ...(d.bridgeHomes ?? {}), [key]: homeRec };
+    try {
+      fs.writeFileSync(file, JSON.stringify(d, null, 2));
+      console.log(`Recorded bridgeHomes.${key} = ${address} in ${path.basename(file)}\n`);
+    } catch (e) {
+      console.log(`Could not record the Home (${e.message}) — pass CSB_TOKEN_HOME again next time.\n`);
+    }
+  }
 
   const fuji = new ethers.JsonRpcProvider(FUJI);
   const wallet = new ethers.Wallet(loadKey(process.env.CSB_HOME_KEY_NAME ?? "fuji-home"), fuji);
