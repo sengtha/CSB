@@ -121,9 +121,11 @@ async function main() {
     console.log(`  collateralized ${collateralized}`);
     if (registered === false) {
       console.log(`\n  NOT REGISTERED with its home. Tokens cannot be bridged until`);
-      console.log(`  registerWithHome() has been called and the message delivered:`);
-      console.log(`    CSB_TOKEN_REMOTE=${addr} node scripts/register-remote.js`);
-      console.log(`  (that runs against the HOME chain — read it before running it here)`);
+      console.log(`  registerWithHome() has been called and the message delivered.`);
+      console.log(`  Registration runs on the chain the REMOTE is on — CSB, here:`);
+      console.log(`    CSB_REGISTER_ON=csb node scripts/register-remote.js ${addr}`);
+      console.log(`  It sends an ICM message to the home on Fuji; the relayer carries it,`);
+      console.log(`  so this flips to true a minute or two after the call, not instantly.`);
     }
   }
 
@@ -165,8 +167,16 @@ async function main() {
   };
   fs.writeFileSync(file, JSON.stringify(d, null, 2));
   console.log(`\nRecorded as bridged.${key} in ${path.basename(file)}.`);
-  console.log(`\nNext: build a market against it —`);
-  console.log(`  npx hardhat run scripts/usdc-market.js --network csbRemote`);
+  // Order matters and the wrong order wastes a run: usdc-market.js seeds a pool from
+  // the deployer's balance, and until registration completes and tokens are bridged
+  // that balance is zero.
+  if (registered === false) {
+    console.log(`\nNext: REGISTER IT (above). Building a market first would find no`);
+    console.log(`balance to seed the pool with, because nothing can arrive yet.`);
+  } else {
+    console.log(`\nNext: bridge some tokens across, then build a market —`);
+    console.log(`  CSB_SEED_USD=20 npx hardhat run scripts/usdc-market.js --network csbRemote`);
+  }
 }
 
 main().catch((e) => { console.error("\n" + (e.shortMessage ?? e.message ?? e)); process.exitCode = 1; });
