@@ -171,13 +171,44 @@ async function main() {
       + `latest (${version}). The constructor rejects that.`);
   }
 
-  const args = [registry, wallet.address, minVersion, token, decimals];
-  console.log(`Constructor args`);
-  console.log(`  teleporterRegistryAddress  ${args[0]}`);
-  console.log(`  teleporterManager          ${args[1]}   (you — can pause/upgrade config)`);
-  console.log(`  minTeleporterVersion       ${args[2]}`);
-  console.log(`  tokenAddress               ${args[3]}`);
-  console.log(`  tokenDecimals              ${args[4]}\n`);
+  // Build the argument list FROM THE ARTIFACT, not from a signature read elsewhere.
+  // avalanche-cli pins its own icm-contracts checkout, and this constructor has
+  // changed shape across versions — older ERC20TokenHome took four parameters and
+  // read the token's decimals itself, newer takes five. Hardcoding either produces
+  // ethers' "invalid overrides parameter", which describes the symptom (a trailing
+  // argument that is not an options object) and not the cause.
+  const KNOWN = {
+    teleporterRegistryAddress: registry,
+    teleporterManager: wallet.address,
+    minTeleporterVersion: minVersion,
+    tokenAddress: token,
+    tokenDecimals: decimals,
+    // seen in some variants
+    feeTokenAddress: token,
+    token: token,
+  };
+  const ctor = abi.find((x) => x.type === "constructor");
+  if (!ctor) throw new Error("The artifact's ABI has no constructor entry.");
+
+  const unknown = ctor.inputs.filter((i) => !(i.name in KNOWN));
+  if (unknown.length) {
+    throw new Error(`This artifact's constructor takes parameters this script does not `
+      + `know how to fill: ${unknown.map((i) => `${i.type} ${i.name}`).join(", ")}\n`
+      + `  Full signature: (${ctor.inputs.map((i) => `${i.type} ${i.name}`).join(", ")})\n`
+      + `  The contract version changed. Add the values rather than guessing an order.`);
+  }
+  const args = ctor.inputs.map((i) => KNOWN[i.name]);
+
+  console.log(`Constructor (${ctor.inputs.length} args, read from the artifact)`);
+  for (const i of ctor.inputs) {
+    const extra = i.name === "teleporterManager" ? "   (you — can pause/upgrade config)" : "";
+    console.log(`  ${i.name.padEnd(26)} ${KNOWN[i.name]}${extra}`);
+  }
+  if (!ctor.inputs.some((i) => i.name === "tokenDecimals")) {
+    console.log(`\n  NOTE: this version takes no tokenDecimals — it reads ${decimals} from`);
+    console.log(`  the token itself. The remote must be given the same value.`);
+  }
+  console.log("");
 
   const factory = new ethers.ContractFactory(abi, bytecode, wallet);
   const tx = await factory.getDeployTransaction(...args);
