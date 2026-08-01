@@ -115,6 +115,31 @@ end of that trade is safe here. **This is a measurement instrument on this chain
 a valuation source.** The administered oracle is the one to wire into Aave; this one
 is for observing what the market says while it does.
 
+### Deploying and feeding it
+
+```bash
+source ops/csb-env.sh
+npx hardhat run scripts/experiments-live.js --network csbRemote   # deploys it against defi.pair
+npx hardhat run scripts/twap-update.js --network csbRemote        # then, periodically
+```
+
+**A TWAP is not a feed, and this is the part that catches people.** The pair
+accumulates the time-weighted price by itself, but somebody has to read that
+accumulator and divide, or there is no average to quote. `update()` is
+permissionless — anyone may call it, which is what makes the price trustless — but
+"anyone can" is not "someone does". On this chain that someone is a cron entry or a
+person running `twap-update.js`.
+
+If nobody does, reads revert with `AverageStale` once the last update is older than
+`maxAge` (a week, as deployed). That is the oracle failing closed, and it is
+deliberate: a stale market price is worse than none, because it still looks like an
+answer. Running the script too often is harmless — a call inside `minWindow` reverts
+with `WindowTooShort`, which the script detects and reports as a no-op rather than an
+error, so it can sit in a cron entry without generating noise.
+
+`experiments-live.js` deliberately does **not** point Aave at this oracle, for the
+reason immediately above.
+
 ### Two implementation notes worth keeping
 
 **It is not Uniswap's oracle library.** The `UniswapV2OracleLibrary` in v2-periphery
@@ -135,9 +160,11 @@ the fixed-point representation cannot deliver.
 
 ### Still missing
 
-**A live comparison.** Both oracles are local results. Deploying them against the
-existing 8555 pool and recording the divergence over time is the measurement worth
-publishing.
+**A live comparison.** Both findings above are local results. The deployment scripts
+exist — `oracle-deploy.js` for the administered rate, `experiments-live.js` for the
+TWAP — but the measurement that is actually worth publishing is the *divergence over
+time* between the two on 8555, and that needs the TWAP fed on a schedule for long
+enough to have a series. Nothing here reports that yet.
 
 **Importing a real external price re-creates the dependency the design contains.**
 A Chainlink feed could be relayed from Fuji over the existing ICM path. It would give

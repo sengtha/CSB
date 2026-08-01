@@ -484,9 +484,21 @@ npx hardhat run scripts/aave-diagnose.js --network csbRemote
 
 This document is the write-up. Everything in it is reproducible from:
 
-- Tests: `test/defi-unmodified.test.js`, `test/defi-aave.test.js`
-- Live scripts: `scripts/defi-experiment.js`, `scripts/aave-live.js`
+- Tests: `test/defi-unmodified.test.js`, `test/defi-aave.test.js`,
+  `test/defi-vault.test.js`, `test/defi-vault-compliant.test.js`,
+  `test/defi-staking.test.js`
+- Live scripts: `scripts/defi-experiment.js` (Uniswap), `scripts/aave-live.js`
+  (Aave), `scripts/experiments-live.js` (both ERC-4626 vaults, the TWAP oracle,
+  and the two staking pools)
 - Shared Aave deployment helper: `scripts/lib/aave.js`
+
+`experiments-live.js` is idempotent per module — each block is skipped if
+`deployments.json` already records it with code at that address, so a re-run after a
+partial failure resumes rather than duplicating. `CSB_SKIP=staking,twap` skips
+modules deliberately. It grants three contracts KHRt system-contract status (both
+vaults and the KHRt-reward staking pool), which is a real privilege on a live chain,
+and prints the `setSystemContract(..., false)` revoke command for each one at the
+end.
 
 The tests are the authority for the findings — each one is written to fail if the
 behaviour it describes stops being true.
