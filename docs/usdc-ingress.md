@@ -233,20 +233,28 @@ later.
 
 ## Step 3 — Send some dollars across
 
-From Fuji, using the Home contract, exactly as `scripts/bridge-back.js` does in the
-other direction. **Pre-check the recipient**: the delivery mints on CSB, so a
-recipient that cannot transact will hold tokens it can never move.
-
-Confirm arrival on CSB:
-
 ```bash
-node -e '
-const {ethers}=require("ethers");const d=require("./app/deployments.json");
-(async()=>{const p=new ethers.JsonRpcProvider(process.env.CSB_RPC_URL);
-const t=new ethers.Contract(d.bridged.usdc.address,
-  ["function balanceOf(address) view returns (uint256)"],p);
-console.log(await t.balanceOf("<recipient>"));})()'
+source ops/csb-env.sh
+node scripts/bridge-in.js 25                      # to the council address
+node scripts/bridge-in.js 25 0xRecipientOnCSB     # or somewhere specific
 ```
+
+`CSB_DRY_RUN=1` runs every check and sends nothing.
+
+**The check this script exists for.** There is no compliance gate on this path to
+refuse a bad delivery, and no `forcedTransfer` to undo one, because the arriving
+token is a contract we did not write — so a mis-sent transfer is permanent in a way
+the same mistake with KHRt is not. The script refuses outright if the recipient is
+not on CSB's `txAllowList`, because such an address can **receive** the token and then
+do nothing with it at all: no spend, no bridge-out, no delegation, since each needs a
+transaction it cannot submit. It also refuses if the remote is not yet registered, and
+checks the destination before the sender's balance — being short is recoverable, and
+the destination being wrong is not.
+
+**A successful transaction here is not proof of arrival.** `send()` locks the tokens
+in the Home on Fuji and emits an ICM message; they appear on CSB only when the relayer
+delivers it. The script prints the balance check to run a minute later, and says to
+look at `avalanche interchain relayer logs` if the balance stays zero.
 
 ## Step 4 — Build the market
 
