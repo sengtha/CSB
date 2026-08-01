@@ -1,3 +1,4 @@
+const { ethers } = require("ethers");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -40,7 +41,7 @@ const SECRETISH = /^(0x)?[0-9a-fA-F]{64}$/;
 const label = (id) => `${KNOWN[id] ?? "unknown chain"}  ${String(id).slice(0, 20)}…`;
 const safe = (v) => (typeof v === "string" && SECRETISH.test(v) ? "<redacted>" : v);
 
-function main() {
+async function main() {
   const file = process.env.CSB_RELAYER_CONFIG ?? DEFAULT_CONFIG;
   if (!fs.existsSync(file)) {
     throw new Error(`No relayer config at ${file}\n`
@@ -123,15 +124,65 @@ function main() {
         + `   max-priority-fee-per-gas: ${prio ?? "(unset)"}`);
     }
     if (isCSB) {
+      // ZERO MEANS UNSET, NOT "CAP AT ZERO". An earlier version of this check warned
+      // on 0 and was wrong: the generated config uses 0 for BOTH destinations, and
+      // deliveries to Fuji demonstrably work, which they could not if 0 were a hard
+      // cap. Only a non-zero cap below the floor is a real problem.
       const floor = BigInt(process.env.CSB_MIN_BASE_FEE_WEI ?? 47_619_047_619_047n);
-      if (maxBase !== undefined && BigInt(maxBase) < floor) {
+      if (maxBase !== undefined && BigInt(maxBase) > 0n && BigInt(maxBase) < floor) {
         warnings.push(`CSB's max-base-fee is ${maxBase}, BELOW the chain's ~47,619 gwei `
-          + `floor (${floor}). Deliveries INTO CSB will be accepted and never mined. `
-          + `This does not affect CSB -> Fuji, so registration can succeed while `
-          + `transfers never arrive.`);
-      } else if (maxBase === undefined) {
-        console.log(`    (no max-base-fee set for CSB — the relayer will use its own`);
-        console.log(`     estimate, which must land above ~47,619 gwei)`);
+          + `floor (${floor}). Deliveries INTO CSB would be accepted and never mined, `
+          + `while CSB -> Fuji kept working.`);
+      } else {
+        console.log(`    (max-base-fee ${maxBase === undefined || BigInt(maxBase) === 0n
+          ? "unset — the relayer uses its own estimate, which must clear ~47,619 gwei"
+          : "above the floor"})`);
+      }
+    }
+  }
+
+  // --- can the relayer actually transact on CSB? ---------------------------
+  // The decisive question for deliveries INTO CSB, and invisible in the config
+  // alone. The relayer submits transactions on the destination chain, so it needs
+  // BOTH an allow-list entry and tRIEL for gas. Neither is needed for the other
+  // direction, which is why CSB -> Fuji can work while Fuji -> CSB never has.
+  //
+  // The address is derived from the configured key. The key itself is never printed.
+  const csbRpc = process.env.CSB_RPC_URL;
+  const csbDest = dests.find((x) => (KNOWN[x["blockchain-id"]] ?? "") === "CSB");
+  if (csbDest?.["account-private-key"]) {
+    let addr = null;
+    try {
+      const k = csbDest["account-private-key"];
+      addr = new ethers.Wallet(k.startsWith("0x") ? k : "0x" + k).address;
+    } catch { /* unparseable key */ }
+    console.log(`\nRELAYER ON CSB`);
+    if (!addr) {
+      console.log(`  could not derive the signing address from the configured key`);
+    } else if (!csbRpc) {
+      console.log(`  signing address ${addr}`);
+      console.log(`  set CSB_RPC_URL (source ops/csb-env.sh) to check its gas and access`);
+    } else {
+      const p = new ethers.JsonRpcProvider(csbRpc);
+      const [bal, role] = await Promise.all([
+        p.getBalance(addr).catch(() => null),
+        new ethers.Contract("0x0200000000000000000000000000000000000002",
+          ["function readAllowList(address) view returns (uint256)"], p)
+          .readAllowList(addr).then(Number).catch(() => null),
+      ]);
+      const NAMES = { 0: "none — CANNOT TRANSACT", 1: "enabled", 2: "admin", 3: "manager" };
+      console.log(`  signing address ${addr}`);
+      console.log(`  tRIEL balance   ${bal === null ? "unreadable" : ethers.formatEther(bal)}`);
+      console.log(`  txAllowList     ${role === null ? "unreadable" : (NAMES[role] ?? role)}`);
+      if (role === 0) {
+        warnings.push(`The relayer cannot transact on CSB — it holds no txAllowList `
+          + `entry. Deliveries INTO CSB are impossible; CSB -> Fuji is unaffected. Fix:`
+          + `\n    CSB_DEV_ADDR=${addr} CSB_DEV_GAS=2000 CSB_DEV_DEPLOYER=0 \\`
+          + `\n      npx hardhat run scripts/allow-dev.js --network csbRemote`);
+      }
+      if (bal !== null && bal === 0n) {
+        warnings.push(`The relayer holds NO tRIEL on CSB, so it cannot pay for `
+          + `deliveries into CSB even if allow-listed. Same command as above funds it.`);
       }
     }
   }
@@ -172,4 +223,4 @@ function main() {
   }
 }
 
-try { main(); } catch (e) { console.error("\n" + (e.message ?? e)); process.exitCode = 1; }
+main().catch((e) => { console.error("\n" + (e.message ?? e)); process.exitCode = 1; });
