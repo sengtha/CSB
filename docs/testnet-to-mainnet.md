@@ -62,19 +62,32 @@ validators, the message cannot be delivered.**
 
 ### What that means in each direction
 
-| | Signed by | Reached how | Fragility |
+**The relayer does all the asking, in both directions.** Neither chain sends anything
+to the other; neither knows the other exists. Validators sign when asked, and the
+relayer is what asks — so its reachability is the operative constraint every time.
+
+| | Who **signs** | Who **asks** | Who **verifies** |
 |---|---|---|---|
-| CSB → C-Chain (egress) | CSB's own validators | inside the state's network | our operational problem |
-| C-Chain → CSB (ingress) | Avalanche's validators | across the public internet | **not our infrastructure** |
+| CSB → C-Chain (egress) | CSB's validators | our relayer | the C-Chain |
+| C-Chain → CSB (ingress) | Avalanche's validators | our relayer | CSB |
+
+Read the consequence carefully, because it is easy to get backwards:
+
+- **CSB's validator set affects EGRESS ONLY.** It is what signs outbound messages.
+  For inbound messages CSB's validators sign nothing — they only verify a signature
+  that already exists. Adding CSB validators does not help ingress at all.
+- **Ingress depends on one thing on our side: whether the relayer can reach
+  Avalanche's validators.** Not our validator count, not our stake, not AVAX.
 
 Measured on 2026-08-01 (`docs/fuji-ictt.md`): CSB's side reached quorum on the first
 attempt with one validator of weight 100. The Fuji side reached 8e9 of 3.64e16 — three
 validators out of ~85 — and never came close. Mainnet's Primary Network is far larger
 still.
 
-### Requirement 1 — CSB must have enough validators, and they must be reachable
+### Requirement 1 (EGRESS ONLY) — enough CSB validators, and reachable
 
-With **one** validator, 67% of CSB's stake *is* that one node. Every KHRt egress then
+This requirement has no bearing on ingress. It is about what signs messages *leaving*
+CSB. With **one** validator, 67% of CSB's stake *is* that one node. Every KHRt egress then
 depends on a single machine being up and reachable by the relayer. That is a
 single point of failure for the entire outward bridge, separate from block production.
 
@@ -83,7 +96,7 @@ the relayer must be able to reach **≥67% of validator stake at all times**, so
 validator P2P endpoints must be stable and reachable from wherever the relayer runs.
 Losing two of five nodes stops blocks *and* stops the bridge.
 
-### Requirement 2 — the relayer host must be a real network participant
+### Requirement 2 (BOTH DIRECTIONS, and the only thing ingress depends on) — the relayer host must be a real network participant
 
 This is what the testnet deployment lacked. The relayer runs its own P2P stack; it is
 not enough for the *chain* to be healthy. The host needs:
