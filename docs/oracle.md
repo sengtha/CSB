@@ -137,6 +137,19 @@ answer. Running the script too often is harmless — a call inside `minWindow` r
 with `WindowTooShort`, which the script detects and reports as a no-op rather than an
 error, so it can sit in a cron entry without generating noise.
 
+Once a day is ample against a one-week `maxAge`, and it builds the series that makes
+the divergence measurable:
+
+```cron
+SHELL=/bin/bash
+17 3 * * * cd /opt/csb && . ops/csb-env.sh && CSB_QUIET=1 npx hardhat run scripts/twap-update.js --network csbRemote >> /var/log/csb-twap.log 2>&1
+```
+
+The `SHELL=/bin/bash` line is not optional. Cron runs `/bin/sh`, which on Debian is
+dash, and `ops/csb-env.sh` needs bash — it derives the repo root from
+`${BASH_SOURCE[0]}`. Without it the entry fails silently every night. `CSB_QUIET=1`
+prints one line per run, so the log stays readable over months.
+
 `experiments-live.js` deliberately does **not** point Aave at this oracle, for the
 reason immediately above.
 

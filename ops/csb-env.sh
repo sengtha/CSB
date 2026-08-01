@@ -12,6 +12,19 @@
 # anywhere it gets pasted — a chat window, a shell history, a log, a commit —
 # is somewhere it has to be rotated from.
 
+# Refuse to run under a shell that cannot parse the rest of this file. This guard
+# is deliberately POSIX-only and deliberately FIRST: everything below uses
+# ${BASH_SOURCE[0]} and ${var,,}, and dash reports both as "Bad substitution" —
+# a message that names neither the cause nor the fix. Cron is the usual way to
+# arrive here, because it runs /bin/sh by default and on Debian that is dash.
+if [ -z "${BASH_VERSION:-}" ]; then
+  echo "csb-env: this needs bash — the shell running it does not have it." >&2
+  echo "csb-env: from cron, either put SHELL=/bin/bash at the top of the crontab," >&2
+  echo "csb-env: or wrap the command:" >&2
+  echo "csb-env:     bash -c '. /opt/csb/ops/csb-env.sh && <your command>'" >&2
+  return 1 2>/dev/null || exit 1
+fi
+
 # Refuse to run as a script: exports would vanish with the subshell and the
 # caller would be left wondering why nothing was set.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
