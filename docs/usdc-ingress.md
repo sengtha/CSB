@@ -51,19 +51,27 @@ exist on a token we did not write, so a typo is permanent.
 ## Before you start
 
 **Verify the USDC address rather than trusting any document, including this one.**
-Circle's testnet deployments move, and bridging against the wrong contract produces a
-market priced in something that is not a dollar:
 
 ```bash
-node -e '
-const {ethers}=require("ethers");
-const p=new ethers.JsonRpcProvider("https://api.avax-test.network/ext/bc/C/rpc");
-const c=new ethers.Contract("0x5425890298aed601595a70AB815c96711a31Bc65",
-  ["function symbol() view returns (string)","function decimals() view returns (uint8)"],p);
-(async()=>console.log(await c.symbol(), await c.decimals()))()'
+node scripts/check-fuji-usdc.js
 ```
 
-Expect `USDC 6`. Anything else — stop and find the current address.
+It defaults to `0x5425890298aed601595a70AB815c96711a31Bc65` — Circle's testnet USDC on
+Fuji, as commonly published — and checks it: code present, `symbol`, `decimals`,
+non-zero supply, and whether it proxies to an implementation that actually exists.
+Read-only, no key, no CSB configuration. Override with `CSB_FUJI_USDC`.
+
+Expect `USDC`, `6` decimals. Anything else, stop.
+
+This is worth a script rather than a glance because **the Home wraps whatever address
+it is given**, and it wraps a wrong one just as happily. The result is a market that
+runs perfectly while being denominated in something that is not a dollar — an error
+with no symptom, found much later by someone reconciling a number that never made
+sense. Circle's testnet deployments also move over time.
+
+The script proves the contract answers correctly. It cannot prove Circle issued it, so
+cross-check in a public explorer as well —
+`https://testnet.snowtrace.io/token/<address>`.
 
 You also need, on the Fuji side: **Fuji AVAX** for gas, and **USDC** to actually
 bridge (Circle runs a faucet). On the CSB side, the same three allow-list grants
