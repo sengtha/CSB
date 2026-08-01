@@ -379,21 +379,35 @@ than assuming, since guessing wrong sends 100× or 1/100th of the intended amoun
   "info-api":    { "base-url": "http://127.0.0.1:9650" }
   ```
 
-  **That was not sufficient here, and the reason is worth understanding rather than
-  working around.** `platform.getHeight` against the local node returns instantly
-  while the validator-set query still times out, and the subnet named in the error
-  narrows to `11111111111111111111111111111111LpoYY` — the Primary Network. Fuji's
-  Primary Network has thousands of validators, so building that set at the proposed
-  height is an expensive call, and aggregating signatures then requires P2P
-  connections to enough of that stake.
+  **Repointing it was not sufficient here, and the first explanation was wrong.**
+  It is tempting to blame the size of the validator set, and measurement says
+  otherwise: `platform.getCurrentValidators` against the local node returns **85
+  validators in 6 ms**. Fuji's Primary Network is small and the query is instant, so
+  neither the set nor the node is the bottleneck.
 
-  **This is an asymmetry the architecture cannot remove.** Outbound messages are
-  signed by CSB's own validators — a handful, local, under this chain's control.
-  Inbound messages are signed by the *foreign* chain's validator set, and on a public
-  network that is large, remote, and entirely outside the sovereign perimeter. Egress
-  costs what this chain decides it costs; ingress costs whatever the other chain's
-  validator set costs to talk to. A sovereign chain can govern what leaves. It cannot
-  make what arrives cheap.
+  What the same machine reports is **4 peers**. That is the number to look at. The
+  relayer does not merely read the validator set — it must *connect* to enough of
+  that set's stake to collect BLS signatures, over P2P, on its own connections. A
+  host that reaches only four peers cannot assemble a supermajority of 85 validators
+  no matter which API endpoint it reads from, and the failure surfaces as
+  `context deadline exceeded` on the preceding call rather than as "not enough
+  peers".
+
+  ```bash
+  curl -s -X POST -H 'content-type:application/json' \
+    --data '{"jsonrpc":"2.0","id":1,"method":"info.peers","params":{}}' \
+    http://127.0.0.1:9650/ext/info \
+    | python3 -c "import sys,json;print(len(json.load(sys.stdin)['result']['peers']))"
+  ```
+
+  **The asymmetry is real even though the size argument was not.** Outbound messages
+  are signed by CSB's own validators — local, few, under this chain's control, and
+  reachable regardless of how well this host is connected to the outside world.
+  Inbound messages are signed by the *foreign* chain's validator set, which must be
+  reached across the public network. Egress depends only on infrastructure the chain
+  operates. Ingress depends on connectivity to validators it does not run and cannot
+  compel. A sovereign chain governs what leaves; what arrives depends on the outside
+  world being reachable.
 
   `scripts/check-relayer.js` prints both endpoints and flags the public one.
 
