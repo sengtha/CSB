@@ -80,6 +80,28 @@
       <div id="tokens"><p class="note">Loading…</p></div>
     </div>
 
+    <!-- Dollars live in their own card, not in the list above. The copy there
+         calls those two tokens "the same money in two forms"; these are neither
+         riel nor identity-gated, and filing them together would quietly imply
+         they carry the same protections. -->
+    <div class="card" id="foreign-card" style="display:none">
+      <h2>Dollar-denominated assets</h2>
+      <p class="lead">
+        Assets that came in from outside, or stand in for one. They are priced in
+        <strong>dollars</strong>, not riel, and they are <strong>not issued by CSB</strong>.
+      </p>
+      <p class="note" style="margin-top:8px">
+        <strong>These do not check identity.</strong> KHRt asks the identity registry on
+        every transfer, so a revoked address cannot hold it. A bridged token has no such
+        hook — no identity check, no freeze, no confiscation. What still applies is the
+        chain itself: <em>every</em> transaction on CSB requires an address on the
+        <code>txAllowList</code>, so an unlisted party cannot move these either. That is a
+        real control, but it is a different one — the asset is open, the rail is closed.
+        <a href="use-cases.html">How the two gates differ ↗</a>
+      </p>
+      <div id="foreign" style="margin-top:14px"></div>
+    </div>
+
     <!-- Grove titles are issued one contract per grove, so they cannot be a
          fixed row in the list above — the registry is enumerated instead. -->
     <div class="card" id="grove-card" style="display:none">
@@ -223,30 +245,40 @@ async function load(address) {
   // --- fungible tokens ---
   // The contract address is the thing a wallet actually needs, so it is printed
   // in full rather than truncated — a shortened address is useless to paste.
-  $("tokens").innerHTML = d.tokens.map((t) => `
+  const tokRow = (t) => `
     <div class="tok">
       <div>
-        <div class="s">${esc(t.symbol)}</div>
+        <div class="s">${esc(t.symbol)}${t.standIn ? ` <span class="note">— stand-in, not bridged</span>` : ""}</div>
         <div class="n">${esc(t.name)}${t.note ? " — " + esc(t.note) : ""}</div>
       </div>
       <div class="bal">
-        ${t.balance != null
-          ? `<div class="v">${fmt(t.balance, t.decimals >= 18 ? 4 : 2)}</div><div class="k">your balance</div>`
-          : t.totalSupply != null
-            ? `<div class="v">${fmt(t.totalSupply, 2)}</div><div class="k">total supply</div>`
-            : ""}
+        ${t.missing
+          ? `<div class="v">—</div><div class="k">not on this chain</div>`
+          : t.balance != null
+            ? `<div class="v">${fmt(t.balance, t.decimals >= 18 ? 4 : 2)}</div><div class="k">your balance</div>`
+            : t.totalSupply != null
+              ? `<div class="v">${fmt(t.totalSupply, 2)}</div><div class="k">total supply</div>`
+              : ""}
       </div>
       <div class="addr">
         ${t.address
           ? `<code>${esc(t.address)}</code>
              <button class="mini ghost" data-copy="${esc(t.address)}">Copy address</button>
-             <button class="mini" data-watch-erc20="${esc(t.address)}"
-                     data-symbol="${esc(t.symbol)}" data-decimals="${t.decimals}">Add to MetaMask</button>`
+             ${t.missing ? "" : `<button class="mini" data-watch-erc20="${esc(t.address)}"
+                     data-symbol="${esc(t.symbol)}" data-decimals="${t.decimals}">Add to MetaMask</button>`}`
           : `<span class="native"><strong>Native coin — there is no contract address.</strong>
              tRIEL appears by itself once CSB is added as a network; use
              <em>Connect wallet</em> at the top of the page.</span>`}
       </div>
-    </div>`).join("");
+    </div>`;
+
+  $("tokens").innerHTML = d.tokens.map(tokRow).join("");
+
+  // --- dollar-denominated assets, in their own card ---
+  if (d.foreign?.length) {
+    $("foreign-card").style.display = "";
+    $("foreign").innerHTML = d.foreign.map(tokRow).join("");
+  }
 
   // --- the 1:1 converter between the two tiers ---
   if (d.converter) {

@@ -213,6 +213,58 @@ async function _assets(rpcUrl, deployments, address, key, now) {
     tokens.push(t);
   }
 
+  // --- assets that came from outside, or stand in for one ----------------
+  //
+  // Kept OUT of `tokens` on purpose. That list is the two tiers of riel, and the
+  // page's own copy calls them "the same money in two forms" — appending a dollar
+  // to it would make that sentence false and, worse, would file an ungated asset
+  // beside a KYC-gated one as though they were the same kind of thing.
+  //
+  // They are not. KHRt checks the identity registry inside its transfer hook, so
+  // a revoked address cannot hold it. These carry no such hook: no identity
+  // check, no freeze, no confiscate. What gates them is the chain itself —
+  // txAllowList decides who may send any transaction at all — which is a real
+  // control but a different one, and the page says so rather than letting a
+  // shared list imply otherwise. See docs/architecture.md §7.1.
+  const foreign = [];
+  for (const [key, b] of Object.entries(deployments?.bridged ?? {})) {
+    if (!b?.address) continue;
+    // deployments.json spans both sides of the bridge, and a Fuji address read
+    // against CSB answers 0x for every call — which would render as a token
+    // named "" with a supply of 0 rather than as the absent thing it is.
+    const onChain = await settle(rpc("eth_getCode", [b.address, "latest"]), "0x");
+    if (!onChain || onChain === "0x") {
+      foreign.push({ key, address: b.address, symbol: b.symbol ?? key,
+        name: b.name ?? key, missing: true, standIn: !!b.standIn, note: b.note ?? null });
+      continue;
+    }
+    const [nm, sym, dec, sup] = await Promise.all([
+      settle(rpc("eth_call", [{ to: b.address, data: SEL.name }, "latest"])),
+      settle(rpc("eth_call", [{ to: b.address, data: SEL.symbol }, "latest"])),
+      settle(rpc("eth_call", [{ to: b.address, data: SEL.decimals }, "latest"])),
+      settle(rpc("eth_call", [{ to: b.address, data: SEL.totalSupply }, "latest"])),
+    ]);
+    // The chain is the authority on all of this; the file is only where to look.
+    const decimals = dec ? Number(hexToBig(dec)) : (b.decimals ?? 6);
+    const t = {
+      kind: "erc20",
+      key,
+      address: b.address,
+      name: (nm && decodeString(nm)) || b.name || key,
+      symbol: (sym && decodeString(sym)) || b.symbol || key,
+      decimals,
+      totalSupply: units(hexToBig(sup ?? "0x0"), decimals),
+      standIn: !!b.standIn,
+      note: b.note ?? null,
+    };
+    if (address) {
+      const bal = await settle(rpc("eth_call",
+        [{ to: b.address, data: SEL.balanceOf + pad32(address) }, "latest"]), "0x0");
+      t.balance = units(hexToBig(bal), decimals);
+    }
+    foreign.push(t);
+  }
+
   // --- the 1:1 converter between the two tiers of money ------------------
   // Public because it is the claim itself: anyone can check that the tRIEL
   // minted here is matched by KHRt locked in the contract. A backing figure
@@ -277,7 +329,7 @@ async function _assets(rpcUrl, deployments, address, key, now) {
     }
   }
 
-  const data = { address, tokens, converter, collection, updatedAt: new Date().toISOString() };
+  const data = { address, tokens, foreign, converter, collection, updatedAt: new Date().toISOString() };
   _cache.set(key, { at: now, data });
   if (_cache.size > 200) _cache = new Map([[key, { at: now, data }]]); // bound the cache
   return data;
