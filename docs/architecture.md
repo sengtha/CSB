@@ -298,10 +298,11 @@ If another country runs its own Avalanche L1, CSB can exchange value with it
 **source chain's subnet ID**, so a message from another sovereign L1 is signed by
 *that* country's validators and nobody else's.
 
-**And this is the easy case, which is worth stating clearly because the failure on
-this chain suggests the opposite.** The obstacle to bridging with the C-Chain is that
-its validator set is enormous, anonymous and public: reaching two-thirds of it needs a
-well-connected host and a lot of luck. Two sovereign L1s have the opposite shape.
+**Operationally this is the easy case**, and the code path is cleaner than the
+C-Chain one: `subnet-evm/precompile/contracts/warp/config.go` special-cases messages
+whose source subnet is the Primary Network, and a peer L1 is not, so that branch never
+executes. The destination simply fetches the *peer's* validator set from the P-Chain
+and verifies against it.
 
 | | Validators to reach for a quorum | Who they are |
 |---|---|---|
@@ -309,18 +310,41 @@ well-connected host and a lot of luck. Two sovereign L1s have the opposite shape
 | CSB ↔ another national L1 | two-thirds of perhaps 5 | named institutions, fixed endpoints, under agreement |
 
 Reaching four known machines whose operators you have a treaty with is an ordinary
-networking arrangement. It resembles a correspondent-banking or RTGS link far more
-than it resembles peering with a public blockchain — and the infrastructure problem
-that stopped ingress here does not arise.
+networking arrangement, closer to an RTGS link than to peering with a public
+blockchain. The infrastructure problem that stopped ingress here does not arise.
+
+**But easier to operate is also easier to attack, and that must be said plainly.**
+The quorum is two-thirds of the *source* chain's stake either way. Two-thirds of a
+thousand anonymous validators is a formidable thing to collude; two-thirds of five
+named ones is four institutions in a single government. **If a peer's validators
+collude, they can mint assets on CSB** — the signature would be perfectly valid, and
+CSB has no way to distinguish a genuine attestation from a fabricated one.
+
+That is not an argument against peer links. It is an argument for being explicit about
+what a peer link *is*: a decision to trust another state's validator set roughly as
+much as one trusts the state. Which is what a correspondent-banking relationship
+already is, and why egress caps, per-corridor limits and a circuit breaker matter more
+here rather than less.
+
+**And the fault tolerance is thin in the same way.** With five validators, two-thirds
+means four. **Losing two of the peer's five nodes stops the corridor** — not degrades
+it, stops it — where a public network absorbs the loss of hundreds. Small sets are
+cheap to reach and fragile to operate; that trade should be sized deliberately, and it
+argues for more validators per national chain than domestic consensus alone would
+require.
 
 **What each pair needs**
 
+- **both chains registered on the same Avalanche network** — both on Mainnet, or both
+  on Fuji. The destination reads the source subnet's validator set from the P-Chain,
+  so a shared P-Chain is what makes the link possible at all. This is the residual
+  dependency §2 already acknowledges, and it is a read rather than a message route.
 - an ICTT Home/Remote pair per asset per direction
-- a relayer able to reach both validator sets — either state can run it, and both
-  should, for redundancy
+- a relayer able to reach the peer's validators over P2P — a peering arrangement
+  between two named parties. Either state can run it; both should, for redundancy
 - each chain sets its own `quorumNumerator` for what it accepts inbound
-- keep `requirePrimaryNetworkSigners` at its default (`false`), or messages would
-  additionally need Primary Network signatures and the easy case becomes the hard one
+- `requirePrimaryNetworkSigners` does not apply to peer traffic — it governs only
+  messages whose source subnet *is* the Primary Network
 
 Run **one relayer process per pair**. A single relayer serving several sources dies
 entirely if any one source is unreachable — demonstrated here, where an unreachable

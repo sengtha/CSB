@@ -419,6 +419,38 @@ than assuming, since guessing wrong sends 100× or 1/100th of the intended amoun
 
   `scripts/check-relayer.js` prints both endpoints and flags the public one.
 
+  **A further wrinkle, found while checking whether peer-to-peer links have the same
+  problem.** For a message whose source subnet is the **Primary Network**, Subnet-EVM
+  does *not* necessarily verify against Avalanche's validators. From
+  `precompile/contracts/warp/config.go`:
+
+  ```go
+  if sourceSubnetID == constants.PrimaryNetworkID {
+      if !c.RequirePrimaryNetworkSigners || warpMsg.SourceChainID == constants.PlatformChainID {
+          sourceSubnetID = predicateContext.SnowCtx.SubnetID   // the LOCAL subnet
+      }
+  }
+  ```
+
+  With `requirePrimaryNetworkSigners` at its default `false`, CSB would verify a
+  C-Chain message against **its own** validator set — "self-signing" — and the relayer
+  mirrors this when relaying (`relayer/application_relayer.go:67`).
+
+  So delivery of a C-Chain message into CSB does not inherently need Avalanche's
+  quorum. **But the relayer's startup check does not mirror it**: `checkConnections`
+  iterates the configured sources and calls `checkSufficientConnectedStake` with
+  `sourceBlockchain.GetSubnetID()` unconditionally, which for the C-Chain is the
+  Primary Network. So the process refuses to start over a quorum it would not have
+  needed to relay.
+
+  Two caveats before treating that as a way in. Self-signing requires CSB's own
+  validators to have *seen* the C-Chain message, which means their nodes must have the
+  C-Chain bootstrapped — and on this deployment `info.isBootstrapped` reports **false**
+  for C and X. And it moves the trust: CSB's own validators would be attesting to what
+  happened on a chain they merely observe, rather than Avalanche's validators attesting
+  to their own chain. That is a weaker guarantee, and choosing it should be deliberate.
+
+
 - **Fees.** ICTT primary/secondary fees are zero — a state-run relayer needs no
   incentive. That is the bridge's own fee and is separate from CSB gas; the
   transaction still costs about 1 riel like any other.
