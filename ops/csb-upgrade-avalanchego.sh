@@ -65,7 +65,7 @@ APPLY="${APPLY:-0}"
 NET_DIR="$CLI_HOME/local/$CLUSTER"
 NEW_DIR="$CLI_HOME/bin/avalanchego/avalanchego-$VER"
 NEW_BIN="$NEW_DIR/avalanchego"
-NEW_PLUGINS="$NEW_DIR/plugins"
+NEW_PLUGINS=""   # decided after discovery — see "two plugin layouts" below
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'csb-upgrade: %s\n' "$*" >&2; exit 1; }
@@ -149,9 +149,27 @@ OLD_DIR=$(dirname "$OLD_BIN")
 # beside the binary — mirror that so the new install gets one too.
 [ "$OLD_PLUGINS" != "-" ] || OLD_PLUGINS="$OLD_DIR/plugins"
 
+# TWO PLUGIN LAYOUTS, and the difference decides where the new plugin goes.
+#
+# avalanche-cli has used both. When the plugin dir sits INSIDE the avalanchego
+# version directory it is version-scoped, so the new version gets its own and the
+# old one stays readable for a rollback. When it sits inside the CLUSTER — as it
+# does here — it is shared across avalanchego versions, and relocating it would
+# take it out from under the CLI: any later command that installs a VM would write
+# to the path the CLI still believes in while the node looked somewhere else, which
+# fails as "no VM for this blockchain" long after anyone remembers this script ran.
+#
+# So a cluster-scoped plugin dir is upgraded IN PLACE, with the displaced binary
+# kept beside it as .pristine.
+case "$OLD_PLUGINS/" in
+  "$OLD_DIR"/*) NEW_PLUGINS="$NEW_DIR/plugins"; PLUGIN_MODE="versioned" ;;
+  *)            NEW_PLUGINS="$OLD_PLUGINS";     PLUGIN_MODE="in place"  ;;
+esac
+PRISTINE_PLUGINS="$OLD_PLUGINS.pristine"
+
 say "cluster      $CLUSTER"
 say "currently    $OLD_BIN"
-say "plugins      $OLD_PLUGINS"
+say "plugins      $OLD_PLUGINS  ($PLUGIN_MODE)"
 say "installing   $NEW_BIN"
 say ""
 
@@ -182,19 +200,35 @@ say ""
 if [ "$APPLY" != "1" ]; then
   say "DRY RUN. Nothing has been changed. What APPLY=1 would do:"
   say "  1. install $NEW_BIN"
-  say "  2. install the above VM IDs into $NEW_PLUGINS"
+  if [ "$PLUGIN_MODE" = "in place" ]; then
+    say "  2. replace the above VM IDs in $NEW_PLUGINS,"
+    say "     keeping each displaced binary in $PRISTINE_PLUGINS"
+  else
+    say "  2. install the above VM IDs into $NEW_PLUGINS"
+  fi
   say "  3. back up each cluster config once, to <file>.pristine"
   say "  4. rewrite $OLD_BIN -> $NEW_BIN"
-  say "     and     $OLD_PLUGINS -> $NEW_PLUGINS"
+  if [ "$NEW_PLUGINS" != "$OLD_PLUGINS" ]; then
+    say "     and     $OLD_PLUGINS -> $NEW_PLUGINS"
+  else
+    say "     (the plugin path is unchanged — only its contents move)"
+  fi
   say "  The old install at $OLD_DIR is left untouched."
   say ""
   say "Re-run with:  APPLY=1 bash ops/csb-upgrade-avalanchego.sh"
   exit 0
 fi
 
-mkdir -p "$NEW_DIR" "$NEW_PLUGINS"
+mkdir -p "$NEW_DIR" "$NEW_PLUGINS" "$PRISTINE_PLUGINS"
 install -m 0755 "$NEW_AVAGO_SRC" "$NEW_BIN"
 for id in $VMIDS; do
+  # Same rule as the configs: the pristine copy is written once and never
+  # overwritten, so re-running this never destroys the original plugin. It goes
+  # in a SIBLING directory rather than beside the live plugin — avalanchego reads
+  # every filename in the plugin dir as a VM ID, so a stray backup file there
+  # would be offered to it as a VM.
+  [ ! -f "$NEW_PLUGINS/$id" ] || [ -f "$PRISTINE_PLUGINS/$id" ] \
+    || cp -p "$NEW_PLUGINS/$id" "$PRISTINE_PLUGINS/$id"
   install -m 0755 "$NEW_SEVM_SRC" "$NEW_PLUGINS/$id"
 done
 say "installed $("$NEW_BIN" --version 2>&1 | head -1)"
@@ -246,5 +280,12 @@ say "Done. Start it and watch the P-Chain come back:"
 say "  avalanche node local start $CLUSTER"
 say "  bash ops/csb-nodes.sh"
 say ""
-say "To undo the config change (the old binaries were never removed):"
+say "To undo this (the old avalanchego was never removed):"
 say "  for f in \$(find $NET_DIR -maxdepth 2 -name '*.json.pristine'); do cp -p \"\$f\" \"\${f%.pristine}\"; done"
+if [ "$PLUGIN_MODE" = "in place" ]; then
+  say "  cp -p $PRISTINE_PLUGINS/* $NEW_PLUGINS/"
+fi
+say ""
+say "Rolling back only helps if the network still accepts the old version — after a"
+say "mandatory upgrade it does not, and a $VER node may have migrated the databases"
+say "past what the old binary can read. Restore the config, not your expectations."
