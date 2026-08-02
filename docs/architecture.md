@@ -32,12 +32,15 @@ That second half is easy to overlook and is the more important one long-term. A 
 
 ### Contained external dependency
 
-An Avalanche L1 retains two dependencies on the Avalanche Primary Network, acknowledged and contained rather than hidden:
+An Avalanche L1 retains **three** dependencies on the Avalanche Primary Network, acknowledged and contained rather than hidden:
 
 1. **Validator-set changes transit the P-Chain.** Day-to-day operation is fully autonomous; only (rare, non-urgent) validator registration touches external infrastructure.
-2. **Continuous fees are paid in AVAX** (~1.33 AVAX/month per validator) — immaterial in cost, but documented.
+2. **Continuous fees are paid in AVAX** (~1.33 AVAX/month per validator) — immaterial in cost, but documented. A validator whose balance reaches zero is **deactivated**, which took this chain down on 2026-07-28.
+3. **The client must stay compatible with the network's upgrade schedule.** This one was missing from the list and is the sharpest of the three, because it is not under the chain's control at all. Demonstrated on 2026-08-02: Fuji moved to `v1.15.0-fuji-rc.4` while the nodes ran `v1.14.1`, every Primary Network validator appeared in the P-Chain health check's `disconnectedValidators`, the P-Chain never finished bootstrapping — and **CSB could not start**, because a chain cannot learn its own validator set without the P-Chain.
 
-Containment: the chain runs even if the P-Chain is unreachable; validator changes can be batched and scheduled; a documented exit path exists to standalone operation or Besu (Subnet-EVM is open source; contracts are stack-portable).
+**A correction to the containment claim.** This section previously said "the chain runs even if the P-Chain is unreachable". That holds only while the chain is *already running*. It does **not** survive a restart: a node that cannot reach the P-Chain cannot bootstrap, so it cannot serve the L1 at all. The dependency is therefore not merely on the P-Chain's data but on being able to peer with the network that carries it — and testnets in particular run release candidates on their own timetable.
+
+Containment, restated honestly: validator changes can be batched and scheduled; a documented exit path exists to standalone operation or Besu (Subnet-EVM is open source; contracts are stack-portable); and **client versions must be tracked as an operational duty**, with upgrades applied before the network leaves the running version behind. On mainnet that means following stable releases and upgrade announcements; on a testnet it means expecting release candidates.
 
 ## 3. Network architecture
 
