@@ -245,6 +245,58 @@ here — the first being that the perimeter governs custody while composability 
 exposure (`docs/defi.md`) — and unlike that one it admits no fix at this layer, only a
 choice.
 
+### 7.2 Sovereign-to-sovereign: the case that is *easier*, not harder
+
+If another country runs its own Avalanche L1, CSB can exchange value with it
+**directly** — no routing through the C-Chain, no public intermediary. Verified in
+`avalanchego/vms/platformvm/warp/validator.go`: the signing set is derived from the
+**source chain's subnet ID**, so a message from another sovereign L1 is signed by
+*that* country's validators and nobody else's.
+
+**And this is the easy case, which is worth stating clearly because the failure on
+this chain suggests the opposite.** The obstacle to bridging with the C-Chain is that
+its validator set is enormous, anonymous and public: reaching two-thirds of it needs a
+well-connected host and a lot of luck. Two sovereign L1s have the opposite shape.
+
+| | Validators to reach for a quorum | Who they are |
+|---|---|---|
+| CSB ↔ Avalanche C-Chain | two-thirds of ~1,000+ | anonymous, public, permissionless |
+| CSB ↔ another national L1 | two-thirds of perhaps 5 | named institutions, fixed endpoints, under agreement |
+
+Reaching four known machines whose operators you have a treaty with is an ordinary
+networking arrangement. It resembles a correspondent-banking or RTGS link far more
+than it resembles peering with a public blockchain — and the infrastructure problem
+that stopped ingress here does not arise.
+
+**What each pair needs**
+
+- an ICTT Home/Remote pair per asset per direction
+- a relayer able to reach both validator sets — either state can run it, and both
+  should, for redundancy
+- each chain sets its own `quorumNumerator` for what it accepts inbound
+- keep `requirePrimaryNetworkSigners` at its default (`false`), or messages would
+  additionally need Primary Network signatures and the easy case becomes the hard one
+
+Run **one relayer process per pair**. A single relayer serving several sources dies
+entirely if any one source is unreachable — demonstrated here, where an unreachable
+C-Chain took down the working CSB→Fuji direction with it.
+
+**The compliance design that was rejected becomes available again.** §7.1 rejected a
+gated `TokenRemote` partly on licensing: vendoring Ava Labs' contracts under the
+Ecosystem License is awkward for an unaffiliated project. Between two states with an
+agreement, both operating on Avalanche and therefore inside the licence's permitted
+scope, that calculus differs — and each side can deploy a remote gated by *its own*
+identity registry. KHRt arriving in the partner country would then be subject to the
+partner's KYC rules, enforced in contract rather than promised in a memorandum. That
+is mutual recognition, implemented.
+
+**Which moves the hard problem from transport to identity.** `IdentityRegistry` knows
+Cambodian attestations. It has no view of another country's citizens, and no basis to
+trust its own registry's answers about them. Cross-border payment therefore needs
+either mutual recognition of attestations, or an agreed mapping at the boundary — a
+question of law and policy, with the technical layer waiting on the answer rather than
+constraining it. That is the more comfortable place for the difficulty to sit.
+
 ## 8. Gas: about 1 riel per transaction, funding public good
 
 **Decision: a transaction costs about 1 tRIEL (= 1 riel), and every riel of it goes to a public-good fund.**
