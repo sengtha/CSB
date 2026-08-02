@@ -35,7 +35,13 @@ The path is **local devnet → Fuji testnet → Avalanche mainnet**. This guide 
 
    Whichever is chosen, it is effectively permanent. `decimals()` is `pure`, so changing it means redeploying the token — and a redeploy **forks the compliance perimeter** rather than migrating it (item 1 in `docs/todo.md`, demonstrated live on 8555). Get it right before the first issuance, not after.
 
-8. **Legal.** The governing legal mandate (hypothetical: e.g. a decree establishing the council) in force; KHRt issuance still gated on the issuer mandate — mainnet can launch with the stablecoin dormant (contracts deployed, ISSUER_ROLE with the council, zero supply) until the mandate exists.
+8. **Somebody owns the upgrade calendar, by name.** Not a practice — a named role with a deputy, because this is the failure mode that has actually taken CSB down. `avalanchego v1.15.0-fuji` announced on 2026-07-21 that every Fuji node had to upgrade before 11 AM ET on 07-28; CSB's nodes did not, Fuji peers then refused the handshake outright, the P-Chain never bootstrapped, and the chain was unstartable for five days before anyone connected the two facts. Mainnet moves on stable releases with longer notice, which makes it easier to track and no less fatal to miss.
+
+   The duty has three parts. **Watch** the release feed and the published activation times, not the outage. **Rehearse** the upgrade on a spare node before the deadline — a mandatory release moves the whole stack, not just the client: v1.15.0 raised `RPCChainVMProtocol` 44 → 46, so the Subnet-EVM plugin had to move with it, and since `ava-labs/subnet-evm` was archived in December 2025 the plugin now ships inside the avalanchego release itself. **Do not depend on the tooling to notice**: `avalanche-cli` has been in maintenance mode since December 2025, its compatibility cache stops at v1.14.0, and it silently ignores the version flag when restarting an existing cluster. `ops/csb-upgrade-avalanchego.sh` exists because of that last point.
+
+   For mainnet this also means the node fleet needs a **staged** upgrade procedure — one validator first, health-checked, then the rest — which is already implied by rehearsal item 6 but has no owner until this item does.
+
+9. **Legal.** The governing legal mandate (hypothetical: e.g. a decree establishing the council) in force; KHRt issuance still gated on the issuer mandate — mainnet can launch with the stablecoin dormant (contracts deployed, ISSUER_ROLE with the council, zero supply) until the mandate exists.
 
 ## The bridge: what mainnet actually requires
 
