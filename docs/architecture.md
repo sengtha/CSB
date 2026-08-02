@@ -212,6 +212,30 @@ prototype measured all three (`docs/fuji-ictt.md`):
 - **peer-to-peer is the easiest case and the most governable** (§7.2), which is the
   opposite of what the first two suggest.
 
+### The four crossings, and why they are not equally hard
+
+Direction matters as much as counterparty, because the quorum is always over the
+**source** chain's validators — so "who must sign" flips with direction.
+
+| Crossing | Signed by | Difficulty | Status here |
+|---|---|---|---|
+| CSB → public network | CSB's validators (local, few) | **easy** | **works** |
+| public network → CSB | Avalanche's validators (remote, ~1,000+) | **hard** — needs a well-connected relayer host | not achieved |
+| CSB → peer L1 | CSB's validators (local, few) | easy | not attempted |
+| peer L1 → CSB | the peer's validators (remote, but few and named) | easy *technically*; the question is trust | not attempted |
+
+Two things fall out of this that are worth holding on to:
+
+- **Egress is easy in both cases**, because CSB signs its own outbound messages. The
+  gateway's job there is policy, not engineering.
+- **Ingress is where the difficulty lives, and it is entirely about the counterparty.**
+  From a public network it is an infrastructure problem — reaching a thousand anonymous
+  validators. From a peer it is a *policy* problem — the engineering is easy, and what
+  remains is whether to trust four institutions in another government (§7.2).
+
+So the hard part of connecting to the public world is operational, and the hard part
+of connecting to a peer is diplomatic. Neither is a contract problem.
+
 **The order of construction follows from that.** Build peer connections first: they
 serve the flows that matter most (regional trade, remittance corridors), they are
 operationally simpler, and they are the only ones where both directions can be
