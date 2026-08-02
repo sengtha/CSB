@@ -10,6 +10,7 @@ A sovereign hybrid blockchain for Cambodia: **public within the country, private
 
 - Open, composable DeFi and digital-asset activity for anyone inside the perimeter — under strict on-chain KYC.
 - Ledger data, infrastructure, and governance under Cambodian sovereign control.
+- **Interoperable by requirement, not by ambition.** A national payment system that stops at the border is not a payment system. Cambodia's economy runs on remittances and regional trade, both of which cross boundaries by definition, so the chain must be able to transact with other chains — peer sovereign chains first, public networks second. The perimeter's job is to *govern* crossings, not to prevent them (§7).
 - A single, governed gateway through which only **permitted tokens** route to global public blockchains (Avalanche, Ethereum, Solana, …).
 - A token fee — about 1 riel per payment — routed to a public-good fund rather than burned, so the cost of running the chain becomes visible public benefit (§8).
 - Designed for a future in which AI-driven attacks and quantum computing stress the traditional banking system: multisig-everywhere, tamper-evident audit trails, identity-bound recoverable accounts, and **crypto-agility** as a first-class pillar. These are design targets for mainnet; §10 and `docs/deployment-status.md` record which of them the current deployment actually implements (few).
@@ -18,11 +19,13 @@ This is not a single CBDC. Money is **two-tier**: a native, riel-pegged base coi
 
 ## 2. Platform decision: Avalanche L1
 
-**Decision: Avalanche L1 (Subnet-EVM), permissioned PoA.** The deciding requirement is mature, safe egress: Avalanche ICM/ICTT provides audited, natively maintained interchain transport to the C-Chain and onward to other ecosystems. No other sovereign-capable stack offers a controlled gateway without building or adopting third-party bridge security.
+**Decision: Avalanche L1 (Subnet-EVM), permissioned PoA.** The deciding requirement is **interoperability under sovereign control** (§7), and ICM/ICTT supplies both halves of it: audited, natively maintained transport to the C-Chain and onward to other ecosystems, *and* direct chain-to-chain messaging between L1s — so a link to another country's sovereign chain needs no third party, no public intermediary, and no bespoke bridge.
+
+That second half is easy to overlook and is the more important one long-term. A stack that can only reach public networks makes every cross-border payment a trip through permissionless infrastructure; a stack with native peer-to-peer messaging lets two states connect directly, on terms they agree between themselves (§7.2). No other sovereign-capable stack offers either without building or adopting third-party bridge security.
 
 | Alternative | Verdict |
 |---|---|
-| Hyperledger Besu (QBFT) | **Named fallback.** Fully sovereign, strong government precedent (Brazil Drex, EU EBSI), but no native egress — the killer gap. Both stacks are EVM, so all CSB contracts port unchanged if migration is ever needed. |
+| Hyperledger Besu (QBFT) | **Named fallback.** Fully sovereign, strong government precedent (Brazil Drex, EU EBSI), but **no native interoperability of either kind** — neither egress to public networks nor chain-to-chain messaging with a peer. Every connection would be a bridge somebody has to build and secure, which is the killer gap. Both stacks are EVM, so all CSB contracts port unchanged if migration is ever needed. |
 | Cosmos SDK + EVM | Maximum sovereignty and flexibility, but high engineering lift, imperfect EVM compatibility, and interop pointed at the wrong ecosystems. |
 | Ethereum L2 stacks (OP Stack, Orbit, CDK) | Rejected: data/settlement dependency on Ethereum and single-sequencer designs contradict sovereignty and multi-institution validation. |
 | Enterprise DLT (Fabric, Corda, Canton) | Rejected: no EVM, no DeFi ecosystem. |
@@ -174,7 +177,49 @@ Both coexist: trustless wrappers are the safe default; vetted reserve-backed iss
 
 Until a monetary mandate exists, all of this circulates only as **test riel in a sandbox** — no riel-pegged instrument is launched publicly without the required license.
 
-## 7. Egress gateway — the sovereign boundary
+## 7. Interoperability and the sovereign boundary
+
+**A sovereign chain that cannot transact with other chains is a closed ledger, not
+money infrastructure.** This is a requirement of the design, not an enhancement to it.
+
+The reasoning is economic before it is technical. Remittances are among Cambodia's
+largest external flows and every one of them originates outside the country. Trade is
+regional and settles across borders. Reserves are held in foreign assets. A ledger
+that can only move value between domestic addresses serves none of these, and a
+national payment system that stops at the border simply does not do the job — however
+good it is at everything inside.
+
+So the question is never *whether* value crosses. It is **on what terms**: what may
+cross, in which direction, to whom, up to what limit, and on whose signature. The
+perimeter is a **border**, not a wall — and a border is defined by its crossings being
+governed, not by their absence.
+
+### Three distinct connections, with different properties
+
+| | Counterparty | Validator set to trust | Governable? |
+|---|---|---|---|
+| **Peer sovereign chains** (§7.2) | another national L1 | small, named, under agreement | **yes, both directions** |
+| **Public networks** (§7, §7.1) | Avalanche C-Chain and onward | large, anonymous, permissionless | outbound yes, inbound no |
+| Traditional rails | banks, RTGS, card networks | not a chain problem | out of scope here |
+
+These are not variations of one thing. They differ in who must be trusted, how hard
+they are to operate, and how much of the crossing the council can govern — and the
+prototype measured all three (`docs/fuji-ictt.md`):
+
+- **egress to a public network works**, and is governed by the gateway below;
+- **ingress from a public network is ungoverned by construction** (§7.1) and, on this
+  deployment, could not be operated at all;
+- **peer-to-peer is the easiest case and the most governable** (§7.2), which is the
+  opposite of what the first two suggest.
+
+**The order of construction follows from that.** Build peer connections first: they
+serve the flows that matter most (regional trade, remittance corridors), they are
+operationally simpler, and they are the only ones where both directions can be
+subjected to CSB's rules. Public-network connectivity comes second — necessary for
+global liquidity and for holding foreign assets, harder to run, and inherently
+one-sided in what it lets the council control.
+
+### The egress gateway
 
 The **single authorized exit** to public blockchains, and the load-bearing requirement of the whole design (`EgressGateway`):
 
