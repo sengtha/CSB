@@ -260,7 +260,14 @@ export RPC=http://127.0.0.1:9650/ext/bc/299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszx
 # chain alive?
 curl -s -X POST -H 'content-type:application/json' --data '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' $RPC
 
-# (re)start the app server
+# (re)start the app server — carries the passcode, port and RPC URL over from
+# the running process, and restarts from ITS directory rather than assuming one.
+bash ops/csb-restart-app.sh
+
+# The hand-rolled version, if the script is unavailable. Two traps: omitting
+# EXPLORER_PASSCODE silently republishes the site under the default "csb-demo",
+# and this cds to /opt/csb while day-to-day work happens in ~/csb — pull in one
+# and restart the other and the change is simply absent, with no error anywhere.
 pkill -f 'app/server.js'; cd /opt/csb
 EXPLORER_PASSCODE=<your-passcode> CSB_RPC_URL=$RPC nohup node app/server.js > /tmp/app.log 2>&1 &
 
