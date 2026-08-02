@@ -27,6 +27,32 @@
 #       tRIEL (about 2.5 US cents) and is refused by a rail meant for tokens
 #       worth real money.
 #
+#   skip-upgrade-check: true — lets the chain start after it slept through a
+#       fork. CSB missed Fuji's Helicon activation at 2026-07-28T15:00:00Z
+#       because its nodes were below the version floor (docs/architecture.md §2).
+#       It kept producing blocks for a while under pre-Helicon rules, so when the
+#       Helicon-aware Subnet-EVM finally started it found blocks past a fork the
+#       database had never heard of, and refused:
+#
+#         mismatching Helicon fork block timestamp in database
+#         (have timestamp nil, want timestamp 1785250800,
+#          rewindto timestamp 1785250799)
+#
+#       In the installed Subnet-EVM the flag is documented as "disables checking
+#       that upgrades must take place before the last accepted block", which is
+#       precisely this situation.
+#
+#       WHAT IT COSTS, because it is not free. Those blocks were built under the
+#       old rules and are now kept under a config that says Helicon was already
+#       active when they were made. Re-verifying the chain from genesis could
+#       therefore diverge at that seam. The alternative was to override
+#       heliconTimestamp (networkUpgradeOverrides) to a future date and fork on
+#       CSB's own schedule, which keeps history consistent — chosen against
+#       because it routes through the same avalanche-cli config regeneration
+#       that has already silently discarded L1 settings on this cluster, and the
+#       chain had been down for five days. The decision is one-way: once the node
+#       starts, the database records Helicon at the Fuji timestamp.
+#
 # What it deliberately does NOT set: eth-apis.
 #
 # An earlier version added "internal-txpool" to that list to give the watchdog a

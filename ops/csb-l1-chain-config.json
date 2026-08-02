@@ -1,3 +1,4 @@
 {
-  "rpc-tx-fee-cap": 0
+  "rpc-tx-fee-cap": 0,
+  "skip-upgrade-check": true
 }
