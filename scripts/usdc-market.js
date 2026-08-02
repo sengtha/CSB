@@ -210,9 +210,48 @@ async function main() {
           + `to average. Seed it first.`);
       } else {
         console.log(`\n[twap] deploying over ${d.usdMarket.pair}`);
-        const twap = await ethers.deployContract("UniswapV2TwapOracle", [
-          d.usdMarket.pair, khrAddr, 10n ** 18n, TWAP_MIN_WINDOW, TWAP_MAX_AGE,
-        ]);
+        const args = [d.usdMarket.pair, khrAddr, 10n ** 18n, TWAP_MIN_WINDOW, TWAP_MAX_AGE];
+        const factory = await ethers.getContractFactory("UniswapV2TwapOracle");
+
+        // A constructor revert arrives as a bare "transaction execution reverted",
+        // which names neither the check that failed nor the argument that failed it.
+        // Replay it as an eth_call first and decode the custom error against the ABI,
+        // so the reason is reported instead of the symptom.
+        const deployTx = await factory.getDeployTransaction(...args);
+        try {
+          await provider.call({ ...deployTx, from: signer.address });
+        } catch (e) {
+          console.log(`  CONSTRUCTOR REVERTED — the reason, decoded:`);
+          // Revert data hides in different places depending on how the node reports
+          // it, and only a hex string can be decoded. Taking e.data blindly prints
+          // "[object Object]", which is worse than no decode at all.
+          const hexData = [e.data, e.data?.data, e.info?.error?.data, e.error?.data]
+            .find((v) => typeof v === "string" && v.startsWith("0x") && v !== "0x");
+          let named = null;
+          if (hexData) {
+            try {
+              const parsed = factory.interface.parseError(hexData);
+              named = parsed ? `${parsed.name}(${parsed.args.join(", ")})` : null;
+            } catch { /* not one of our errors */ }
+            named ??= `undecodable revert data ${hexData}`;
+          }
+          console.log(`    ${named ?? (e.shortMessage ?? e.message)}`);
+          console.log(`  Arguments passed:`);
+          console.log(`    pair          ${args[0]}`);
+          console.log(`    baseCurrency  ${args[1]}  (KHRt)`);
+          console.log(`    baseUnit      ${args[2]}`);
+          console.log(`    minWindow     ${args[3]}s   maxAge ${args[4]}s`);
+          const pr = new ethers.Contract(args[0],
+            [...PAIR_ABI, "function token1() view returns (address)"], provider);
+          const [t0, t1] = await Promise.all([pr.token0(), pr.token1().catch(() => null)]);
+          console.log(`  The pair's tokens:`);
+          console.log(`    token0        ${t0}`);
+          console.log(`    token1        ${t1}`);
+          console.log(`  NotAPairToken means baseCurrency is neither of those.`);
+          throw new Error("TWAP constructor reverted — see above. Pool and rate are unaffected.");
+        }
+
+        const twap = await ethers.deployContract("UniswapV2TwapOracle", args);
         await twap.waitForDeployment();
         d.usdMarket.twap = await twap.getAddress();
         save();
