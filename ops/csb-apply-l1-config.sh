@@ -49,9 +49,9 @@
 #       heliconTimestamp (networkUpgradeOverrides) to a future date and fork on
 #       CSB's own schedule, which keeps history consistent — chosen against
 #       because it routes through the same avalanche-cli config regeneration
-#       that has already silently discarded L1 settings on this cluster, and the
-#       chain had been down for five days. The decision is one-way: once the node
-#       starts, the database records Helicon at the Fuji timestamp.
+#       that has already silently discarded L1 settings on this cluster. The
+#       decision is one-way: once the node starts, the database records Helicon
+#       at the Fuji timestamp.
 #
 # What it deliberately does NOT set: eth-apis.
 #

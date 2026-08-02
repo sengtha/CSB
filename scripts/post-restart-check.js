@@ -35,6 +35,32 @@ const HELICON = 1785250800; // 2026-07-28T15:00:00Z — Fuji's activation
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const ZERO = "0x0000000000000000000000000000000000000000";
 
+/**
+ * Not every empty address is a lost contract, and saying so matters more than it
+ * sounds. The first run of this reported 25 addresses with no code and asked the
+ * operator to work out which mattered — on a chain that had just come back from
+ * an outage, at the exact moment nobody wants to be reading a list. A checker
+ * that raises 25 explainable alarms is one nobody runs twice.
+ *
+ * Two kinds of address legitimately have no code HERE:
+ *
+ *   account   never had any. Deployer, role holders, the pilot personas.
+ *   elsewhere real contracts, on Fuji. deployments.json spans both sides of the
+ *             bridge, so the Fuji halves are absent from CSB by definition —
+ *             ictt.tokenRemote is the far end of CSB's egress home, and
+ *             bridgeHomes/homeAddress are the Fuji end of the USDC ingress.
+ *
+ * Anything else with no code is a real finding. Override with CSB_ACCOUNTS /
+ * CSB_ELSEWHERE if the file's shape changes; the point is that the exceptions
+ * are declared and auditable rather than assumed by whoever reads the output.
+ */
+const EXPECTED_EMPTY = [
+  { kind: "account",   re: new RegExp(process.env.CSB_ACCOUNTS
+      ?? "^roles\\.|^pilot\\..*\\.address$|publisher$") },
+  { kind: "elsewhere", re: new RegExp(process.env.CSB_ELSEWHERE
+      ?? "^bridgeHomes\\.|homeAddress$|^ictt\\.tokenRemote$") },
+];
+
 const iso = (t) => new Date(Number(t) * 1000).toISOString().replace(".000", "");
 
 /** Collect every [jsonPath, address] pair, at any depth. */
@@ -88,32 +114,52 @@ async function main() {
     code.set(a.toLowerCase(), await provider.getCode(a).catch(() => null));
   }
 
-  let missing = 0, eoa = 0;
+  const unreadable = [], lost = [], counts = { account: 0, elsewhere: 0, code: 0 };
   const width = Math.max(...found.map(([p]) => p.length), 4);
   for (const [where, addr] of found) {
     const c = code.get(addr.toLowerCase());
     let verdict;
-    if (c === null) { verdict = "UNREADABLE"; missing++; }
-    else if (c === "0x") {
-      // Not every recorded address is a contract — deployer and treasury
-      // addresses live in here too, and they are supposed to have no code.
-      verdict = "no code (EOA?)"; eoa++;
+    if (c === null) {
+      verdict = "UNREADABLE";
+      unreadable.push(where);
+    } else if (c === "0x") {
+      const expected = EXPECTED_EMPTY.find((e) => e.re.test(where));
+      if (expected) {
+        verdict = `no code — ${expected.kind}`;
+        counts[expected.kind]++;
+      } else {
+        verdict = "NO CODE — expected a contract";
+        lost.push([where, addr]);
+      }
     } else {
       verdict = `${((c.length - 2) / 2).toLocaleString("en-US")} bytes`;
+      counts.code++;
     }
     console.log(`  ${where.padEnd(width)}  ${addr}  ${verdict}`);
   }
 
   console.log("");
-  if (missing) {
-    console.log(`${missing} address(es) could not be read — the chain answered an error.`);
+  console.log(`${counts.code} with code · ${counts.account} accounts · `
+    + `${counts.elsewhere} on another chain · ${lost.length} unexplained`);
+  console.log("");
+
+  if (unreadable.length) {
+    console.log(`${unreadable.length} address(es) could not be read at all — the chain`);
+    console.log(`answered an error rather than a result. That is a node problem, not a`);
+    console.log(`missing contract: ${unreadable.join(", ")}`);
     process.exitCode = 1;
-  } else if (eoa) {
-    console.log(`Every contract is present. ${eoa} entr${eoa === 1 ? "y has" : "ies have"} no code,`);
-    console.log(`which is expected for accounts (deployer, treasury) but would be a lost`);
-    console.log(`deployment for anything that should be a contract — check the names above.`);
+  } else if (lost.length) {
+    console.log(`MISSING. These are recorded as contracts and have no code on this chain:`);
+    for (const [where, addr] of lost) console.log(`  ${where}  ${addr}`);
+    console.log(``);
+    console.log(`Either the chain lost state, or the entry belongs to another chain and`);
+    console.log(`this script does not know it yet — see EXPECTED_EMPTY. Do not redeploy`);
+    console.log(`over the gap before deciding which: redeploying forks the compliance`);
+    console.log(`perimeter rather than migrating it (docs/todo.md item 1).`);
+    process.exitCode = 1;
   } else {
-    console.log(`Every recorded address still has code. Nothing was lost.`);
+    console.log(`Nothing was lost. Every recorded contract still has code, and every`);
+    console.log(`empty address is one that is supposed to be empty.`);
   }
 }
 
