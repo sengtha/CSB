@@ -7,6 +7,8 @@ transaction and routed to a public-good fund, and a single governed **egress gat
 
 Full design rationale: [`docs/architecture.md`](docs/architecture.md). License: [MIT](LICENSE).
 
+Companion paper on SSRN: [doi.org/10.2139/ssrn.7204718](https://doi.org/10.2139/ssrn.7204718). The repository is the working prototype; where the two disagree, the repository is what actually runs.
+
 ## Status
 
 **v0 prototype.** Core contract suite implemented and tested (206 tests at `HEAD`; regenerate with `npx hardhat test` rather than quoting this), including the production **ICTT bridge adapter**. 29 Solidity files: 19 production contracts, 5 interfaces, 4 test mocks, 1 library. The application — citizen wallet, gated explorer, and institutional admin console — runs against the live chain behind an access-gated server (`docker-compose.app.yml`); `docker-compose.validator.yml` is the template for an institution to run a validator, though **none does yet**.
