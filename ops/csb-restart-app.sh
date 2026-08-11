@@ -13,11 +13,12 @@
 # This reads the value out of the running process instead of asking anyone to
 # remember it, and never prints it.
 #
-# THE DIRECTORY. The server may be running from a different checkout than the one
-# you just pulled — docs/deployment-status.md says /opt/csb while day-to-day work
-# happens in ~/csb. Pulling in one and restarting the other is the worst kind of
-# failure: everything reports success and the change is simply absent. So this
-# restarts the server from ITS OWN working directory, and says which one that is.
+# THE DIRECTORY. The deployment checkout is /opt/csb. Anyone who assumes ~/csb —
+# a habit that is easy to pick up and wrong on this VM — pulls into a directory
+# the server is not running from, restarts, and gets the worst kind of failure:
+# everything reports success and the change is simply absent. So this restarts the
+# server from ITS OWN working directory, and prints which one that is along with
+# the commit now being served, rather than assuming either path.
 #
 # Environment, all optional:
 #   CSB_APP_LOG    where to send output          (default /tmp/app.log)

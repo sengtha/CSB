@@ -266,8 +266,8 @@ bash ops/csb-restart-app.sh
 
 # The hand-rolled version, if the script is unavailable. Two traps: omitting
 # EXPLORER_PASSCODE silently republishes the site under the default "csb-demo",
-# and this cds to /opt/csb while day-to-day work happens in ~/csb — pull in one
-# and restart the other and the change is simply absent, with no error anywhere.
+# and the checkout is /opt/csb, not ~/csb — pull into the wrong one and restart,
+# and the change is simply absent, with no error reported anywhere.
 pkill -f 'app/server.js'; cd /opt/csb
 EXPLORER_PASSCODE=<your-passcode> CSB_RPC_URL=$RPC nohup node app/server.js > /tmp/app.log 2>&1 &
 

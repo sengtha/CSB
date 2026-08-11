@@ -1,6 +1,6 @@
 # CSB operator environment — SOURCE this, don't run it:
 #
-#     source ~/csb/ops/csb-env.sh
+#     source /opt/csb/ops/csb-env.sh
 #
 # Sets everything the hardhat admin scripts need, so commands become just:
 #
@@ -35,8 +35,9 @@ fi
 
 export PATH="$PATH:$HOME/bin"
 
-# Repo root, derived from this file's own location rather than assumed — the
-# checkout lives at /opt/csb on the Elestio VM but ~/csb elsewhere.
+# Repo root, derived from this file's own location rather than assumed. The
+# deployment checkout is /opt/csb — NOT ~/csb, which does not exist on the VM.
+# Deriving it means sourcing this file from a clone anywhere still works.
 CSB_HOME="${CSB_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 export CSB_HOME
 
