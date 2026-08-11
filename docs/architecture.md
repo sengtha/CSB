@@ -78,6 +78,14 @@ Powers are deliberately split across institutions and enforced in code:
 > multisignature wallet is deployed anywhere. The separation is real in code —
 > the roles are distinct and independently grantable — but it buys nothing
 > against a compromise of that one key today. See `docs/testnet-to-mainnet.md`.
+>
+> **The tooling to fix this now exists.** `scripts/deploy-safe.js` deploys Safe
+> 1.4.1 on CSB and `scripts/safe-exec.js` operates it without a web UI; a 2-of-3
+> wallet has been verified holding `ISSUER_ROLE` and issuing an attestation that
+> no single key authorised. That is a capability, not a deployment: **nothing is
+> deployed on 8555 yet**, so every word above still holds. When it changes, this
+> box changes with it. See `docs/multisig.md` — particularly on why the
+> precompile admin should be the last role moved, if it is moved at all.
 
 | Power | Holder | Contract |
 |---|---|---|

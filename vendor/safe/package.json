@@ -1,0 +1,8 @@
+{
+  "name": "csb-vendor-safe",
+  "private": true,
+  "description": "Safe 1.4.1 artifacts, installed in isolation. Safe peer-depends on ethers 5.4.0 while this project runs ethers 6, so installing it into the root tree either fails peer resolution or (with --no-save) prunes hardhat's own dependencies. Its own package.json gives npm a separate tree to resolve, so the root install stays untouched and needs no flags.",
+  "dependencies": {
+    "@safe-global/safe-contracts": "1.4.1"
+  }
+}
