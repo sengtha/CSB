@@ -256,6 +256,68 @@ records infrastructure. To operate one, pass its address:
 CSB_SAFE=0x… npx hardhat run scripts/safe-exec.js --network csbRemote
 ```
 
+## Bounding what a wallet can do at all — `SafeScopeGuard`
+
+A threshold answers *"did enough owners agree"*. It cannot answer *"agree to
+what"*, and it is exactly as strong as the owners' ability to read what they are
+signing. `contracts/governance/SafeScopeGuard.sol` bounds the damage when that
+fails: a quorum tricked into signing a transfer to an attacker cannot execute it
+if the attacker was never allow-listed.
+
+### Why not Zodiac
+
+Zodiac's **Roles** modifier and **Scope** guard are the obvious answer and are
+**not published to npm** — only `@gnosis-guild/zodiac`, the base framework, is.
+The implementations live as source and deployed addresses in GitHub repos, and
+Roles v2 is a large parameter-condition engine whose headline feature, delegating
+narrow powers to non-owners, is not the problem here. The `Guard` interface is
+defined by Safe itself, so the policy contract is ~200 lines against a standard
+interface with no new dependency and nothing vendored.
+
+### The asymmetry is the design
+
+A guard a quorum can remove in one transaction bounds nothing — the same
+signatures that authorise the theft can remove the guard first. A guard that
+cannot be removed bricks the wallet permanently the first time the policy is
+wrong. Both are worse than no guard. So:
+
+| | |
+|---|---|
+| **Tightening** — `disallow`, `disallowTarget`, `cancelAnnouncement` | **Immediate.** An emergency must never wait on a timer. |
+| **Loosening** — `allow`, `allowTarget`, and removing the guard | **Announced,** then a cooldown. A compromised quorum cannot widen its own permissions and use them in one sitting; it must declare the intent on chain and wait. |
+
+The **cooldown is the security property**, not the allow list. An allow list with
+no delay is a speed bump — the same quorum just widens it first. A delay with no
+allow list has nothing to delay.
+
+Announcements are single-use, so a widening cannot be replayed later from an old
+announcement.
+
+`delegatecall` is refused unconditionally. It runs the target's code against the
+wallet's own storage and can rewrite its owners, which would make every other
+rule here decorative.
+
+### Using it
+
+```solidity
+new SafeScopeGuard(safeAddress, 86400)     // one-day cooldown
+```
+
+Then, from the wallet itself (a normal proposal in the console):
+
+1. `guard.announce(guard.allowKey(target, selector))`
+2. wait out the cooldown
+3. `guard.allow(target, selector)`
+
+Set it on the wallet with `safe.setGuard(guard)` — Safe checks ERC-165, so an
+incorrect interface id is caught at that moment rather than later.
+
+To remove it: `announce(UNGUARD)`, wait, then `setGuard(0)`. Verified by test —
+the wallet can always be freed, it simply cannot be freed quietly.
+
+Covered by `test/safe-scope-guard.test.js`, which skips rather than fails when
+`vendor/safe` has not been installed.
+
 ## Moving a role to it
 
 This is the part with no undo. The order matters more than the speed.
