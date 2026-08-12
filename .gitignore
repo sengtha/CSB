@@ -14,6 +14,9 @@ app/rpc-revoked.json
 # Pending KYC requests (names people typed — not for the repo)
 app/kyc-requests.json
 
+# Pending multisig requests (labels people typed, same reason)
+app/safe-requests.json
+
 # operator-local overrides (may contain secrets)
 ops/*.local.sh
 

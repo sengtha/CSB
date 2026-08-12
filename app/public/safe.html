@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Multisig wallets — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .lead { font-size: 14px; line-height: 1.7; }
+    .note { font-size: 12.5px; color: var(--muted); line-height: 1.65; }
+    .msg { font-size: 13.5px; border-radius: 8px; padding: 11px 13px; margin-top: 12px; line-height: 1.55; }
+    .msg.err { background: #fdecec; border: 1px solid #f5c2c2; color: #8f1d1d; }
+    .msg.ok { background: #e6f6ec; border: 1px solid #bfe5cd; color: #14532d; }
+    .msg.info { background: #eef2fb; border: 1px solid #d3ddf5; color: #22365e; }
+    .owner { display: flex; gap: 8px; margin-bottom: 7px; }
+    .owner input { flex: 1; }
+    .owner button { flex: 0 0 auto; }
+    .w { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+    .w .top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .w code { font-size: 12.5px; }
+    .w .thr { font-weight: 700; }
+    .w .yours { font-size: 11px; background: var(--blue); color: #fff; border-radius: 999px;
+                padding: 2px 8px; margin-left: 6px; }
+    .w ul { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+    .warn { border-left: 3px solid var(--warn); background: #fffaf2; padding: 11px 14px;
+            border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.65; margin-top: 14px; }
+    .foot { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0 24px; line-height: 1.6; }
+  </style>
+  <script src="shell.js" defer></script>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 Multisig wallets</h1>
+    <span class="sub">wallets that need more than one signature</span>
+    <nav></nav>
+  </header>
+
+  <main>
+    <div class="card">
+      <p class="lead">
+        A multisig wallet holds assets and roles that <strong>no single person can move</strong>.
+        You name the owners and how many of them must agree; from then on every transaction
+        needs that many signatures. The owners never have to be in the same place — each
+        signs wherever their key is.
+      </p>
+      <p class="note" style="margin-top:10px">
+        These are <strong>Safe</strong> wallets, the same contracts used to hold billions of
+        dollars elsewhere, deployed unmodified on CSB.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Ask for a wallet</h2>
+      <p class="note" style="margin-bottom:12px">
+        Creating a contract on CSB is restricted to vetted deployers, so this page cannot
+        deploy one for you directly — it queues the request and an operator creates it. That
+        is a review step, not a formality: nothing is created until somebody approves it.
+        <strong>You are not trusting them with the wallet</strong> — ownership comes from the
+        owner list below, so whoever creates it has no power over it afterwards.
+      </p>
+
+      <label class="note" for="label">What is it for? <span style="opacity:.7">(optional, seen only by the reviewer)</span></label>
+      <input id="label" type="text" maxlength="80" placeholder="Ministry treasury" style="width:100%;margin-bottom:14px" />
+
+      <label class="note">Owners — the addresses that can sign</label>
+      <div id="owners" style="margin-top:6px"></div>
+      <button class="mini ghost" id="add">+ Add owner</button>
+
+      <div style="margin-top:14px">
+        <label class="note" for="threshold">Signatures required</label><br />
+        <select id="threshold" style="margin-top:6px"></select>
+        <span class="note" id="thr-note"></span>
+      </div>
+
+      <div class="warn">
+        <strong>Choose the threshold so one lost key is survivable.</strong>
+        2-of-3 keeps working if one owner is unavailable or compromised.
+        2-of-2 does not: lose one key and the wallet is sealed permanently, with whatever
+        is inside it. And a multisig is only real if the keys are held by
+        <em>different people on different machines</em> — three keys in one password
+        manager is a single key wearing a costume.
+      </div>
+
+      <p style="margin-top:16px">
+        <button id="submit">Sign and send request</button>
+      </p>
+      <div id="msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>Wallets on this chain</h2>
+      <p class="note" style="margin-bottom:12px">
+        Read from the chain, not from a list this server keeps — every Safe here was created
+        by the same factory, and each one is asked directly who owns it.
+      </p>
+      <div id="wallets"><p class="note">Loading…</p></div>
+    </div>
+
+    <p class="foot">
+      Operating a wallet — collecting signatures and executing — is done with
+      <code>scripts/safe-exec.js</code>. See <code>docs/multisig.md</code>.
+    </p>
+  </main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ADDR = /^0x[0-9a-fA-F]{40}$/;
+let connected = null;
+
+function banner(kind, html) {
+  $("msg").className = "msg " + kind;
+  $("msg").innerHTML = html;
+  $("msg").scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+// --- owner rows -----------------------------------------------------------
+function ownerRow(value = "") {
+  const d = document.createElement("div");
+  d.className = "owner";
+  d.innerHTML = `<input type="text" placeholder="0x…" value="${esc(value)}" spellcheck="false" />
+                 <button class="mini ghost" type="button">Remove</button>`;
+  d.querySelector("button").onclick = () => { d.remove(); syncThreshold(); };
+  d.querySelector("input").oninput = syncThreshold;
+  return d;
+}
+function ownerValues() {
+  return [...$("owners").querySelectorAll("input")].map((i) => i.value.trim()).filter(Boolean);
+}
+
+// The threshold options depend on the number of owners, so they are rebuilt
+// whenever that changes. Without this it is possible to ask for 3-of-2, which
+// the server rejects — after the user has signed, which is a wasted signature
+// and reads as the site being broken.
+function syncThreshold() {
+  const n = Math.max(ownerValues().length, 1);
+  const sel = $("threshold");
+  const prev = Number(sel.value) || Math.floor(n / 2) + 1;
+  sel.innerHTML = "";
+  for (let i = 1; i <= n; i++) {
+    const o = document.createElement("option");
+    o.value = i;
+    o.textContent = `${i} of ${n}`;
+    sel.appendChild(o);
+  }
+  sel.value = String(Math.min(prev, n));
+  const t = Number(sel.value);
+  $("thr-note").textContent = n === 1
+    ? " — one owner is not a multisig; add more."
+    : t === n ? " — every owner must sign; losing any one key seals the wallet."
+    : t === 1 ? " — any single owner can act alone."
+    : ` — survives ${n - t} owner${n - t === 1 ? "" : "s"} being unavailable.`;
+}
+
+// --- submit ---------------------------------------------------------------
+async function submit() {
+  const btn = $("submit");
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Working…";
+  try {
+    if (!window.ethereum) throw new Error("No wallet found in this browser. Install MetaMask, then reload.");
+    const [address] = await window.ethereum.request({ method: "eth_requestAccounts" });
+    connected = address;
+
+    const owners = ownerValues();
+    if (!owners.length) throw new Error("Add at least one owner.");
+    const bad = owners.find((o) => !ADDR.test(o));
+    if (bad) throw new Error(`"${bad}" is not a valid address.`);
+    if (!owners.some((o) => o.toLowerCase() === address.toLowerCase())) {
+      throw new Error("Your connected address must be one of the owners — you cannot request a wallet you have no part in.");
+    }
+
+    const { message } = await (await fetch("/safe-request/challenge")).json();
+    const signature = await window.ethereum.request({ method: "personal_sign", params: [message, address] });
+    const res = await fetch("/safe-request", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        address, message, signature, owners,
+        threshold: Number($("threshold").value),
+        label: $("label").value,
+      }),
+    });
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.error ?? "the request was refused");
+    banner("ok", `Request ${out.queued === "updated" ? "updated" : "queued"}. An operator reviews it and `
+      + `creates the wallet on chain; it will appear below once they do. Nothing has been created yet.`);
+    await loadStatus(address);
+  } catch (e) {
+    banner("err", esc(e.message ?? String(e)));
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+
+async function loadStatus(address) {
+  if (!ADDR.test(address ?? "")) return;
+  try {
+    const s = await (await fetch("/safe-request/status?address=" + encodeURIComponent(address))).json();
+    if (s.pending) {
+      banner("info", `You have a request waiting since ${esc(new Date(s.requestedAt).toLocaleString())} — `
+        + `${s.threshold} of ${s.owners.length} owners. Sending another replaces it.`);
+    }
+  } catch (_) { /* the form still works without this */ }
+}
+
+// --- the wallets ----------------------------------------------------------
+async function loadWallets() {
+  try {
+    const q = connected ? "?address=" + encodeURIComponent(connected) : "";
+    const d = await (await fetch("/safes" + q)).json();
+    if (!d.deployed) {
+      $("wallets").innerHTML = `<p class="note">Safe is not deployed on this chain yet, so no `
+        + `wallets can exist. An operator runs <code>scripts/deploy-safe.js</code> once.</p>`;
+      return;
+    }
+    if (!d.wallets.length) {
+      $("wallets").innerHTML = `<p class="note">None yet. The contracts are deployed and ready — `
+        + `yours would be the first.</p>`;
+      return;
+    }
+    // Wallets the viewer owns first: on a page listing everyone's wallets, the
+    // one you can actually act on is the one you came for.
+    const sorted = [...d.wallets].sort((a, b) => (b.yours === true) - (a.yours === true));
+    $("wallets").innerHTML = sorted.map((w) => `
+      <div class="w">
+        <div class="top">
+          <code>${esc(w.address)}</code>
+          <span class="thr">${w.readable ? `${w.threshold} of ${w.owners.length}` : "unreadable"}
+            ${w.yours ? '<span class="yours">yours</span>' : ""}</span>
+        </div>
+        ${w.readable
+          ? `<ul>${w.owners.map((o) => `<li><code>${esc(o)}</code>${connected
+              && o.toLowerCase() === connected.toLowerCase() ? " — you" : ""}</li>`).join("")}</ul>
+             <p class="note" style="margin-top:6px">${w.nonce} transaction${w.nonce === 1 ? "" : "s"} executed`
+             + ` · created in block ${w.block}</p>`
+          : `<p class="note" style="margin-top:6px">This proxy did not answer <code>getOwners()</code>.
+             It was created by the factory but is not a Safe of the expected version.</p>`}
+      </div>`).join("");
+  } catch (e) {
+    $("wallets").innerHTML = `<p class="note">Could not read the chain: ${esc(e.message)}</p>`;
+  }
+}
+
+// --- boot -----------------------------------------------------------------
+(async function () {
+  $("add").onclick = () => { $("owners").appendChild(ownerRow()); syncThreshold(); };
+  $("submit").onclick = submit;
+  $("threshold").onchange = syncThreshold;
+
+  // Prefill the first owner with the connected address when there is one: it is
+  // required to be an owner, and typing your own address back in is friction for
+  // no reason.
+  let mine = "";
+  try {
+    const accs = await window.ethereum?.request({ method: "eth_accounts" });
+    mine = accs?.[0] ?? "";
+    connected = mine || null;
+  } catch (_) { /* no wallet, or not authorised yet */ }
+  $("owners").appendChild(ownerRow(mine));
+  $("owners").appendChild(ownerRow());
+  syncThreshold();
+  if (mine) loadStatus(mine);
+  loadWallets();
+})();
+</script>
+</body>
+</html>

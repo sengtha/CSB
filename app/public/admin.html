@@ -169,6 +169,21 @@
         <input id="kyc-gas" value="1000" style="max-width:200px" />
         <hr style="margin:20px 0;border:0;border-top:1px solid var(--line)" />
 
+        <!-- Multisig requests. Same shape as the KYC queue above and for the same
+             reason: creating the wallet is an ON-CHAIN act signed here, because
+             Subnet-EVM checks tx.origin against contractDeployerAllowList and a
+             visitor's own wallet would be refused by the precompile. The server
+             holds no key and only clears the queue entry afterwards. -->
+        <h2>Pending multisig requests <span id="safe-count" class="badge info">0</span></h2>
+        <p class="small" style="margin-bottom:10px">
+          Filed at <a href="safe.html" target="_blank">safe.html</a>, each proven by a wallet
+          signature. <b>Create</b> deploys a Safe owned by the listed addresses — <em>your key
+          pays the gas and gets no power over the wallet</em>, since ownership is fixed by the
+          owner list at creation. Requires your address to hold contract-deployer rights.
+        </p>
+        <table id="safe-list"><tr><th>Requested by</th><th>For</th><th>Owners</th><th>Asked</th><th></th></tr></table>
+        <hr style="margin:20px 0;border:0;border-top:1px solid var(--line)" />
+
         <div class="grid2">
           <div>
             <h2>Register address</h2>
@@ -714,6 +729,113 @@ async function refreshStatus() {
   }
   loadKyc();
   setInterval(loadKyc, 15000);
+
+  // --- Multisig requests
+  //
+  // Creating the wallet is signed HERE, by the operator's key, because
+  // Subnet-EVM tests tx.origin against contractDeployerAllowList when a contract
+  // is created — not the caller of CREATE. So allow-listing SafeProxyFactory
+  // would achieve nothing and a visitor's own wallet is refused by the precompile
+  // before any contract runs. Paying for it grants no control: ownership is fixed
+  // by the owner list passed to setup().
+  const SAFE_SETUP_ABI = ["function setup(address[] _owners,uint256 _threshold,address to,bytes data,address fallbackHandler,address paymentToken,uint256 payment,address paymentReceiver)"];
+  const SAFE_FACTORY_ABI = [
+    "function createProxyWithNonce(address _singleton,bytes initializer,uint256 saltNonce) returns (address)",
+    "event ProxyCreation(address indexed proxy,address singleton)",
+  ];
+
+  async function loadSafes() {
+    const t = document.getElementById("safe-list");
+    let list = [];
+    try {
+      const r = await fetch("/safe-requests");
+      list = r.ok ? await r.json() : [];
+    } catch (_) { /* leave empty */ }
+    document.getElementById("safe-count").textContent = list.length;
+    const escape = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    t.innerHTML = "<tr><th>Requested by</th><th>For</th><th>Owners</th><th>Asked</th><th></th></tr>" +
+      (list.length ? list.map((r) => `
+        <tr>
+          <td class="mono">${r.address}</td>
+          <td>${escape(r.label || "—")}</td>
+          <td class="small">${r.threshold} of ${r.owners.length}<br />
+              ${r.owners.map((o) => `<span class="mono">${short(o)}</span>`).join(", ")}</td>
+          <td class="small">${new Date(r.requestedAt).toLocaleString()}</td>
+          <td style="white-space:nowrap">
+            <button data-safe-create="${r.address}">Create</button>
+            <button class="danger" data-safe-refuse="${r.address}">Refuse</button>
+          </td>
+        </tr>`).join("")
+      : '<tr><td colspan="5" class="small">No requests waiting.</td></tr>');
+
+    t.querySelectorAll("button[data-safe-create]").forEach((b) => {
+      b.onclick = () => run(async () => {
+        const who = b.dataset.safeCreate;
+        const req = list.find((r) => r.address.toLowerCase() === who.toLowerCase());
+        if (!req) throw new Error("that request is no longer in the queue");
+        const cfg = await loadConfig();
+        if (!cfg.safe?.safeProxyFactory || !cfg.safe?.safeL2) {
+          throw new Error("Safe is not deployed on this chain. Run:  CSB_SAFE_INFRA_ONLY=1 "
+            + "npx hardhat run scripts/deploy-safe.js --network csbRemote");
+        }
+        const done = [];
+
+        const setup = new ethers.Interface(SAFE_SETUP_ABI).encodeFunctionData("setup", [
+          req.owners, req.threshold,
+          ethers.ZeroAddress, "0x",
+          cfg.safe.compatibilityFallbackHandler ?? ethers.ZeroAddress,
+          ethers.ZeroAddress, 0, ethers.ZeroAddress,
+        ]);
+        const factory = new ethers.Contract(cfg.safe.safeProxyFactory, SAFE_FACTORY_ABI, signer());
+        // A salt that repeats would compute an address that already exists and
+        // revert with nothing readable. Anything unique does; the clock is.
+        const salt = BigInt(Date.now());
+        const rc = await (await factory.createProxyWithNonce(
+          cfg.safe.safeL2, setup, salt, await feeOverrides())).wait();
+
+        let created = null;
+        for (const log of rc.logs) {
+          try {
+            const p = factory.interface.parseLog(log);
+            if (p?.name === "ProxyCreation") { created = p.args.proxy; break; }
+          } catch (_) { /* not ours */ }
+        }
+        if (!created) throw new Error("the wallet was created but no ProxyCreation event was found — "
+          + "check the transaction before creating another");
+        done.push(`wallet ${short(created)} created (${req.threshold} of ${req.owners.length})`);
+
+        // Without an attestation the wallet cannot receive KHRt at all, because
+        // KHRStablecoin checks the identity registry on both sides of a transfer.
+        // Deliberately NOT setSystemContract, which would also exempt it from the
+        // tier cap and the public-good levy.
+        try {
+          const { identity } = await getContracts(signer());
+          if (!(await identity.isActive(created))) {
+            await (await identity.register(created, ethers.id(`csb:safe:${created}`), 3,
+              await feeOverrides())).wait();
+            done.push("attested at tier 3 so it can hold KHRt");
+          } else done.push("already attested");
+        } catch (e) {
+          done.push("NOT attested — it cannot hold KHRt until an issuer registers it");
+        }
+
+        await fetch("/safe-requests/" + who, { method: "DELETE" });
+        await loadSafes();
+        return `${done.join("; ")}. Address: ${created}`;
+      });
+    });
+
+    t.querySelectorAll("button[data-safe-refuse]").forEach((b) => {
+      b.onclick = () => run(async () => {
+        const res = await fetch("/safe-requests/" + b.dataset.safeRefuse, { method: "DELETE" });
+        if (!res.ok) throw new Error("could not remove the request");
+        await loadSafes();
+        return `Request from ${short(b.dataset.safeRefuse)} removed. Nothing was written to the chain.`;
+      });
+    });
+  }
+  loadSafes();
+  setInterval(loadSafes, 15000);
 
   // --- Chain-level allow lists
   // readAllowList reverts on a chain without the precompiles (a local Hardhat

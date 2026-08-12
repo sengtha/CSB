@@ -26,6 +26,7 @@
       items: [
         ["wallet.html", "Wallet", "Pay, swap, and see your balance"],
         ["assets.html", "Tokens & NFTs", "Everything you hold"],
+        ["safe.html", "Multisig wallets", "Wallets that need more than one signature"],
         ["fund.html", "Public-good fund", "Where the fees go"],
       ],
     },

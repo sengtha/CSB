@@ -150,6 +150,50 @@ the multisig removes. The script says so every time it is used.
 the nonce advanced anyway — so a failed transaction has to be re-signed, not
 retried.
 
+## Wallets people ask for, through the site
+
+`safe.html` lets anyone name owners and a threshold and request a wallet;
+`admin.html` shows the queue and creates it. It is the KYC flow's shape exactly,
+and for the same reason — **the server never holds a key**.
+
+### Why it is a queue and not a button
+
+Subnet-EVM checks **`tx.origin`** against `contractDeployerAllowList` when a
+contract is created, not the caller of `CREATE`. The Avalanche documentation says
+this is deliberate, *"to provide a great UX with factory contracts"*. On CSB the
+effect is the reverse: allow-listing `SafeProxyFactory` achieves nothing, and a
+visitor pressing "create" in their own browser is refused by the precompile before
+any contract runs. Contract creation here is restricted to vetted deployers, and a
+Safe is a contract.
+
+Three ways out were weighed:
+
+| | Cost |
+|---|---|
+| Grant every requester deployer rights | They can then deploy **anything**. One of the five precompile controls becomes a formality. |
+| Let the server relay the creation | The app server holds a private key. It holds none today — that is what `server-secrets.js` is for — and it is internet-facing behind one passcode. |
+| **Queue it; an operator creates it** | Not instant. A human is in the loop. |
+
+The third was chosen. Paying for the creation confers nothing: ownership is fixed
+by the owner list passed to `setup()`, so the operator has no power over the
+wallet afterwards. Requests are refused up front if any owner is missing from
+`txAllowList`, since such an owner holds a key that could never sign.
+
+### Where the wallet list comes from
+
+Not from this server. Every Safe on CSB is a proxy created by one factory, so
+`app/safes.js` reads `ProxyCreation` logs and asks each wallet directly for its
+owners and threshold. A server-side registry of who owns what would be a second
+answer to a question the chain already answers, and the two would disagree the
+first time the server was restored from a backup.
+
+Wallets created this way are **not** written to `deployments.json` — that file
+records infrastructure. To operate one, pass its address:
+
+```bash
+CSB_SAFE=0x… npx hardhat run scripts/safe-exec.js --network csbRemote
+```
+
 ## Moving a role to it
 
 This is the part with no undo. The order matters more than the speed.

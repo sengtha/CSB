@@ -69,13 +69,31 @@ async function main() {
   const [signer] = await ethers.getSigners();
   const net = await provider.getNetwork();
 
-  const file = process.env.CSB_DEPLOYMENTS_FILE
-    ?? path.join(__dirname, "..", "app", "deployments.json");
-  const d = JSON.parse(fs.readFileSync(file, "utf8"));
+  // CSB_SAFE takes either a name from deployments.json or a bare address. The
+  // address form is not a convenience: wallets created through the admin console
+  // from a user's request are never written to deployments.json — that file
+  // records infrastructure, and the wallets themselves are discovered from the
+  // factory's events (app/safes.js). Without this, every user-created Safe would
+  // be unoperatable by the only tool that can operate one.
   const name = process.env.CSB_SAFE ?? "council";
-  const w = d.safe?.wallets?.[name];
-  if (!w?.address) {
-    throw new Error(`No safe.wallets.${name} in deployments.json — run scripts/deploy-safe.js first.`);
+  let w;
+  if (ethers.isAddress(name)) {
+    w = { address: name };
+  } else {
+    const file = process.env.CSB_DEPLOYMENTS_FILE
+      ?? path.join(__dirname, "..", "app", "deployments.json");
+    const d = JSON.parse(fs.readFileSync(file, "utf8"));
+    w = d.safe?.wallets?.[name];
+    if (!w?.address) {
+      throw new Error(`No safe.wallets.${name} in deployments.json.\n`
+        + `Pass an address instead if this wallet was created from the admin console:\n`
+        + `  CSB_SAFE=0x... npx hardhat run scripts/safe-exec.js --network csbRemote\n`
+        + `Wallets on this chain are listed at /safe.html, or:\n`
+        + `  curl -s $CSB_APP/safes | python3 -m json.tool`);
+    }
+  }
+  if ((await provider.getCode(w.address)) === "0x") {
+    throw new Error(`Nothing is deployed at ${w.address} on this chain.`);
   }
 
   const safe = new ethers.Contract(w.address, SAFE_ABI, signer);

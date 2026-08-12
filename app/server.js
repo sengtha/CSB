@@ -26,6 +26,8 @@ const { assets } = require("./assets");
 const { useCases, useCaseCheck } = require("./use-cases");
 const grove = require("./grove");
 const kyc = require("./kyc-requests");
+const safeReq = require("./safe-requests");
+const { safes } = require("./safes");
 
 const RPC_URL = process.env.CSB_RPC_URL ?? "http://127.0.0.1:8545";
 const PORT = Number(process.env.PORT ?? process.env.DEMO_PORT ?? 8080);
@@ -129,6 +131,40 @@ async function isKycActive(address, fresh = false) {
     _kycCache.set(address, { active, at: now });
     return active;
   } catch (_) { return false; }
+}
+
+// Can this address send a transaction on CSB at all? Distinct from KYC: the
+// txAllowList precompile is what actually decides, and the two gates are
+// independent (docs/architecture.md §4). A Safe owner who is not on this list
+// holds a key that can never be used, because the Safe is a contract and never
+// originates a transaction — an owner does.
+const READ_ALLOWLIST_SELECTOR = "0xeb54dae1";
+const TX_ALLOWLIST = "0x0200000000000000000000000000000000000002";
+async function canTransact(address) {
+  const data = READ_ALLOWLIST_SELECTOR + "000000000000000000000000"
+    + address.toLowerCase().replace(/^0x/, "");
+  try {
+    const up = await fetch(RPC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call",
+        params: [{ to: TX_ALLOWLIST, data }, "latest"] }),
+    });
+    const j = await up.json();
+    if (j.error) return false;
+    // THREE OUTCOMES, NOT TWO. A chain without the precompile — any local
+    // Hardhat node — answers "0x" for a call to an address with no code, which
+    // is not "this address may not transact". Reading it as a refusal makes the
+    // request form permanently unusable off CSB, with an error message blaming
+    // an allow list that does not exist. Absent means unrestricted.
+    if (typeof j.result !== "string" || j.result === "0x" || j.result.length < 66) return true;
+    return BigInt(j.result) !== 0n;   // 0 = None; 1/2/3 = enabled/admin/manager
+  } catch (_) {
+    // A node that cannot be reached must not silently turn into "this owner is
+    // fine". Refusing is recoverable; queueing a wallet whose owners can never
+    // sign is discovered much later, by someone who needs it to work.
+    return false;
+  }
 }
 
 function readBody(req) {
@@ -335,6 +371,60 @@ const server = http.createServer(async (req, res) => {
     send(res, 200, { ...kyc.statusOf(a), kyc: await isKycActive(a, true) });
     return;
   }
+  // --- multisig wallets ---------------------------------------------------
+  //
+  // Public: what exists is checkable by anyone, which is the same rule the
+  // assets endpoint follows. Who owns what is on the chain already; hiding it
+  // here would only make the page less useful than a block explorer.
+  if (url.pathname === "/safes") {
+    try {
+      send(res, 200, await safes(RPC_URL, loadDeployments(), {
+        address: url.searchParams.get("address") ?? undefined,
+      }));
+    } catch (e) { send(res, 502, { error: e.message }); }
+    return;
+  }
+  if (url.pathname === "/safe-request/challenge" && req.method === "GET") {
+    send(res, 200, { message: safeReq.challenge() });
+    return;
+  }
+  if (url.pathname === "/safe-request" && req.method === "POST") {
+    try {
+      const body = JSON.parse((await readBody(req)).toString() || "{}");
+      const out = await safeReq.submit(body, (a) => canTransact(a));
+      if (out.error) { send(res, out.status ?? 400, { error: out.error }); return; }
+      accessLog.push({ at: new Date().toISOString(), event: "safe-request", ip: req.socket.remoteAddress });
+      send(res, 200, out);
+    } catch (e) {
+      send(res, 400, { error: e.message });
+    }
+    return;
+  }
+  if (url.pathname === "/safe-request/status") {
+    const a = url.searchParams.get("address");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(a ?? "")) { send(res, 400, { error: "a valid 0x address is required" }); return; }
+    send(res, 200, safeReq.statusOf(a));
+    return;
+  }
+  // The queue. Admin only — it holds the label a requester typed.
+  if (url.pathname === "/safe-requests" || url.pathname.startsWith("/safe-requests/")) {
+    if (!authed(req)) { send(res, 401, { error: "not authenticated" }); return; }
+    if (req.method === "GET") { send(res, 200, safeReq.list()); return; }
+    if (req.method === "DELETE") {
+      // Creating the wallet happens ON CHAIN, signed in the operator's browser
+      // by a key with deployer rights — the server never holds one. This only
+      // clears the queue entry once that has actually happened.
+      const a = decodeURIComponent(url.pathname.slice("/safe-requests/".length));
+      // Once — resolve() mutates. Calling it twice to pick a status code would
+      // always take the second, failing branch.
+      const removed = safeReq.resolve(a);
+      send(res, removed ? 200 : 404, removed ? { ok: true } : { error: "no such request" });
+      return;
+    }
+    send(res, 405, { error: "method not allowed" });
+    return;
+  }
+
   // The queue itself — who asked, and what they typed. Admin only.
   if (url.pathname === "/kyc-requests" || url.pathname.startsWith("/kyc-requests/")) {
     if (!authed(req)) { send(res, 401, { error: "not authenticated" }); return; }

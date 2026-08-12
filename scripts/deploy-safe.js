@@ -47,6 +47,14 @@ const path = require("path");
  *   CSB_SAFE_SALT        proxy salt nonce, to make more than one  (default 0)
  *   CSB_SAFE_KEY         deployments.json key to record under  (default "council")
  *   CSB_SKIP_ATTEST=1    do not register the Safe in the IdentityRegistry
+ *   CSB_SAFE_INFRA_ONLY=1  deploy the four shared contracts and stop
+ *
+ * INFRA-ONLY IS THE FIRST STEP FOR ANY CHAIN THAT WILL HAVE MORE THAN ONE SAFE.
+ * The singleton, factory, handler and MultiSend are deployed once and shared by
+ * every wallet ever created; only the proxy is per-wallet, and it costs about
+ * 300k gas. Deploying the infrastructure a second time is not an error anyone
+ * will notice — it just silently splits the chain's wallets across two sets of
+ * contracts, which matters the day something needs upgrading or indexing.
  */
 
 /**
@@ -74,6 +82,10 @@ const ARTIFACTS = {
     "handler/CompatibilityFallbackHandler.sol/CompatibilityFallbackHandler.json",
   MultiSendCallOnly: "libraries/MultiSendCallOnly.sol/MultiSendCallOnly.json",
 };
+const SAFE_NOTE = "Safe 1.4.1, unmodified from @safe-global/safe-contracts (LGPL-3.0). "
+  + "SafeL2 rather than Safe so the Transaction Service could index CSB from "
+  + "events — Subnet-EVM serves no Parity traces. Addresses are NOT Safe's "
+  + "canonical ones; see scripts/deploy-safe.js.";
 const TX_ALLOWLIST = "0x0200000000000000000000000000000000000002";
 const ALLOWLIST_ABI = ["function readAllowList(address) view returns (uint256)"];
 const ROLE = { 0: "NOT ALLOWED", 1: "enabled", 2: "admin", 3: "manager" };
@@ -186,6 +198,24 @@ async function main() {
     console.log(`  ${name.padEnd(30)} ${infra[name]}`);
   }
 
+  if (process.env.CSB_SAFE_INFRA_ONLY === "1") {
+    d.safe = {
+      ...(d.safe ?? {}),
+      safeL2: infra.SafeL2,
+      safeProxyFactory: infra.SafeProxyFactory,
+      compatibilityFallbackHandler: infra.CompatibilityFallbackHandler,
+      multiSendCallOnly: infra.MultiSendCallOnly,
+      version: "1.4.1",
+      note: SAFE_NOTE,
+      wallets: d.safe?.wallets ?? {},
+    };
+    fs.writeFileSync(file, JSON.stringify(d, null, 2));
+    bar("Infrastructure only");
+    console.log(`Recorded under "safe" in ${path.basename(file)}. No wallet was created.`);
+    console.log(`Every Safe on this chain should now be a proxy to ${infra.SafeL2}.`);
+    return;
+  }
+
   // --- the wallet itself ----------------------------------------------------
   bar("Creating the wallet");
   const singleton = new ethers.Contract(infra.SafeL2, loadArtifact(ARTIFACTS.SafeL2).abi, provider);
@@ -278,10 +308,7 @@ async function main() {
     compatibilityFallbackHandler: infra.CompatibilityFallbackHandler,
     multiSendCallOnly: infra.MultiSendCallOnly,
     version: "1.4.1",
-    note: "Safe 1.4.1, unmodified from @safe-global/safe-contracts (LGPL-3.0). "
-      + "SafeL2 rather than Safe so the Transaction Service could index CSB from "
-      + "events — Subnet-EVM serves no Parity traces. Addresses are NOT Safe's "
-      + "canonical ones; see scripts/deploy-safe.js.",
+    note: SAFE_NOTE,
     wallets: {
       ...(d.safe?.wallets ?? {}),
       [key]: {
