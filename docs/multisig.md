@@ -112,12 +112,74 @@ equivalent:
 The script does the first and says so. If you find yourself reaching for the
 second, that is a decision to write down, not a workaround.
 
-## Using it
+## Using it — the console at `/safe.html`
 
-There is no web UI — Safe's app has no entry for chain 8555, and the Transaction
-Service is a Postgres, RabbitMQ and indexer deployment for one wallet. Signatures
-are collected by hand, which sounds worse than it is: **the owners never have to
-meet, and no key ever leaves its machine.**
+Safe's own web app has no entry for chain 8555, and its Transaction Service is a
+Postgres, RabbitMQ and indexer deployment for one wallet. So CSB has its own:
+open a wallet you own, propose a transaction, and every owner signs it from
+wherever their key is. **The owners never meet and no key ever leaves its
+machine** — Safe verifies a concatenation of ordinary ECDSA signatures over an
+EIP-712 hash, and collecting them is a courier job, not a custodial one.
+
+### What the server can and cannot do
+
+`app/safe-txs.js` holds pending proposals and the signatures gathered so far, and
+**it is not authoritative**. Two rules make that true:
+
+- Every signature is checked against the **chain's current owner list**, read on
+  each request. An owner removed this morning cannot approve anything this
+  afternoon.
+- The EIP-712 hash is **recomputed from the stored fields**, never accepted from
+  a client. Without that, an attacker could store fields that differ from the
+  hash the owners signed: the page would show everyone a harmless transfer while
+  the signatures authorised something else — and those signatures would be
+  perfectly valid for that something else.
+
+So the worst that write access to `safe-txs.json` buys is deleting pending work.
+It cannot forge an approval or change what one authorises. Losing the file costs
+convenience, not safety — the same reason the wallet list comes from chain events
+rather than a server registry.
+
+### Against phishing
+
+A multisig removes the single key and, in exchange, **widens the phishing
+surface**: there are now several people to deceive, and each is being asked to
+approve a 32-byte hash. Nobody can read a hash. So the console:
+
+- **Decodes every transaction** into a sentence, and names the reasons to
+  hesitate — permission changes, anything altering the owner list or threshold,
+  a `delegatecall`, an undecodable selector. An unrecognised call says so loudly
+  rather than shrugging, because "cannot be decoded" is a reason to refuse.
+- **Shows token amounts with their decimals**, or says "raw units" when it cannot
+  read them. A missing decimal point is how a signature for a hundred times the
+  intended amount happens.
+- **Prints a verification code** — eight hex characters of the `safeTxHash` — for
+  owners to read to each other **on a different channel** than the one that
+  delivered the request. That defeats the whole class of attacks where the
+  request itself is the forgery.
+- **Refuses `delegatecall` entirely.** It runs the target's code against the
+  wallet's own storage and can rewrite its owners outright. It has legitimate
+  uses, and none of them are things a council does from a web form. Anything
+  needing it goes through `safe-exec.js`, run by someone who can say why.
+- **Signs with `eth_signTypedData_v4`**, so the wallet shows the same fields the
+  page decoded, rather than an opaque digest.
+
+None of this helps if the quorum rubber-stamps. The control that actually works
+is one owner building the transaction independently rather than approving
+calldata handed to them.
+
+### Nonces
+
+Safe nonces are sequential, so only the proposal at the **current** nonce can
+execute; the rest are queued behind it and the console says so. Once a nonce is
+used, every proposal at or below it is permanently dead, and those are pruned
+automatically rather than displayed as pending forever. To cancel a proposal,
+execute a different transaction at the same nonce.
+
+### From a terminal
+
+`scripts/safe-exec.js` does the same job without a browser, and is the route for
+anything the form deliberately cannot express.
 
 ```bash
 # 1. Anyone runs this. It signs nothing and prints what needs authorising.

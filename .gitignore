@@ -17,6 +17,10 @@ app/kyc-requests.json
 # Pending multisig requests (labels people typed, same reason)
 app/safe-requests.json
 
+# Pending multisig transactions and collected signatures (see app/safe-txs.js —
+# not secret, but per-deployment state that no clone should inherit)
+app/safe-txs.json
+
 # operator-local overrides (may contain secrets)
 ops/*.local.sh
 

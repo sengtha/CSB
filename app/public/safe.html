@@ -26,6 +26,7 @@
             border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.65; margin-top: 14px; }
     .foot { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0 24px; line-height: 1.6; }
   </style>
+  <script src="vendor/ethers.umd.min.js"></script>
   <script src="shell.js" defer></script>
   <script src="connect.js" defer></script>
 </head>
@@ -97,9 +98,41 @@
       <div id="wallets"><p class="note">Loading…</p></div>
     </div>
 
+    <!-- The wallet's own console. Hidden until one is opened, because it is
+         meaningless without a wallet and this page is also the front door for
+         people who do not have one yet. -->
+    <div class="card" id="open-card" style="display:none">
+      <h2>Wallet <span id="open-addr" class="mono" style="font-size:13px;font-weight:400"></span></h2>
+      <div class="statrow" id="open-stats" style="margin-top:12px"></div>
+
+      <h3 style="margin-top:20px">Propose a transaction</h3>
+      <p class="note" style="margin-bottom:10px">
+        Nothing is sent when you propose. It waits here until enough owners have signed,
+        and then anyone can execute it.
+      </p>
+      <label class="note" for="p-kind">What should it do?</label><br />
+      <select id="p-kind" style="margin:6px 0 12px">
+        <option value="triel">Send tRIEL</option>
+        <option value="erc20">Send a token (KHRt or another ERC-20)</option>
+        <option value="raw">Raw call — advanced</option>
+      </select>
+
+      <div id="p-fields"></div>
+
+      <label class="note" for="p-label">Note for the other owners <span style="opacity:.7">(optional)</span></label>
+      <input id="p-label" type="text" maxlength="100" placeholder="Q3 operating transfer" style="width:100%" />
+
+      <p style="margin-top:14px"><button id="propose">Review and sign</button></p>
+      <div id="p-msg"></div>
+
+      <h3 style="margin-top:24px">Waiting for signatures</h3>
+      <div id="pending"><p class="note">Loading…</p></div>
+    </div>
+
     <p class="foot">
-      Operating a wallet — collecting signatures and executing — is done with
-      <code>scripts/safe-exec.js</code>. See <code>docs/multisig.md</code>.
+      A wallet can also be operated from a terminal with <code>scripts/safe-exec.js</code>,
+      which is the route for anything this form deliberately cannot express — batching,
+      or a <code>delegatecall</code>. See <code>docs/multisig.md</code>.
     </p>
   </main>
 
@@ -238,9 +271,359 @@ async function loadWallets() {
           : `<p class="note" style="margin-top:6px">This proxy did not answer <code>getOwners()</code>.
              It was created by the factory but is not a Safe of the expected version.</p>`}
       </div>`).join("");
+    $("wallets").querySelectorAll("button[data-open]").forEach((b) => {
+      b.onclick = () => openWallet(b.dataset.open);
+    });
   } catch (e) {
     $("wallets").innerHTML = `<p class="note">Could not read the chain: ${esc(e.message)}</p>`;
   }
+}
+
+// ==========================================================================
+// The wallet console
+// ==========================================================================
+//
+// A multisig removes the single key and, in exchange, widens the phishing
+// surface: there are now several people to deceive, and each is being asked to
+// approve a 32-byte hash. Nobody can read a hash. So every transaction shown
+// here is DECODED, and anything worth hesitating over is named. An owner who
+// cannot read what they are signing is not a second signature — they are a
+// rubber stamp with a keypair.
+const SAFE_TYPES = {
+  SafeTx: [
+    { name: "to", type: "address" }, { name: "value", type: "uint256" },
+    { name: "data", type: "bytes" }, { name: "operation", type: "uint8" },
+    { name: "safeTxGas", type: "uint256" }, { name: "baseGas", type: "uint256" },
+    { name: "gasPrice", type: "uint256" }, { name: "gasToken", type: "address" },
+    { name: "refundReceiver", type: "address" }, { name: "nonce", type: "uint256" },
+  ],
+};
+const KNOWN_FUNCTIONS = [
+  "function transfer(address to, uint256 amount)",
+  "function approve(address spender, uint256 amount)",
+  "function mint(address to, uint256 amount)",
+  "function grantRole(bytes32 role, address account)",
+  "function revokeRole(bytes32 role, address account)",
+  "function register(address account, bytes32 identity, uint8 tier)",
+  "function revoke(address account)",
+  "function suspend(address account)",
+  "function confiscate(address from, address to, uint256 amount, string reference)",
+  "function setSystemContract(address account, bool allowed)",
+  "function setAdmin(address addr)", "function setEnabled(address addr)",
+  "function setManager(address addr)", "function setNone(address addr)",
+  "function addOwnerWithThreshold(address owner, uint256 _threshold)",
+  "function removeOwner(address prevOwner, address owner, uint256 _threshold)",
+  "function swapOwner(address prevOwner, address oldOwner, address newOwner)",
+  "function changeThreshold(uint256 _threshold)",
+  "function setGuard(address guard)", "function enableModule(address module)",
+  "function pause()", "function unpause()",
+];
+// Changes who controls the wallet, or who may do what on the chain. These are
+// what an attacker actually wants signed — a payment is a one-off, a permission
+// is everything after it.
+const HIGH_RISK = new Set(["addOwnerWithThreshold", "removeOwner", "swapOwner", "changeThreshold",
+  "setGuard", "enableModule", "grantRole", "revokeRole", "setAdmin", "setEnabled",
+  "setManager", "setNone", "setSystemContract", "confiscate", "mint"]);
+
+let openSafe = null;      // { address, owners, threshold, nonce }
+let tokenCache = new Map();
+
+// Read through the CONNECTED WALLET, not through this server's /rpc — that
+// endpoint is admin-gated, so an ordinary owner reading a proposal would get a
+// 401 and see every token amount as raw units. Without a wallet there is nothing
+// to read with, and decimals stay null, which the decoder renders honestly as
+// "raw units" rather than guessing 18 and showing a number off by a factor of a
+// million.
+async function tokenMeta(addr) {
+  const k = addr.toLowerCase();
+  if (tokenCache.has(k)) return tokenCache.get(k);
+  let meta = { decimals: null, symbol: "" };
+  if (window.ethereum) {
+    const c = new ethers.Contract(addr,
+      ["function decimals() view returns (uint8)", "function symbol() view returns (string)"],
+      new ethers.BrowserProvider(window.ethereum));
+    meta = { decimals: await c.decimals().then(Number).catch(() => null),
+             symbol: await c.symbol().catch(() => "") };
+  }
+  tokenCache.set(k, meta);
+  return meta;
+}
+
+/** Render a SafeTx as a sentence plus the reasons to look twice. */
+async function decodeTx(tx) {
+  const warn = [];
+  let lines = [];
+  if (tx.data === "0x" || !tx.data) {
+    lines.push(`Send <strong>${esc(ethers.formatEther(tx.value))} tRIEL</strong> to <code>${esc(tx.to)}</code>`);
+    if (BigInt(tx.value) === 0n) lines = [`Call <code>${esc(tx.to)}</code> with no value and no data — this changes nothing.`];
+  } else {
+    let parsed = null;
+    try { parsed = new ethers.Interface(KNOWN_FUNCTIONS).parseTransaction({ data: tx.data }); }
+    catch (_) { /* unknown */ }
+    if (!parsed) {
+      lines.push(`<strong>Unrecognised call</strong> to <code>${esc(tx.to)}</code> — selector <code>${esc(tx.data.slice(0, 10))}</code>`);
+      warn.push("This call <strong>cannot be decoded</strong>. That is not proof it is hostile, but you are "
+        + "being asked to authorise bytes nobody here can read. Do not sign unless you produced "
+        + "this calldata yourself and can say what it does.");
+    } else {
+      const parts = [];
+      for (let i = 0; i < parsed.fragment.inputs.length; i++) {
+        const inp = parsed.fragment.inputs[i];
+        let v = parsed.args[i];
+        if (inp.type.startsWith("uint") && /amount/i.test(inp.name)) {
+          // A token amount shown without its decimals invites a signature for a
+          // hundred times the intended sum. If decimals cannot be read, say the
+          // raw value is raw rather than guess.
+          const m = await tokenMeta(tx.to);
+          v = m.decimals !== null
+            ? `${ethers.formatUnits(v, m.decimals)} ${m.symbol}`.trim()
+            : `${v} (raw units — decimals unknown)`;
+        }
+        parts.push(`${esc(inp.name)}: <code>${esc(String(v))}</code>`);
+      }
+      lines.push(`<strong>${esc(parsed.name)}</strong> on <code>${esc(tx.to)}</code>`);
+      lines.push(parts.join("<br />"));
+      if (HIGH_RISK.has(parsed.name)) {
+        warn.push(`This changes <strong>permissions or control</strong>, not just a balance `
+          + `(<code>${esc(parsed.name)}</code>). Confirm the address it names is the one agreed.`);
+      }
+      if (openSafe && tx.to.toLowerCase() === openSafe.address.toLowerCase() && HIGH_RISK.has(parsed.name)) {
+        warn.push("It changes <strong>who controls this wallet</strong>. After it executes the owner "
+          + "list or threshold is different from the one you are looking at.");
+      }
+    }
+    if (BigInt(tx.value) > 0n) {
+      warn.push(`It also sends <strong>${esc(ethers.formatEther(tx.value))} tRIEL</strong> out of the wallet.`);
+    }
+  }
+  if (Number(tx.operation) !== 0) {
+    warn.push("<strong>DELEGATECALL</strong> — the target's code runs against this wallet's own storage "
+      + "and can rewrite its owners. Refuse unless you know exactly why.");
+  }
+  return { lines, warn };
+}
+
+function riskBlock(warn) {
+  if (!warn.length) return "";
+  return `<div class="warn" style="margin-top:10px"><strong>Look twice:</strong><ul style="margin:6px 0 0;padding-left:18px">`
+    + warn.map((w) => `<li>${w}</li>`).join("") + `</ul></div>`;
+}
+
+// --- proposing ------------------------------------------------------------
+function proposalFields() {
+  const kind = $("p-kind").value;
+  const f = $("p-fields");
+  if (kind === "triel") {
+    f.innerHTML = `<label class="note">To</label><input id="p-to" placeholder="0x…" style="width:100%" />
+      <label class="note">Amount (tRIEL)</label><input id="p-amt" placeholder="0.0" style="width:100%;margin-bottom:12px" />`;
+  } else if (kind === "erc20") {
+    f.innerHTML = `<label class="note">Token contract</label><input id="p-token" placeholder="0x…" style="width:100%" />
+      <label class="note">To</label><input id="p-to" placeholder="0x…" style="width:100%" />
+      <label class="note">Amount</label><input id="p-amt" placeholder="0.00" style="width:100%;margin-bottom:12px" />`;
+  } else {
+    f.innerHTML = `<label class="note">Contract</label><input id="p-to" placeholder="0x…" style="width:100%" />
+      <label class="note">Calldata (hex)</label><input id="p-data" placeholder="0x…" style="width:100%" />
+      <label class="note">tRIEL to send (usually 0)</label><input id="p-amt" placeholder="0" style="width:100%;margin-bottom:12px" />`;
+  }
+}
+
+async function buildProposal() {
+  const kind = $("p-kind").value;
+  const to = ($("p-to")?.value ?? "").trim();
+  if (!ADDR.test(to)) throw new Error("Enter a valid destination address.");
+  const amt = ($("p-amt")?.value ?? "0").trim() || "0";
+
+  if (kind === "triel") {
+    return { to, value: ethers.parseEther(amt).toString(), data: "0x" };
+  }
+  if (kind === "erc20") {
+    const token = $("p-token").value.trim();
+    if (!ADDR.test(token)) throw new Error("Enter a valid token contract address.");
+    const m = await tokenMeta(token);
+    if (m.decimals === null) throw new Error("That address does not answer decimals() — it is not an ERC-20.");
+    const data = new ethers.Interface(["function transfer(address,uint256)"])
+      .encodeFunctionData("transfer", [to, ethers.parseUnits(amt, m.decimals)]);
+    return { to: token, value: "0", data };
+  }
+  const data = ($("p-data").value ?? "").trim();
+  if (!/^0x([0-9a-fA-F]{2})*$/.test(data)) throw new Error("Calldata must be 0x-prefixed hex with whole bytes.");
+  return { to, value: ethers.parseEther(amt || "0").toString(), data };
+}
+
+async function signTx(tx, signerAddr) {
+  const domain = { chainId: Number(openSafe.chainId), verifyingContract: openSafe.address };
+  const value = {
+    to: tx.to, value: tx.value, data: tx.data, operation: 0,
+    safeTxGas: "0", baseGas: "0", gasPrice: "0",
+    gasToken: ethers.ZeroAddress, refundReceiver: ethers.ZeroAddress, nonce: tx.nonce,
+  };
+  // eth_signTypedData_v4 shows the fields in the wallet, so the signer sees the
+  // same values this page decoded rather than an opaque digest.
+  return window.ethereum.request({
+    method: "eth_signTypedData_v4",
+    params: [signerAddr, JSON.stringify({
+      types: { EIP712Domain: [{ name: "chainId", type: "uint256" }, { name: "verifyingContract", type: "address" }],
+               ...SAFE_TYPES },
+      primaryType: "SafeTx", domain, message: value,
+    })],
+  });
+}
+
+async function propose() {
+  const btn = $("propose"); const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Working…";
+  try {
+    const [me] = await window.ethereum.request({ method: "eth_requestAccounts" });
+    if (!openSafe.owners.some((o) => o.toLowerCase() === me.toLowerCase())) {
+      throw new Error("Only an owner of this wallet can propose a transaction.");
+    }
+    const base = await buildProposal();
+    const tx = { ...base, nonce: String(openSafe.nonce) };
+
+    const { warn } = await decodeTx({ ...tx, operation: 0 });
+    if (warn.length && !confirm(`This transaction has ${warn.length} thing(s) worth checking.\n\n`
+        + warn.map((w) => "• " + w.replace(/<[^>]+>/g, "")).join("\n\n") + `\n\nSign it anyway?`)) {
+      throw new Error("Not signed.");
+    }
+
+    const signature = await signTx(tx, me);
+    const res = await fetch("/safe-txs", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ safe: openSafe.address, ...tx, operation: 0,
+        signature, label: $("p-label").value }),
+    });
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.error ?? "the proposal was refused");
+    $("p-msg").className = "msg ok";
+    $("p-msg").innerHTML = out.duplicate
+      ? "That exact transaction was already proposed — your signature was kept."
+      : "Proposed and signed. The other owners can sign it below.";
+    await loadPending();
+  } catch (e) {
+    $("p-msg").className = "msg err";
+    $("p-msg").textContent = e.message ?? String(e);
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+
+// --- the pending list -----------------------------------------------------
+async function loadPending() {
+  if (!openSafe) return;
+  const box = $("pending");
+  let d;
+  try {
+    d = await (await fetch("/safe-txs?safe=" + encodeURIComponent(openSafe.address))).json();
+  } catch (e) { box.innerHTML = `<p class="note">Could not load: ${esc(e.message)}</p>`; return; }
+  if (d.error) { box.innerHTML = `<p class="note">${esc(d.error)}</p>`; return; }
+
+  openSafe.owners = d.owners; openSafe.threshold = d.threshold; openSafe.nonce = d.nonce;
+  $("open-stats").innerHTML =
+    `<div class="stat"><div class="v">${d.threshold} of ${d.owners.length}</div><div class="k">signatures required</div></div>
+     <div class="stat"><div class="v">${d.nonce}</div><div class="k">transactions executed</div></div>
+     <div class="stat"><div class="v">${d.pending.length}</div><div class="k">waiting</div></div>`;
+
+  if (!d.pending.length) { box.innerHTML = `<p class="note">Nothing waiting.</p>`; return; }
+
+  const me = connected ? connected.toLowerCase() : null;
+  const rows = [];
+  for (const p of d.pending) {
+    const { lines, warn } = await decodeTx(p.tx);
+    const signed = p.signatures.map((s) => s.owner.toLowerCase());
+    const iSigned = me && signed.includes(me);
+    const ready = signed.length >= d.threshold;
+    // Safe nonces are sequential: only the proposal AT the current nonce can
+    // execute. Saying so prevents the "it has enough signatures, why did it
+    // fail" question, which is otherwise answered only by a reverted call.
+    const isNext = String(p.tx.nonce) === String(d.nonce);
+    rows.push(`
+      <div class="w">
+        <div class="top">
+          <span>${lines.join("<br />")}</span>
+          <span class="thr">${signed.length} / ${d.threshold}</span>
+        </div>
+        ${p.label ? `<p class="note" style="margin-top:6px">“${esc(p.label)}”</p>` : ""}
+        ${riskBlock(warn)}
+        <p class="note" style="margin-top:8px">
+          nonce ${esc(p.tx.nonce)}${isNext ? "" : " — queued behind an earlier transaction, cannot execute yet"}
+          · proposed by <code>${esc(p.proposedBy)}</code><br />
+          signed by: ${p.signatures.map((s) => `<code>${esc(s.owner)}</code>`).join(", ")}<br />
+          verification code <strong>${esc(p.safeTxHash.slice(2, 10).toUpperCase().match(/../g).join("-"))}</strong>
+          — read this aloud to another owner on a different channel before signing
+        </p>
+        <p style="margin-top:8px">
+          ${me && !iSigned && d.owners.some((o) => o.toLowerCase() === me)
+            ? `<button class="mini" data-sign="${esc(p.safeTxHash)}">Sign</button>` : ""}
+          ${ready && isNext ? `<button class="mini" data-exec="${esc(p.safeTxHash)}">Execute</button>` : ""}
+          ${iSigned ? `<span class="note">you have signed this</span>` : ""}
+        </p>
+      </div>`);
+  }
+  box.innerHTML = rows.join("");
+
+  box.querySelectorAll("button[data-sign]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const p = d.pending.find((x) => x.safeTxHash === b.dataset.sign);
+        const [me2] = await window.ethereum.request({ method: "eth_requestAccounts" });
+        const { warn } = await decodeTx(p.tx);
+        if (warn.length && !confirm(`${warn.length} thing(s) worth checking:\n\n`
+            + warn.map((w) => "• " + w.replace(/<[^>]+>/g, "")).join("\n\n") + `\n\nSign anyway?`)) return;
+        const signature = await signTx(p.tx, me2);
+        const res = await fetch("/safe-txs/" + encodeURIComponent(p.safeTxHash),
+          { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ signature }) });
+        const out = await res.json();
+        if (!res.ok) throw new Error(out.error ?? "refused");
+        await loadPending();
+      } catch (e) { alert(e.message ?? String(e)); }
+      finally { b.disabled = false; }
+    };
+  });
+
+  box.querySelectorAll("button[data-exec]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true; b.textContent = "Executing…";
+      try {
+        const p = d.pending.find((x) => x.safeTxHash === b.dataset.exec);
+        // Safe requires signatures concatenated in ascending owner order and
+        // rejects the batch otherwise, naming neither the rule nor the offender.
+        const sorted = [...p.signatures].sort((a, b2) =>
+          a.owner.toLowerCase() < b2.owner.toLowerCase() ? -1 : 1);
+        const packed = "0x" + sorted.map((s) => s.signature.slice(2)).join("");
+        const prov = new ethers.BrowserProvider(window.ethereum);
+        const safe = new ethers.Contract(openSafe.address, [
+          "function execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes) payable returns (bool)",
+        ], await prov.getSigner());
+        const rc = await (await safe.execTransaction(p.tx.to, p.tx.value, p.tx.data, 0, 0, 0, 0,
+          ethers.ZeroAddress, ethers.ZeroAddress, packed)).wait();
+        // A Safe reports a failed inner call by EMITTING ExecutionFailure rather
+        // than reverting, so a mined transaction is not the same as a successful
+        // one — and the nonce advances either way, so it must be re-proposed.
+        const failed = rc.logs.some((l) => l.topics[0] === ethers.id("ExecutionFailure(bytes32,uint256)"));
+        alert(failed
+          ? "The owners' authorisation was valid but the inner call reverted. The nonce has "
+            + "advanced, so this must be proposed and signed again."
+          : "Executed.");
+        await fetch("/safe-txs/" + encodeURIComponent(p.safeTxHash), { method: "DELETE" }).catch(() => {});
+        await loadPending();
+      } catch (e) { alert(e.shortMessage ?? e.message ?? String(e)); }
+      finally { b.disabled = false; b.textContent = "Execute"; }
+    };
+  });
+}
+
+async function openWallet(addr) {
+  const d = await (await fetch("/safe-txs?safe=" + encodeURIComponent(addr))).json();
+  if (d.error) { alert(d.error); return; }
+  const net = await (await fetch("/node-info")).json().catch(() => ({}));
+  openSafe = { address: addr, owners: d.owners, threshold: d.threshold, nonce: d.nonce,
+               chainId: net.chainId ?? 8555 };
+  $("open-card").style.display = "";
+  $("open-addr").textContent = addr;
+  proposalFields();
+  await loadPending();
+  $("open-card").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // --- boot -----------------------------------------------------------------
@@ -248,6 +631,8 @@ async function loadWallets() {
   $("add").onclick = () => { $("owners").appendChild(ownerRow()); syncThreshold(); };
   $("submit").onclick = submit;
   $("threshold").onchange = syncThreshold;
+  $("p-kind").onchange = proposalFields;
+  $("propose").onclick = propose;
 
   // Prefill the first owner with the connected address when there is one: it is
   // required to be an owner, and typing your own address back in is friction for

@@ -27,7 +27,8 @@ const { useCases, useCaseCheck } = require("./use-cases");
 const grove = require("./grove");
 const kyc = require("./kyc-requests");
 const safeReq = require("./safe-requests");
-const { safes } = require("./safes");
+const { safes, _internal: safeDecode } = require("./safes");
+const safeTxs = require("./safe-txs");
 
 const RPC_URL = process.env.CSB_RPC_URL ?? "http://127.0.0.1:8545";
 const PORT = Number(process.env.PORT ?? process.env.DEMO_PORT ?? 8080);
@@ -131,6 +132,55 @@ async function isKycActive(address, fresh = false) {
     _kycCache.set(address, { active, at: now });
     return active;
   } catch (_) { return false; }
+}
+
+// --- reading a Safe from the chain ---------------------------------------
+//
+// Owners, threshold and nonce are asked of the wallet itself on every request.
+// They decide whether a signature counts and whether a proposal can still be
+// executed, so caching them would mean an owner removed this morning still
+// approving things this afternoon.
+const SAFE_SEL = { getOwners: "0xa0e67e2b", getThreshold: "0xe75235b8", nonce: "0xaffed0e0" };
+
+async function ethCall(to, data) {
+  const up = await fetch(RPC_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to, data }, "latest"] }),
+  });
+  const j = await up.json();
+  if (j.error) throw new Error(j.error.message ?? "eth_call failed");
+  return typeof j.result === "string" ? j.result : "0x";
+}
+
+let _chainId = null;
+async function chainIdOf() {
+  if (_chainId !== null) return _chainId;
+  const up = await fetch(RPC_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
+  });
+  const j = await up.json();
+  if (typeof j.result !== "string") throw new Error("could not read the chain id");
+  _chainId = BigInt(j.result);
+  return _chainId;
+}
+
+// An address with no code, or one that is not a Safe, answers "0x" — reported as
+// "no owners" so the caller can say "not a Safe on this chain" rather than
+// showing a wallet with an empty owner list, which reads as a wallet nobody owns.
+async function safeOwners(addr) {
+  try { return safeDecode.decodeAddressArray(await ethCall(addr, SAFE_SEL.getOwners)); }
+  catch (_) { return []; }
+}
+async function safeThreshold(addr) {
+  try { const h = await ethCall(addr, SAFE_SEL.getThreshold); return h === "0x" ? 0 : Number(BigInt(h)); }
+  catch (_) { return 0; }
+}
+async function safeNonce(addr) {
+  const h = await ethCall(addr, SAFE_SEL.nonce);
+  return h === "0x" ? 0n : BigInt(h);
 }
 
 // Can this address send a transaction on CSB at all? Distinct from KYC: the
@@ -384,6 +434,51 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { send(res, 502, { error: e.message }); }
     return;
   }
+  // Pending transactions for a wallet. The owner list and the nonce are read
+  // from the CHAIN on every call, never taken from the caller — they are what
+  // decides whether a signature counts and whether a proposal can still execute.
+  if (url.pathname === "/safe-txs" && req.method === "GET") {
+    const safe = url.searchParams.get("safe");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(safe ?? "")) { send(res, 400, { error: "a valid 0x safe address is required" }); return; }
+    try {
+      const [owners, nonce, threshold] = await Promise.all([
+        safeOwners(safe), safeNonce(safe), safeThreshold(safe)]);
+      if (!owners.length) { send(res, 404, { error: "not a Safe on this chain" }); return; }
+      send(res, 200, { safe, owners, threshold, nonce: String(nonce), pending: safeTxs.list(safe, nonce) });
+    } catch (e) { send(res, 502, { error: e.message }); }
+    return;
+  }
+  if (url.pathname === "/safe-txs" && req.method === "POST") {
+    try {
+      const body = JSON.parse((await readBody(req)).toString() || "{}");
+      const out = await safeTxs.propose(body, safeOwners, await chainIdOf());
+      if (out.error) { send(res, out.status ?? 400, { error: out.error }); return; }
+      accessLog.push({ at: new Date().toISOString(), event: "safe-tx-propose", ip: req.socket.remoteAddress });
+      send(res, 200, out);
+    } catch (e) { send(res, 400, { error: e.message }); }
+    return;
+  }
+  if (url.pathname.startsWith("/safe-txs/") && req.method === "POST") {
+    const hash = decodeURIComponent(url.pathname.slice("/safe-txs/".length)).replace(/\/sign$/, "");
+    try {
+      const body = JSON.parse((await readBody(req)).toString() || "{}");
+      const out = await safeTxs.sign(hash, body, safeOwners);
+      if (out.error) { send(res, out.status ?? 400, { error: out.error }); return; }
+      send(res, 200, out);
+    } catch (e) { send(res, 400, { error: e.message }); }
+    return;
+  }
+  if (url.pathname.startsWith("/safe-txs/") && req.method === "DELETE") {
+    // Discarding a proposal withdraws nothing from the chain — it only stops
+    // this server offering it for signature. Anything already executed stays
+    // executed, and a signature already given stays valid if someone kept it.
+    if (!authed(req)) { send(res, 401, { error: "not authenticated" }); return; }
+    const hash = decodeURIComponent(url.pathname.slice("/safe-txs/".length));
+    const gone = safeTxs.remove(hash);
+    send(res, gone ? 200 : 404, gone ? { ok: true } : { error: "no such pending transaction" });
+    return;
+  }
+
   if (url.pathname === "/safe-request/challenge" && req.method === "GET") {
     send(res, 200, { message: safeReq.challenge() });
     return;
