@@ -96,6 +96,16 @@
         by the same factory, and each one is asked directly who owns it.
       </p>
       <div id="wallets"><p class="note">Loading…</p></div>
+      <!-- A wallet created before this factory, or one the list cannot reach,
+           still has to be operable. This is also the way in when the list is
+           empty for a reason nobody has worked out yet. -->
+      <div style="margin-top:14px">
+        <label class="note" for="open-any">Or open a wallet by address</label>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <input id="open-any" type="text" placeholder="0x…" spellcheck="false" style="flex:1" />
+          <button class="mini ghost" id="open-any-go">Open</button>
+        </div>
+      </div>
     </div>
 
     <!-- The wallet's own console. Hidden until one is opened, because it is
@@ -268,6 +278,13 @@ async function loadWallets() {
               && o.toLowerCase() === connected.toLowerCase() ? " — you" : ""}</li>`).join("")}</ul>
              <p class="note" style="margin-top:6px">${w.nonce} transaction${w.nonce === 1 ? "" : "s"} executed`
              + ` · created in block ${w.block}</p>`
+             // Open on EVERY wallet, not only your own. What a wallet has
+             // pending is public — it is on the chain either way — and gating
+             // the only route into the console on a connected wallet meant
+             // anyone browsing saw no way in at all. Signing is still gated:
+             // the Sign button appears only for owners.
+             + `<p style="margin-top:8px"><button class="mini" data-open="${esc(w.address)}">`
+             + `${w.yours ? "Open this wallet" : "View pending transactions"}</button></p>`
           : `<p class="note" style="margin-top:6px">This proxy did not answer <code>getOwners()</code>.
              It was created by the factory but is not a Safe of the expected version.</p>`}
       </div>`).join("");
@@ -633,6 +650,11 @@ async function openWallet(addr) {
   $("threshold").onchange = syncThreshold;
   $("p-kind").onchange = proposalFields;
   $("propose").onclick = propose;
+  $("open-any-go").onclick = () => {
+    const a = $("open-any").value.trim();
+    if (!ADDR.test(a)) { alert("That is not a valid 0x address."); return; }
+    openWallet(a);
+  };
 
   // Prefill the first owner with the connected address when there is one: it is
   // required to be an owner, and typing your own address back in is friction for
