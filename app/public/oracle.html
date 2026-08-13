@@ -6,6 +6,12 @@
   <title>Oracles — CSB</title>
   <link rel="stylesheet" href="app.css" />
   <style>
+    .pool { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 6px 0; }
+    @media (max-width: 760px) { .pool { grid-template-columns: 1fr; } }
+    .pool .cell { border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; background: #fbfcfe; }
+    .pool .t { font-size: 11.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+    .pool .v { font-size: 20px; font-weight: 700; color: var(--blue); margin-top: 3px; font-variant-numeric: tabular-nums; }
+    .pool .d { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
     .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
     @media (max-width: 800px) { .vs { grid-template-columns: 1fr; } }
     .ora { border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; background: var(--card); }
@@ -75,6 +81,22 @@
         <div class="kv" id="m-detail" style="margin-top:10px"></div>
         <button id="m-update" style="margin-top:12px">Fold in elapsed time (update)</button>
       </div>
+    </div>
+
+    <!-- The riel/dollar rate. Kept separate from the pair above because it
+         answers a different question: those two compare an administered rate
+         with a traded one for the SAME asset; this is the exchange rate itself,
+         which is the number anyone outside this project actually recognises. -->
+    <div class="card" id="usd-card" style="display:none;margin-top:18px">
+      <h2>Riel against the dollar</h2>
+      <p class="small" style="margin-bottom:12px">
+        From the <b>KHRt / USDx</b> pool on this chain. USDx is a locally issued stand-in
+        for a bridged dollar, so this is a rate <em>this chain</em> discovered — not a
+        quote from anywhere else, and not a claim about the real riel.
+      </p>
+      <div class="pool" id="usd-stats"></div>
+      <div class="kv" id="usd-detail" style="margin-top:12px"></div>
+      <button id="usd-update" style="margin-top:12px;display:none">Fold in elapsed time (update)</button>
     </div>
 
     <div class="card gap" id="gap-card" style="display:none;margin-top:18px">
@@ -154,6 +176,16 @@ const TWAP_ABI = [
   "function update()",
 ];
 const ERC20_ABI = ["function symbol() view returns (string)"];
+const USD_PAIR_ABI = [
+  "function token0() view returns (address)",
+  "function token1() view returns (address)",
+  "function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)",
+];
+const USD_ERC20_ABI = [
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+];
+let USD = null;   // { pair, khr, usd, twap }
 
 const $ = (id) => document.getElementById(id);
 let CFG = null, REF = null, TWAP = null, TWAP_QUOTED = null, ADMIN_ASSET = null, SYM = {};
@@ -304,6 +336,11 @@ async function refresh() {
   const official = REF ? await loadAdmin() : null;
   const market = TWAP ? await loadMarket() : null;
   showGap(official, market);
+  // Independent of the two above: the pool exists whether or not either oracle
+  // was deployed, so a failure here must not blank the rest of the page.
+  if (USD) await renderUsd().catch((e) => {
+    $("usd-detail").innerHTML = `<div>Could not read the pool — ${explainError(e)}</div>`;
+  });
 
   if (REF) {
     const who = await me();
@@ -328,11 +365,37 @@ async function init() {
       TWAP = new ethers.Contract(CFG.oracle.twap, TWAP_ABI, provider);
       TWAP_QUOTED = await TWAP.quotedAsset();
     }
-    if (!REF && !TWAP) { $("none").style.display = ""; return; }
+    // usdMarket is recorded by scripts/usdc-market.js and is independent of the
+    // two oracles above — the page must still show it when neither is deployed.
+    if (CFG.usdMarket?.pair && CFG.usdMarket?.khr && CFG.usdMarket?.bridged) {
+      const meta = async (a) => {
+        const c = new ethers.Contract(a, USD_ERC20_ABI, provider);
+        return { addr: a, symbol: await c.symbol().catch(() => "?"),
+                 decimals: await c.decimals().then(Number).catch(() => 18) };
+      };
+      USD = {
+        pairAddr: CFG.usdMarket.pair,
+        pair: new ethers.Contract(CFG.usdMarket.pair, USD_PAIR_ABI, provider),
+        khr: await meta(CFG.usdMarket.khr),
+        usd: await meta(CFG.usdMarket.bridged),
+        twapAddr: CFG.usdMarket.twap ?? null,
+        twap: CFG.usdMarket.twap ? new ethers.Contract(CFG.usdMarket.twap, TWAP_ABI, provider) : null,
+      };
+      $("usd-card").style.display = "";
+    }
+
+    if (!REF && !TWAP && !USD) { $("none").style.display = ""; return; }
 
     $("live").style.display = "";
     if (!REF) { $("admin-card").style.display = "none"; }
     if (!TWAP) { $("market-card").style.display = "none"; }
+    if (!REF && !TWAP) { $("live").style.display = "none"; }
+    $("usd-update").onclick = () => run(async () => {
+      const s2 = await new ethers.BrowserProvider(window.ethereum).getSigner();
+      await (await USD.twap.connect(s2).update(await feeOverrides())).wait();
+      await renderUsd();
+      return "Elapsed time folded into the average.";
+    });
     if (REF) {
       $("publish-card").style.display = "";
       $("p-asset").value = TWAP_QUOTED ?? await REF.BASE_CURRENCY();

@@ -81,6 +81,50 @@
       </div>
     </div>
 
+    <div class="card" id="liq-card" style="display:none">
+      <h2>Provide liquidity</h2>
+      <p class="small" style="margin-bottom:10px">
+        Deposit <b>both</b> sides of the pool and receive LP tokens — a claim on your share
+        of it. Enter one amount and the other is computed at the pool's current ratio;
+        depositing off-ratio would hand the difference to the next trader.
+      </p>
+      <div class="grid2">
+        <div>
+          <label id="liq-l0"></label>
+          <input id="liq-a0" placeholder="e.g. 100" />
+        </div>
+        <div>
+          <label id="liq-l1"></label>
+          <input id="liq-a1" placeholder="matched automatically" />
+        </div>
+      </div>
+      <p id="liq-quote" class="small" style="margin-top:8px"></p>
+      <button id="liq-go" style="margin-top:6px">Add liquidity</button>
+
+      <hr style="margin:18px 0;border:0;border-top:1px solid var(--line)" />
+
+      <h2>Withdraw liquidity</h2>
+      <p class="small" style="margin-bottom:10px">
+        Burn LP tokens and take back both assets, in whatever ratio the pool holds
+        <em>now</em> — not the ratio you deposited at. That difference is impermanent loss,
+        and it is realised at this moment.
+      </p>
+      <label>LP tokens to burn</label>
+      <input id="liq-burn" placeholder="e.g. 1.5" />
+      <p id="liq-burn-quote" class="small" style="margin-top:8px"></p>
+      <button id="liq-burn-go" style="margin-top:6px">Withdraw</button>
+
+      <div class="note" style="margin-top:14px">
+        <b>Two transactions, not one.</b> Uniswap V2's core contracts have no
+        <code>transferFrom</code> path — a router provides that, and none is deployed here.
+        So the tokens are sent to the pair and then <code>mint()</code> is called separately,
+        exactly as the swap above works. Between those two transactions the deposit is
+        sitting in the pair unclaimed, and whoever calls <code>mint()</code> first receives
+        the LP tokens. On this chain that window is small and every participant is
+        allow-listed, but it is real: <b>do not walk away between the two confirmations.</b>
+      </div>
+    </div>
+
     <div id="msg" class="banner"></div>
 
     <div class="finding">
@@ -117,6 +161,12 @@ const PAIR_ABI = [
   "function totalSupply() view returns (uint256)",
   "function balanceOf(address) view returns (uint256)",
   "function swap(uint amount0Out, uint amount1Out, address to, bytes data)",
+  // Liquidity, same router-less pattern as swap: send the tokens to the pair,
+  // then tell it to account for them.
+  "function mint(address to) returns (uint liquidity)",
+  "function burn(address to) returns (uint amount0, uint amount1)",
+  "function transfer(address,uint256) returns (bool)",
+  "function MINIMUM_LIQUIDITY() view returns (uint256)",
 ];
 const ERC20_ABI = [
   "function symbol() view returns (string)",
@@ -146,6 +196,9 @@ async function loadPool(pairAddr) {
   $("no-pool").style.display = "none";
   $("pool-card").style.display = "";
   $("trade-row").style.display = "";
+  $("liq-card").style.display = "";
+  $("liq-l0").textContent = `${POOL.meta0.symbol} amount`;
+  $("liq-l1").textContent = `${POOL.meta1.symbol} amount`;
 
   const dir = $("sw-dir");
   dir.innerHTML = "";
@@ -270,6 +323,121 @@ async function run(fn) {
   }
 }
 
+// ---------------------------------------------------------------- liquidity
+//
+// The ratio is not a nicety. A deposit that does not match the pool's current
+// reserves mints LP against the SMALLER side and leaves the surplus in the pair
+// as a gift to the next trader — silently, with no error. So one field drives
+// the other, computed from reserves read at that moment.
+let _liqSync = false;
+
+async function liqQuote(edited) {
+  if (_liqSync || !POOL) return;
+  const [r0, r1] = await POOL.pair.getReserves();
+  const q = $("liq-quote");
+  const raw = ($(edited === 0 ? "liq-a0" : "liq-a1").value ?? "").trim();
+  if (!raw) { q.textContent = ""; return null; }
+
+  let a0, a1;
+  try {
+    if (edited === 0) {
+      a0 = ethers.parseUnits(raw, POOL.meta0.decimals);
+      a1 = r0 === 0n ? 0n : (a0 * r1) / r0;
+    } else {
+      a1 = ethers.parseUnits(raw, POOL.meta1.decimals);
+      a0 = r1 === 0n ? 0n : (a1 * r0) / r1;
+    }
+  } catch (_) { q.textContent = "Enter a number."; return null; }
+
+  // Echo the computed side back without retriggering this handler.
+  _liqSync = true;
+  if (edited === 0) $("liq-a1").value = ethers.formatUnits(a1, POOL.meta1.decimals);
+  else $("liq-a0").value = ethers.formatUnits(a0, POOL.meta0.decimals);
+  _liqSync = false;
+
+  const supply = await POOL.pair.totalSupply();
+  // Uniswap mints min(a0*supply/r0, a1*supply/r1) — the smaller side decides,
+  // which is exactly why an off-ratio deposit loses the surplus.
+  const minted = supply === 0n ? 0n
+    : (a0 * supply / r0) < (a1 * supply / r1) ? a0 * supply / r0 : a1 * supply / r1;
+  const share = supply + minted === 0n ? 0n : (minted * 10000n) / (supply + minted);
+  q.innerHTML = `Deposits <b>${fmtUnits(a0, POOL.meta0.decimals)} ${POOL.meta0.symbol}</b> `
+    + `and <b>${fmtUnits(a1, POOL.meta1.decimals)} ${POOL.meta1.symbol}</b>, `
+    + `minting about <b>${fmtUnits(minted, 18)}</b> LP — roughly `
+    + `<b>${(Number(share) / 100).toFixed(2)}%</b> of the pool.`;
+  return { a0, a1, minted };
+}
+
+async function addLiquidity() {
+  if (!window.ethereum) throw new Error("No wallet detected in this browser.");
+  const q = await liqQuote($("liq-a0").value ? 0 : 1);
+  if (!q || (q.a0 === 0n && q.a1 === 0n)) throw new Error("Enter an amount first.");
+
+  const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
+  const me = await signer.getAddress();
+  const t0 = new ethers.Contract(POOL.meta0.addr, ERC20_ABI, signer);
+  const t1 = new ethers.Contract(POOL.meta1.addr, ERC20_ABI, signer);
+
+  // Both sides move before mint() is called. If the second transfer fails the
+  // first is already sitting in the pair, so say which step failed rather than
+  // leaving the operator to work out how much is stranded.
+  try {
+    await (await t0.transfer(POOL.addr, q.a0, await feeOverrides())).wait();
+  } catch (e) {
+    throw new Error(`The ${POOL.meta0.symbol} transfer failed, so nothing was deposited. `
+      + (explainError(e) ?? ""));
+  }
+  try {
+    await (await t1.transfer(POOL.addr, q.a1, await feeOverrides())).wait();
+  } catch (e) {
+    throw new Error(`The ${POOL.meta1.symbol} transfer failed AFTER the ${POOL.meta0.symbol} `
+      + `transfer succeeded. ${fmtUnits(q.a0, POOL.meta0.decimals)} ${POOL.meta0.symbol} is now `
+      + `sitting in the pair unclaimed — send the matching ${POOL.meta1.symbol} and call mint(), `
+      + `or the next person to call mint() receives it. ` + (explainError(e) ?? ""));
+  }
+
+  const pair = new ethers.Contract(POOL.addr, PAIR_ABI, signer);
+  const rc = await (await pair.mint(me, await feeOverrides())).wait();
+  await refreshPool(); await refreshMe(true);
+  return `Liquidity added — LP tokens minted to you (block ${rc.blockNumber}).`;
+}
+
+async function burnQuote() {
+  if (!POOL) return null;
+  const raw = ($("liq-burn").value ?? "").trim();
+  const box = $("liq-burn-quote");
+  if (!raw) { box.textContent = ""; return null; }
+  let lp;
+  try { lp = ethers.parseUnits(raw, 18); } catch (_) { box.textContent = "Enter a number."; return null; }
+
+  const [r0, r1] = await POOL.pair.getReserves();
+  const supply = await POOL.pair.totalSupply();
+  if (supply === 0n) { box.textContent = "The pool is empty."; return null; }
+  const out0 = (lp * r0) / supply, out1 = (lp * r1) / supply;
+  box.innerHTML = `Returns about <b>${fmtUnits(out0, POOL.meta0.decimals)} ${POOL.meta0.symbol}</b> `
+    + `and <b>${fmtUnits(out1, POOL.meta1.decimals)} ${POOL.meta1.symbol}</b>.`;
+  return { lp, out0, out1 };
+}
+
+async function removeLiquidity() {
+  if (!window.ethereum) throw new Error("No wallet detected in this browser.");
+  const q = await burnQuote();
+  if (!q || q.lp === 0n) throw new Error("Enter an amount of LP to burn.");
+  const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
+  const me = await signer.getAddress();
+  const pair = new ethers.Contract(POOL.addr, PAIR_ABI, signer);
+
+  const held = await pair.balanceOf(me);
+  if (held < q.lp) {
+    throw new Error(`You hold ${fmtUnits(held, 18)} LP but tried to burn ${fmtUnits(q.lp, 18)}.`);
+  }
+  // Same shape as adding: the pair burns whatever LP it finds on itself.
+  await (await pair.transfer(POOL.addr, q.lp, await feeOverrides())).wait();
+  const rc = await (await pair.burn(me, await feeOverrides())).wait();
+  await refreshPool(); await refreshMe(true);
+  return `Withdrew both assets (block ${rc.blockNumber}).`;
+}
+
 (async () => {
   await ensureSession();
   const cfg = await loadConfig();
@@ -299,6 +467,11 @@ async function run(fn) {
 
   $("sw-dir").onchange = quote;
   $("sw-amount").oninput = quote;
+  $("liq-a0").oninput = () => liqQuote(0);
+  $("liq-a1").oninput = () => liqQuote(1);
+  $("liq-burn").oninput = burnQuote;
+  $("liq-go").onclick = () => run(addLiquidity);
+  $("liq-burn-go").onclick = () => run(removeLiquidity);
 
   $("sw-go").onclick = () => run(async () => {
     if (!window.ethereum) throw new Error("No wallet detected in this browser.");
