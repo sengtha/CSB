@@ -60,6 +60,13 @@
 
     <div id="pool-card" class="card" style="display:none">
       <h2>Pool</h2>
+      <!-- More than one pool exists on this chain and only one was ever shown.
+           Which one you are looking at changes every number below it, so the
+           selector sits above them rather than in a settings corner. -->
+      <div id="pool-pick" style="display:none;margin-bottom:12px">
+        <label>Which pool</label>
+        <select id="pool-sel"></select>
+      </div>
       <div class="pool" id="pool"></div>
       <div class="small" id="pool-addr" style="margin-top:8px"></div>
     </div>
@@ -186,6 +193,42 @@ async function meta(addr) {
     c.decimals().then(Number).catch(() => 18),
   ]);
   return { addr, symbol, decimals, c };
+}
+
+
+/**
+ * Every pool this chain is known to have, labelled by what is actually in it.
+ *
+ * The addresses come from different scripts writing different keys —
+ * defi-experiment.js records `defi.pair`, usdc-market.js records
+ * `usdMarket.pair`, and the TWAP records the pair it reads. They can and do
+ * overlap, so the list is deduplicated by address; a selector offering the same
+ * pool twice under two names is worse than not having one.
+ *
+ * Labels are read from the tokens rather than taken from the deployments key.
+ * "usdMarket" means nothing to a reader; "KHRt / USDx" is the thing they came
+ * to look at.
+ */
+async function discoverPools(cfg) {
+  const seen = new Set();
+  const out = [];
+  const candidates = [cfg.defi?.pair, cfg.usdMarket?.pair, cfg.oracle?.twapPair].filter(Boolean);
+  for (const addr of candidates) {
+    const key = addr.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    try {
+      const pair = new ethers.Contract(addr, PAIR_ABI, getProvider());
+      const [t0, t1] = await Promise.all([pair.token0(), pair.token1()]);
+      const [m0, m1] = await Promise.all([meta(t0), meta(t1)]);
+      out.push({ addr, label: `${m0.symbol} / ${m1.symbol}` });
+    } catch (_) {
+      // A recorded address that is not a pair on this chain — list it plainly
+      // rather than dropping it, so a stale deployments entry is visible.
+      out.push({ addr, label: `${addr.slice(0, 10)}… (not readable as a pool)` });
+    }
+  }
+  return out;
 }
 
 async function loadPool(pairAddr) {
@@ -445,9 +488,19 @@ async function removeLiquidity() {
   // scripts/defi-experiment.js records what it deployed under `defi`. Without
   // it there is nothing to show, so the page explains how to create one rather
   // than rendering an empty pool.
-  const pairAddr = cfg.defi?.pair;
-  if (pairAddr) {
-    try { await loadPool(pairAddr); }
+  const pools = await discoverPools(cfg);
+  if (pools.length) {
+    if (pools.length > 1) {
+      const sel = $("pool-sel");
+      sel.innerHTML = "";
+      pools.forEach((p) => sel.add(new Option(p.label, p.addr)));
+      $("pool-pick").style.display = "";
+      sel.onchange = () => run(async () => {
+        await loadPool(sel.value);
+        return `Now showing ${sel.selectedOptions[0].text}.`;
+      });
+    }
+    try { await loadPool(pools[0].addr); }
     catch (e) { $("no-pool").style.display = ""; banner($("msg"), "err", explainError(e)); }
   } else {
     $("no-pool").style.display = "";
@@ -457,6 +510,13 @@ async function removeLiquidity() {
     const a = $("manual-pair").value.trim();
     if (!ethers.isAddress(a)) throw new Error("That is not a valid address.");
     await loadPool(a);
+    // Otherwise the dropdown keeps naming a pool that is no longer on screen.
+    const sel = $("pool-sel");
+    if (![...sel.options].some((o) => o.value.toLowerCase() === a.toLowerCase())) {
+      sel.add(new Option(`${POOL.meta0.symbol} / ${POOL.meta1.symbol} (loaded by hand)`, a));
+      $("pool-pick").style.display = "";
+    }
+    sel.value = a;
     return "Pool loaded.";
   });
 
