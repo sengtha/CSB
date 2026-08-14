@@ -53,7 +53,14 @@
     </div>
 
     <div id="market-card" class="card" style="display:none">
-      <h2>KHRt market</h2>
+      <h2 id="mkt-title">KHRt market</h2>
+      <!-- More than one reserve exists and only one was ever shown. Which asset
+           is selected changes every number below it and every button, so the
+           selector sits above them. -->
+      <div id="asset-pick" style="display:none;margin-bottom:12px">
+        <label>Asset</label>
+        <select id="asset-sel"></select>
+      </div>
       <div class="stats" id="stats"></div>
       <div class="small" id="addrs" style="margin-top:10px"></div>
     </div>
@@ -66,6 +73,15 @@
       </div>
       <div class="card">
         <h2>Supply &amp; borrow</h2>
+        <!-- Only shown for a token whose mint() this wallet can actually call. -->
+        <div id="faucet" style="display:none;margin-bottom:12px">
+          <label>Get test tokens</label>
+          <div style="display:flex;gap:8px">
+            <input id="faucet-amt" placeholder="1000" style="flex:1" />
+            <button id="faucet-go" class="ghost">Mint</button>
+          </div>
+          <p class="small" id="faucet-note" style="margin-top:5px"></p>
+        </div>
         <label>Amount (KHRt)</label>
         <input id="amt" placeholder="e.g. 1,000.00" />
         <div class="acts" style="margin-top:10px">
@@ -161,6 +177,45 @@ async function currentAddress(prompt = false) {
   } catch (_) { return null; }
 }
 
+/**
+ * Which reserve the page is looking at.
+ *
+ * `aave.underlying` is KHRt and was the only one this page could ever show;
+ * `aave.reserves.*` is where scripts/usdc-market.js records the others. They are
+ * listed together, deduplicated by address, and labelled from the token itself
+ * rather than from the deployments key — "usdLocal" means nothing to a reader.
+ */
+let ASSET = null;
+
+async function assetList() {
+  const a = CFG.aave;
+  const out = [];
+  const seen = new Set();
+  const add = (u, at, vd) => {
+    if (!u || seen.has(u.toLowerCase())) return;
+    seen.add(u.toLowerCase());
+    out.push({ underlying: u, aToken: at, variableDebtToken: vd });
+  };
+  add(a.underlying, a.aToken, a.variableDebtToken);
+  for (const r of Object.values(a.reserves ?? {})) {
+    add(r.underlying, r.aToken, r.variableDebtToken);
+  }
+  for (const x of out) {
+    const c = new ethers.Contract(x.underlying, ERC20_ABI, getProvider());
+    x.symbol = await c.symbol().catch(() => "???");
+    x.decimals = await c.decimals().then(Number).catch(() => 18);
+  }
+  return out;
+}
+
+/** Amounts in the selected asset's own decimals — KHRt is 2, USDx is 6. */
+const fmtAsset = (v) => Number(ethers.formatUnits(v, ASSET.decimals))
+  .toLocaleString("en-US", { maximumFractionDigits: ASSET.decimals >= 6 ? 4 : 2 });
+const parseAsset = (v) => {
+  try { return ethers.parseUnits(String(v).trim().replaceAll(",", ""), ASSET.decimals); }
+  catch (_) { return null; }
+};
+
 function cell(t, v, d) {
   return `<div class="cell"><div class="t">${t}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
 }
@@ -169,25 +224,26 @@ async function refreshMarket() {
   const a = CFG.aave;
   const p = getProvider();
   const pool = new ethers.Contract(a.pool, POOL_ABI, p);
-  const khr = new ethers.Contract(a.underlying, ERC20_ABI, p);
-  const aToken = new ethers.Contract(a.aToken, ERC20_ABI, p);
-  const vDebt = new ethers.Contract(a.variableDebtToken, ERC20_ABI, p);
+  const under = new ethers.Contract(ASSET.underlying, ERC20_ABI, p);
+  const aToken = new ethers.Contract(ASSET.aToken, ERC20_ABI, p);
+  const vDebt = new ethers.Contract(ASSET.variableDebtToken, ERC20_ABI, p);
 
   const [rd, supplied, debt, poolHolds] = await Promise.all([
-    pool.getReserveData(a.underlying),
-    aToken.totalSupply(), vDebt.totalSupply(), khr.balanceOf(a.aToken),
+    pool.getReserveData(ASSET.underlying),
+    aToken.totalSupply(), vDebt.totalSupply(), under.balanceOf(ASSET.aToken),
   ]);
 
+  $("mkt-title").textContent = `${ASSET.symbol} market`;
   $("stats").innerHTML =
-    cell("Supplied", fmtKHR(supplied), "total aKHRt outstanding") +
-    cell("Borrowed", fmtKHR(debt), "variable-rate debt") +
+    cell("Supplied", fmtAsset(supplied), `total a${ASSET.symbol} outstanding`) +
+    cell("Borrowed", fmtAsset(debt), "variable-rate debt") +
     cell("Supply APR", rayToPct(rd.currentLiquidityRate), "what suppliers earn") +
     cell("Borrow APR", rayToPct(rd.currentVariableBorrowRate), "what borrowers pay");
 
   $("addrs").innerHTML =
     `Pool <span class="mono">${a.pool}</span><br/>`
-    + `aKHRt <span class="mono">${a.aToken}</span> — holds ${fmtKHR(poolHolds)} KHRt<br/>`
-    + `Debt token <span class="mono">${a.variableDebtToken}</span>`;
+    + `a${ASSET.symbol} <span class="mono">${ASSET.aToken}</span> — holds ${fmtAsset(poolHolds)} ${ASSET.symbol}<br/>`
+    + `Debt token <span class="mono">${ASSET.variableDebtToken}</span>`;
 }
 
 async function refreshMe(prompt = false) {
@@ -203,8 +259,8 @@ async function refreshMe(prompt = false) {
   const p = getProvider();
   const pool = new ethers.Contract(a.pool, POOL_ABI, p);
   const [aBal, dBal, acct, s] = await Promise.all([
-    new ethers.Contract(a.aToken, ERC20_ABI, p).balanceOf(addr),
-    new ethers.Contract(a.variableDebtToken, ERC20_ABI, p).balanceOf(addr),
+    new ethers.Contract(ASSET.aToken, ERC20_ABI, p).balanceOf(addr),
+    new ethers.Contract(ASSET.variableDebtToken, ERC20_ABI, p).balanceOf(addr),
     pool.getUserAccountData(addr),
     kycSummary(addr),
   ]);
@@ -221,9 +277,10 @@ async function refreshMe(prompt = false) {
     <b>KYC</b> ${s.status === "active" ? '<span class="badge ok">ACTIVE</span>'
       : `<span class="badge bad">${s.status.toUpperCase()}</span>`}
       ${s.frozen ? '<span class="badge bad">FROZEN</span>' : ""}<br/>
-    <b>Wallet</b> ${fmtKHR(s.balance)} KHRt<br/>
-    <b>Supplied</b> ${fmtKHR(aBal)} aKHRt<br/>
-    <b>Borrowed</b> ${fmtKHR(dBal)} KHRt<br/>
+    <b>Wallet</b> ${fmtKHR(s.balance)} KHRt${ASSET.symbol === "KHRt" ? ""
+      : ` · ${fmtAsset(await new ethers.Contract(ASSET.underlying, ERC20_ABI, p).balanceOf(addr))} ${ASSET.symbol}`}<br/>
+    <b>Supplied</b> ${fmtAsset(aBal)} a${ASSET.symbol}<br/>
+    <b>Borrowed</b> ${fmtAsset(dBal)} ${ASSET.symbol}<br/>
     <b>Health factor</b> <span class="hf ${hfClass}">${noDebt ? "—" : hf.toFixed(2)}</span>
     <span class="small">${noDebt ? "no debt" : hf < 1 ? "liquidatable" : "above 1.0 is safe"}</span>`;
 }
@@ -287,16 +344,16 @@ async function run(fn) {
 async function signerAndAmount() {
   if (!window.ethereum) throw new Error("No wallet detected in this browser.");
   const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
-  const amount = parseKHR($("amt").value);
+  const amount = parseAsset($("amt").value);
   if (!amount || amount <= 0n) throw new Error("Enter an amount first.");
   return { signer, amount, me: await signer.getAddress() };
 }
 
-/** Approve the pool to pull KHRt, if it cannot already. */
+/** Approve the pool to pull the selected asset, if it cannot already. */
 async function ensureAllowance(signer, me, amount) {
-  const khr = new ethers.Contract(CFG.aave.underlying, ERC20_ABI, signer);
-  if (await khr.allowance(me, CFG.aave.pool) < amount) {
-    await (await khr.approve(CFG.aave.pool, amount, await feeOverrides())).wait();
+  const t = new ethers.Contract(ASSET.underlying, ERC20_ABI, signer);
+  if (await t.allowance(me, CFG.aave.pool) < amount) {
+    await (await t.approve(CFG.aave.pool, amount, await feeOverrides())).wait();
   }
 }
 
@@ -308,9 +365,7 @@ async function ensureAllowance(signer, me, amount) {
   $("market-card").style.display = "";
   $("act-row").style.display = "";
 
-  await refreshMarket();
-  await refreshMe();
-  window.ethereum?.on?.("accountsChanged", () => refreshMe());
+  window.ethereum?.on?.("accountsChanged", () => { refreshMe(); refreshFaucet(); });
 
   $("me-check").onclick = () => run(async () => { await refreshMe(true); return "Wallet read."; });
 
@@ -318,34 +373,98 @@ async function ensureAllowance(signer, me, amount) {
     const { signer, amount, me } = await signerAndAmount();
     await ensureAllowance(signer, me, amount);
     const pool = new ethers.Contract(CFG.aave.pool, POOL_ABI, signer);
-    const tx = await pool.supply(CFG.aave.underlying, amount, me, 0, await feeOverrides());
+    const tx = await pool.supply(ASSET.underlying, amount, me, 0, await feeOverrides());
     await tx.wait();
-    return `Supplied ${fmtKHR(amount)} KHRt. You now hold aKHRt, which grows as borrowers pay interest. Tx ${shortHash(tx.hash)}`;
+    return `Supplied ${fmtAsset(amount)} ${ASSET.symbol}. You now hold aKHRt, which grows as borrowers pay interest. Tx ${shortHash(tx.hash)}`;
   });
 
   $("do-withdraw").onclick = () => run(async () => {
     const { signer, amount, me } = await signerAndAmount();
     const pool = new ethers.Contract(CFG.aave.pool, POOL_ABI, signer);
-    const tx = await pool.withdraw(CFG.aave.underlying, amount, me, await feeOverrides());
+    const tx = await pool.withdraw(ASSET.underlying, amount, me, await feeOverrides());
     await tx.wait();
-    return `Withdrew ${fmtKHR(amount)} KHRt. Tx ${shortHash(tx.hash)}`;
+    return `Withdrew ${fmtAsset(amount)} ${ASSET.symbol}. Tx ${shortHash(tx.hash)}`;
   });
 
   $("do-borrow").onclick = () => run(async () => {
     const { signer, amount, me } = await signerAndAmount();
     const pool = new ethers.Contract(CFG.aave.pool, POOL_ABI, signer);
-    const tx = await pool.borrow(CFG.aave.underlying, amount, VARIABLE_RATE, 0, me, await feeOverrides());
+    const tx = await pool.borrow(ASSET.underlying, amount, VARIABLE_RATE, 0, me, await feeOverrides());
     await tx.wait();
-    return `Borrowed ${fmtKHR(amount)} KHRt against your supply. Watch the health factor — below 1.0 you can be liquidated. Tx ${shortHash(tx.hash)}`;
+    return `Borrowed ${fmtAsset(amount)} ${ASSET.symbol} against your supply. Watch the health factor — below 1.0 you can be liquidated. Tx ${shortHash(tx.hash)}`;
+  });
+
+  // --- the asset selector ------------------------------------------------
+  const assets = await assetList();
+  ASSET = assets[0];
+  if (assets.length > 1) {
+    const sel = $("asset-sel");
+    sel.innerHTML = "";
+    assets.forEach((x, i) => sel.add(new Option(x.symbol, String(i))));
+    $("asset-pick").style.display = "";
+    sel.onchange = () => run(async () => {
+      ASSET = assets[Number(sel.value)];
+      await refreshMarket(); await refreshMe(); await refreshFaucet();
+      return `Now showing the ${ASSET.symbol} market.`;
+    });
+  }
+
+  /**
+   * A faucet, but only where one honestly exists.
+   *
+   * The stand-in dollar is Aave's MintableERC20, whose mint() has NO access
+   * control — anyone can already call it. Showing a button does not grant a
+   * permission, it exposes one. KHRt's issuance is role-gated, so the button
+   * must not appear there and pretend otherwise; the probe below is a
+   * staticCall, so what is offered is whatever the chain will actually allow.
+   */
+  async function refreshFaucet() {
+    const box = $("faucet");
+    box.style.display = "none";
+    const me = await currentAddress(false);
+    if (!me) return;
+    const t = new ethers.Contract(ASSET.underlying,
+      ["function mint(uint256) returns (bool)"], getProvider());
+    const ok = await t.mint.staticCall(0n, { from: me }).then(() => true).catch(() => false);
+    if (!ok) return;
+    box.style.display = "";
+    // The consequence, not just the fact. An unlimited-mint token accepted as
+    // collateral means the borrowable side of this market is only as safe as
+    // everyone's restraint — which is worth saying next to the button that mints
+    // it, rather than in a document nobody opens.
+    $("faucet-note").innerHTML = `<b>${ASSET.symbol} can be minted by anyone</b>, in any amount — `
+      + `it is a test token with no issuance control, which is why this button works at all. `
+      + `It is also accepted as <b>collateral</b> here, so anyone could mint a large amount, `
+      + `post it, and borrow out the other side of this market. That is fine on a permissioned `
+      + `testnet where every participant is known and nothing is worth anything; it would not `
+      + `be fine anywhere else. Treat its supply, and any price derived from it, as arbitrary.`;
+  }
+  // First render, now that ASSET is set. Doing this at the top of boot — where
+  // it used to be — would read a null asset.
+  await refreshMarket();
+  await refreshMe();
+  await refreshFaucet();
+
+  $("faucet-go").onclick = () => run(async () => {
+    if (!window.ethereum) throw new Error("No wallet detected in this browser.");
+    const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
+    const amount = parseAsset($("faucet-amt").value || "1000");
+    if (!amount || amount <= 0n) throw new Error("Enter an amount to mint.");
+    const t = new ethers.Contract(ASSET.underlying,
+      ["function mint(uint256) returns (bool)"], signer);
+    const tx = await t.mint(amount, await feeOverrides());
+    await tx.wait();
+    await refreshMe(true); await refreshMarket();
+    return `Minted ${fmtAsset(amount)} ${ASSET.symbol} to your wallet. Tx ${shortHash(tx.hash)}`;
   });
 
   $("do-repay").onclick = () => run(async () => {
     const { signer, amount, me } = await signerAndAmount();
     await ensureAllowance(signer, me, amount);
     const pool = new ethers.Contract(CFG.aave.pool, POOL_ABI, signer);
-    const tx = await pool.repay(CFG.aave.underlying, amount, VARIABLE_RATE, me, await feeOverrides());
+    const tx = await pool.repay(ASSET.underlying, amount, VARIABLE_RATE, me, await feeOverrides());
     await tx.wait();
-    return `Repaid ${fmtKHR(amount)} KHRt. Tx ${shortHash(tx.hash)}`;
+    return `Repaid ${fmtAsset(amount)} ${ASSET.symbol}. Tx ${shortHash(tx.hash)}`;
   });
 })();
 </script>

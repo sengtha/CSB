@@ -490,6 +490,26 @@ npx hardhat run scripts/aave-diagnose.js --network csbRemote
 
 ---
 
+## The stand-in dollar is freely mintable, and it is collateral
+
+USDx is Aave's `MintableERC20`, whose `mint()` has **no access control** — any
+address can mint any amount. `/lend.html` exposes that as a faucet, because a
+button cannot grant a permission that already exists and hiding it would only
+mean people asked an operator for something they could do themselves.
+
+The consequence is worth stating plainly rather than discovering: USDx is also an
+Aave reserve accepted as **collateral at 75% LTV**. So anyone can mint a large
+amount, post it, and borrow out the KHRt side of the market. On a permissioned
+testnet where every participant is allow-listed and nothing is worth anything,
+that is acceptable and is what makes the cross-asset borrow demonstrable at all.
+It would not be acceptable anywhere else.
+
+Three ways to close it if this ever needs to matter, in increasing order of
+honesty: cap the faucet (cosmetic — the token is callable directly), set USDx's
+LTV to zero so it is borrowable but not collateral (keeps the market, loses the
+cross-asset demonstration), or issue the dollar through a real gated token
+(loses the "unmodified upstream contracts" property this whole section rests on).
+
 ## Where the evidence lives
 
 This document is the write-up. Everything in it is reproducible from:
