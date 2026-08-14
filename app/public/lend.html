@@ -206,6 +206,11 @@ async function assetList() {
   add(a.underlying, a.aToken, a.variableDebtToken);
   for (const r of Object.values(a.reserves ?? {})) {
     if (!r || typeof r !== "object") continue;
+    // A retired reserve is hidden, not delisted — the reserve is still on chain
+    // and its holders can still act on it directly. scripts/retire-usdx.js sets
+    // the flag and REFUSES to set it while anyone still has a balance, so hiding
+    // one here cannot strand a supplier.
+    if (r.retired) continue;
     add(r.underlying, r.aToken, r.variableDebtToken);
   }
   for (const x of out) {
@@ -380,10 +385,19 @@ async function signerAndAmount() {
   return { signer, amount, me: await signer.getAddress() };
 }
 
-/** Approve the pool to pull the selected asset, if it cannot already. */
+/**
+ * Approve the pool to pull the selected asset, if it cannot already.
+ *
+ * The allowance is read through THIS PAGE'S provider rather than the wallet's. A
+ * question about CSB's state should be asked of CSB; sent through a wallet that
+ * happens to be on another network it returns 0x, and ethers reports that as
+ * "could not decode result data" — a message about ABI decoding for a problem
+ * that is nothing of the sort. Only the approval needs the signature.
+ */
 async function ensureAllowance(signer, me, amount) {
-  const t = new ethers.Contract(ASSET.underlying, ERC20_ABI, signer);
-  if (await t.allowance(me, CFG.aave.pool) < amount) {
+  const read = new ethers.Contract(ASSET.underlying, ERC20_ABI, getProvider());
+  if (await read.allowance(me, CFG.aave.pool) < amount) {
+    const t = new ethers.Contract(ASSET.underlying, ERC20_ABI, signer);
     await (await t.approve(CFG.aave.pool, amount, await feeOverrides())).wait();
   }
 }

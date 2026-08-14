@@ -240,12 +240,15 @@ live.
 | | |
 |---|---|
 | **CurrencyVault + khUSD/khJPY/khEUR** | `scripts/deploy-currency-vault.js`. Needs `oracle.referenceRate` deployed first, and the deployer to hold `ISSUER_ROLE` (to attest the vault) and `RATE_PUBLISHER_ROLE` (to post the initial rates). `docs/currency.md` |
-| Site page `/currency.html` | Shows the "no currency vault deployed yet" card until then. |
+| Uniswap pairs + Aave reserves for them | `scripts/currency-defi.js`, after the above. Attests the pair and the aToken — without that, every transfer into either reverts. Lists the synths borrowable at LTV 0; `CSB_SYNTH_LTV` changes it. |
+| Retiring USDx on chain | `scripts/retire-usdx.js`. Sets the reserve's LTV to 0, freezes it, and hides it from the site. Refuses to hide it while anyone still holds a position. |
 
-The USD cleanup that goes with it is already in the repo: the mint buttons are
-gone from `/lend.html` and `/assets.html`. **USDx's own `mint()` is untouched and
-it is still an Aave reserve at 75% LTV** — the on-chain step, if it is ever
-wanted, is setting that reserve's LTV to zero. See `docs/defi.md`.
+Run them in that order — `currency-defi.js` seeds each pool from a vault position
+it opens, so the vault has to exist and be priced first.
+
+Until `retire-usdx.js` is run, **USDx's `mint()` is untouched and it is still an
+Aave reserve at 75% LTV.** The mint buttons are gone from `/lend.html` and
+`/assets.html`, but a removed button is not a control. See `docs/defi.md`.
 
 ## Operate it
 

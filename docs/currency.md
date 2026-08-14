@@ -146,6 +146,49 @@ with anonymous searchers on it.
 feed Aave reads. Inventing a second rate source would mean two numbers for the
 same thing and no rule for which one is right.
 
+## Putting them into the DeFi that already exists
+
+`npx hardhat run scripts/currency-defi.js --network csbRemote` gives each currency
+a Uniswap V2 pair against KHRt and an Aave reserve. The plumbing is ordinary; two
+things about it are not.
+
+**Every venue has to be named.** khUSD checks the identity registry on every
+transfer, so a Uniswap pair cannot hold it and an Aave aToken cannot hold it until
+the Identity Authority attests **the contract**. That is the composability cost
+`docs/defi.md` measured on the ERC-4626 control, arriving as an operational step:
+each place that will ever custody a CSB-issued currency must be registered, one at
+a time, by a human with `ISSUER_ROLE`. An ungated token needs none of this — which
+is exactly why an ungated token cannot be governed.
+
+The deployer needs one too, which is the least obvious part. KHRt exempts system
+contracts from its checks and the operator has moved KHRt before, so it is easy to
+assume the operator can hold anything. A synth has no system-contract concept: its
+only gate is `isActive`, applied to issuance as well as transfer.
+
+**The leak is still there, one layer up.** The pair is attested; the LP token
+minted against it is not, and cannot be — it is Uniswap's contract. Same for
+Aave: the aToken is attested so it can custody the currency, but the receipt it
+hands out carries none of the currency's rules. Listing these currencies does not
+close the gap this project has documented four times; it relocates it.
+
+**The pool price is not a measurement.** Each pool is seeded at the administered
+rate, so its ratio *reproduces* that rate rather than testing it. It becomes a
+measurement only once somebody trades against it, and with this depth, not much of
+one even then. The seed comes from a vault position the script opens — there is
+nowhere else it could come from, and the operator is not exempt from that.
+
+### Why they are borrowable but not collateral
+
+khUSD is already a claim created against locked riel. Accepting it as Aave
+collateral to borrow KHRt closes a loop: lock riel, mint khUSD, post it, borrow
+riel, lock that too. Each turn is bounded by the vault's 150% ratio and its debt
+ceiling, so it is not unbounded — but it is leverage assembled out of two
+mechanisms neither of which can see the other, which is how these things break.
+
+So the reserves are listed with **LTV 0**: you may borrow dollars against your
+riel, which is the useful direction, and not the reverse. `CSB_SYNTH_LTV=50`
+enables it for anyone who wants to watch the loop run.
+
 ## Reading a position
 
 Everything on `/currency.html` comes from the vault's own views. The one figure

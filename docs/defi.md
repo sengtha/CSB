@@ -529,6 +529,31 @@ remaining on-chain step, if this ever needs to matter, is setting its LTV to zer
 superseded. Every measurement in this file and in `docs/oracle.md` came from them,
 and deleting them would leave those claims unreproducible.
 
+### Retiring it — `scripts/retire-usdx.js`
+
+The on-chain half. It cannot un-mint the token or close its `mint()`; that
+contract is immutable. What it withdraws is the chain's endorsement:
+
+1. **LTV to zero** — the substantive fix, and the one this section named as the
+   honest middle option. USDx confers no borrowing power from that point on.
+2. **Freeze the reserve** — no new supplies or borrows; repay and withdraw stay
+   open, so nobody is trapped.
+3. **Mark it retired** in `deployments.json`, which removes it from `/lend.html`,
+   `/defi.html`, `/assets.html` and the riel-dollar card on `/oracle.html`.
+
+Two things it deliberately refuses to do. It will not mark the reserve retired
+while anyone still has a position, because hiding a market from the only interface
+its holders have is worse than a confusing menu entry (`CSB_FORCE=1` overrides).
+And it cannot zero the liquidation *threshold* while the reserve has suppliers —
+`PoolConfigurator._checkNoSuppliers` refuses, correctly, since dropping the
+threshold under an open position would liquidate it through no act of the
+borrower's. With liquidity present the reachable state is LTV 0 with the threshold
+left in place; full removal needs the suppliers out first, then a re-run.
+
+After that the finding shrinks but does not disappear. It was *"an unlimited-mint
+token is collateral"*; it becomes *"an unlimited-mint token exists"* — a smaller
+claim, and still a true one.
+
 ## Where the evidence lives
 
 This document is the write-up. Everything in it is reproducible from:

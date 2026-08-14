@@ -65,6 +65,11 @@ td.mono, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-si
 .banner { padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none; white-space: pre-wrap; }
 .banner.err { background: #fdecec; border: 1px solid #f5c2c2; color: #8f1d1d; display: block; }
 .banner.ok { background: #e6f6ec; border: 1px solid #bfe5cd; color: #14532d; display: block; }
+/* "It worked, but something after it did not." Without this rule the class falls
+   back to `display: none` and the message is simply invisible — which is worse
+   than either of the other two states, because the page then looks like nothing
+   happened at all. */
+.banner.warn { background: #fef8ec; border: 1px solid #f0dcb4; color: #6b4b12; display: block; }
 .stat { text-align: center; }
 .stat .v { font-size: 22px; font-weight: 700; color: var(--blue); }
 .stat .k { font-size: 11.5px; color: var(--muted); margin-top: 2px; }

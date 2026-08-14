@@ -233,6 +233,10 @@ async function _assets(rpcUrl, deployments, address, key, now) {
   const foreign = [];
   for (const [key, b] of Object.entries(deployments?.bridged ?? {})) {
     if (!b?.address) continue;
+    // Retired: the stand-in dollar, kept on chain but no longer presented as one
+    // of the chain's assets. scripts/retire-usdx.js sets the flag, and refuses to
+    // while anyone still holds a position anywhere it is used.
+    if (b.retired) continue;
     // deployments.json spans both sides of the bridge, and a Fuji address read
     // against CSB answers 0x for every call — which would render as a token
     // named "" with a supply of 0 rather than as the absent thing it is.

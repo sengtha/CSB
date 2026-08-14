@@ -277,6 +277,17 @@ function explainVault(e) {
   if (/RateNotSet/.test(raw)) {
     return "No exchange rate has been published for this currency yet.";
   }
+  // BAD_DATA means a call returned 0x where a value was expected, which on this
+  // chain has one overwhelming cause: the read went to a network where that
+  // contract does not exist. It used to surface as the bare ethers string "could
+  // not decode result data", which names neither the contract nor the reason.
+  if (e?.code === "BAD_DATA" || /could not decode result data/i.test(raw)) {
+    const where = e?.info?.method ? ` (${e.info.method})` : "";
+    return `A contract read came back empty${where}, which almost always means the `
+      + `wallet is pointed at a different network than CSB. Check that MetaMask is on `
+      + `chain ${CFG?.chainId ?? "8555"} and try again. If it is, the address in `
+      + `deployments.json has no code on this chain.`;
+  }
   return explainError(e);
 }
 
@@ -286,17 +297,36 @@ document.addEventListener("click", (e) => {
   if (b) _lastBtn = b;
 }, true);
 
+/**
+ * Run an action, then redraw.
+ *
+ * THE TWO ARE REPORTED SEPARATELY, and that is the whole point of the shape. The
+ * redraw used to sit inside the same `try`, so a read that failed AFTER a
+ * transaction had already been mined was shown as though the transaction itself
+ * had failed — the worst possible lie for a page that moves money, because the
+ * obvious response is to try again.
+ */
 async function run(fn) {
   const msg = $("msg");
   const btn = _lastBtn;
   const label = btn ? btn.textContent : null;
   if (btn) { btn.disabled = true; btn.textContent = "Working…"; }
   msg.className = "banner";
+  let done = null;
   try {
-    banner(msg, "ok", await fn());
-    await refreshMarket(); await refreshMe(); await refreshRisk();
+    done = await fn();
   } catch (e) {
     banner(msg, "err", explainVault(e));
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    msg.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    return;
+  }
+  try {
+    await refreshMarket(); await refreshMe(); await refreshRisk();
+    banner(msg, "ok", done);
+  } catch (e) {
+    banner(msg, "warn", `${done}\n\nThe page could not redraw itself afterwards, so the `
+      + `figures above may be stale — reload to see the result. ${explainVault(e)}`);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = label; }
     msg.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -465,15 +495,40 @@ async function refreshRisk() {
 
 // ---------------------------------------------------------------------- writing
 
+/**
+ * A signer, checked against the chain this page is about.
+ *
+ * The check is here rather than left to fail later because of how a mismatch
+ * presents: a read sent to the wrong network returns 0x, and ethers reports that
+ * as "could not decode result data" — a message about ABI decoding for a problem
+ * that has nothing to do with ABIs. Naming the actual condition costs one call.
+ */
 async function walletSigner() {
   if (!window.ethereum) throw new Error("No wallet detected in this browser.");
-  const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
+  const bp = new ethers.BrowserProvider(window.ethereum);
+  const net = await bp.getNetwork();
+  const want = BigInt(CFG.chainId ?? 8555);
+  if (net.chainId !== want) {
+    throw new Error(`Your wallet is on chain ${net.chainId}, but this page is about CSB `
+      + `(chain ${want}). Switch networks in the wallet — "Connect wallet" in the header `
+      + `adds CSB if it is missing — and try again.`);
+  }
+  const signer = await bp.getSigner();
   return { signer, me: await signer.getAddress() };
 }
 
+/**
+ * Approve the vault to pull KHRt, if it cannot already.
+ *
+ * The ALLOWANCE IS READ THROUGH THIS PAGE'S OWN PROVIDER, not through the wallet.
+ * A question about CSB's state should be asked of CSB, and routing it through
+ * whatever network the wallet happens to be on is how it comes back as 0x. Only
+ * the approval itself — which genuinely needs a signature — goes to the wallet.
+ */
 async function ensureAllowance(signer, me, amount) {
-  const t = new ethers.Contract(CFG.contracts.KHRStablecoin, ERC20_ABI, signer);
-  if (await t.allowance(me, CFG.currency.vault) < amount) {
+  const read = new ethers.Contract(CFG.contracts.KHRStablecoin, ERC20_ABI, getProvider());
+  if (await read.allowance(me, CFG.currency.vault) < amount) {
+    const t = new ethers.Contract(CFG.contracts.KHRStablecoin, ERC20_ABI, signer);
     await (await t.approve(CFG.currency.vault, amount, await feeOverrides())).wait();
   }
 }
