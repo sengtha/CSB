@@ -28,6 +28,8 @@ const SEL = {
   paused: "0x5c975abb",
   minimumTier: "0xf1ebd5dd",
   approved: "0xd8b964e6",
+  // mint(uint256) — Aave's MintableERC20 self-mint.
+  mintSelf: "0xa0712d68",
 };
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const MAX_TOKENS = 60; // a viewer, not an indexer
@@ -42,6 +44,8 @@ const _inflight = new Map();
 
 const hexToBig = (h) => (typeof h === "string" && h !== "0x" ? BigInt(h) : 0n);
 const pad32 = (a) => "000000000000000000000000" + a.toLowerCase().replace(/^0x/, "");
+/** A uint256 as a 32-byte ABI word. */
+const pad32num = (v) => BigInt(v).toString(16).padStart(64, "0");
 const word = (hex, i) => "0x" + hex.replace(/^0x/, "").slice(i * 64, (i + 1) * 64);
 const addrFromWord = (w) => (typeof w === "string" && w.length >= 66 ? "0x" + w.slice(-40) : null);
 
@@ -262,6 +266,16 @@ async function _assets(rpcUrl, deployments, address, key, now) {
         [{ to: b.address, data: SEL.balanceOf + pad32(address) }, "latest"]), "0x0");
       t.balance = units(hexToBig(bal), decimals);
     }
+
+    // Can anyone mint this? The stand-in dollar is a test token whose mint() has
+    // no access control, so the page can offer a faucet — but only where that is
+    // actually true. KHRt's issuance is role-gated and must never appear to offer
+    // the same thing, so this asks the chain rather than trusting a flag in the
+    // deployments file.
+    t.mintable = (await settle(
+      rpc("eth_call", [{ to: b.address, data: SEL.mintSelf + pad32num(0n) }, "latest"]),
+      null)) !== null;
+
     foreign.push(t);
   }
 

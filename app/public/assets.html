@@ -265,7 +265,16 @@ async function load(address) {
           ? `<code>${esc(t.address)}</code>
              <button class="mini ghost" data-copy="${esc(t.address)}">Copy address</button>
              ${t.missing ? "" : `<button class="mini" data-watch-erc20="${esc(t.address)}"
-                     data-symbol="${esc(t.symbol)}" data-decimals="${t.decimals}">Add to MetaMask</button>`}`
+                     data-symbol="${esc(t.symbol)}" data-decimals="${t.decimals}">Add to MetaMask</button>`}
+             ${t.mintable ? `<span class="native" style="display:block;margin-top:8px">
+                <input class="f-amt" data-t="${esc(t.address)}" placeholder="1000"
+                       style="max-width:120px" />
+                <button class="mini" data-mint-erc20="${esc(t.address)}"
+                        data-decimals="${t.decimals}" data-symbol="${esc(t.symbol)}">Get test ${esc(t.symbol)}</button>
+                <br /><strong>Anyone can mint ${esc(t.symbol)}</strong>, in any amount — it is a test
+                token with no issuance control, which is why this works. It is also accepted as
+                collateral in the lending market, so treat its supply, and any price derived from
+                it, as arbitrary.</span>` : ""}`
           : `<span class="native"><strong>Native coin — there is no contract address.</strong>
              tRIEL appears by itself once CSB is added as a network; use
              <em>Connect wallet</em> at the top of the page.</span>`}
@@ -358,6 +367,51 @@ async function load(address) {
   }
 }
 
+/**
+ * Mint a test token to the connected wallet.
+ *
+ * Hand-encoded like the NFT mint above, because this page deliberately loads no
+ * web3 library: `mint(uint256)` is one selector and one 32-byte word, and
+ * pulling in ethers to build that would be the larger change.
+ *
+ * The button only exists where app/assets.js probed the chain and found the call
+ * succeeds. That matters — KHRt's issuance is role-gated, and a faucet that
+ * appeared next to it would be promising something the chain will refuse.
+ */
+async function mintErc20(btn) {
+  if (!window.ethereum) { alert("No wallet detected in this browser."); return; }
+  const token = btn.dataset.mintErc20;
+  const decimals = Number(btn.dataset.decimals);
+  const input = document.querySelector(`.f-amt[data-t="${token}"]`);
+  const whole = (input?.value ?? "").trim() || "1000";
+  if (!/^\d+(\.\d+)?$/.test(whole)) { alert("Enter a number, e.g. 1000"); return; }
+
+  // Scale by hand: "1000.5" at 6 decimals is 1000500000. Splitting on the point
+  // and padding avoids floating point, which loses precision well before the
+  // 18-decimal tokens on this chain.
+  const [ip, fp = ""] = whole.split(".");
+  const raw = BigInt(ip + fp.padEnd(decimals, "0").slice(0, decimals) || "0");
+  if (raw <= 0n) { alert("Enter an amount greater than zero."); return; }
+
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Confirm in your wallet…";
+  try {
+    const [from] = await window.ethereum.request({ method: "eth_requestAccounts" });
+    const data = "0xa0712d68" + raw.toString(16).padStart(64, "0");   // mint(uint256)
+    await window.ethereum.request({
+      method: "eth_sendTransaction", params: [{ from, to: token, data }],
+    });
+    btn.textContent = "Minted — refreshing…";
+    setTimeout(() => { $("addr").value = from; load(from); }, 3000);
+  } catch (e) {
+    if (e?.code !== 4001) {
+      alert(String(e?.message ?? e) + "\n\nOn a permissioned chain the usual causes are: "
+        + "the address is not on the transaction allow list, or it holds no tRIEL for gas.");
+    }
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+
 async function mint() {
   const btn = $("mint");
   const box = $("mint-state");
@@ -388,6 +442,8 @@ async function mint() {
 // Copy / import buttons live inside innerHTML that is rewritten on every load,
 // so they are handled by delegation rather than by re-binding each time.
 document.addEventListener("click", async (e) => {
+  const mintBtn = e.target.closest("button[data-mint-erc20]");
+  if (mintBtn) { mintErc20(mintBtn); return; }
   const btn = e.target.closest("button[data-copy], button[data-watch-erc20], button[data-watch-erc721]");
   if (!btn) return;
 
