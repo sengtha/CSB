@@ -393,6 +393,87 @@ async function run(fn) {
   }
 }
 
+/**
+ * An empty revert names nothing, so walk the supply path and find the step.
+ *
+ * `missing revert data` means the failure carried no payload — in Solidity that
+ * is almost always a high-level call into an address holding NO CODE, where the
+ * extcodesize guard reverts with nothing to decode. A message guessing at the
+ * cause is worth less than a check that locates it, so this reproduces the
+ * preconditions Aave's supply path depends on, in order, and reports the first
+ * one that does not hold. Returns null when they all do — in which case the
+ * original error is the better thing to show.
+ *
+ * Everything here is a read. Same checks as scripts/currency-diagnose.js, run in
+ * the browser so nobody needs a shell to find out why a button did nothing.
+ */
+async function whySupplyFailed(amount, me) {
+  const p = getProvider();
+  let rd;
+  try {
+    rd = await poolRead().getReserveData(ASSET.underlying);
+  } catch (e) {
+    return `The pool cannot describe this reserve at all, so it is probably not listed `
+      + `in the market this page is pointed at. ${explainError(e)}`;
+  }
+  if (!rd.aTokenAddress || rd.aTokenAddress === ethers.ZeroAddress) {
+    return `${ASSET.symbol} is recorded in deployments.json but the pool has no reserve `
+      + `for it — the listing transaction did not take effect. Re-run `
+      + `scripts/currency-defi.js.`;
+  }
+
+  // Aave packs a reserve's configuration into one uint256; offsets from
+  // ReserveConfiguration.sol. Read here rather than through a data provider,
+  // which may not be deployed on this chain.
+  const c = rd.configuration.data;
+  const bit = (n) => ((c >> BigInt(n)) & 1n) === 1n;
+  if (!bit(56)) return `This reserve is not active. An operator must call `
+    + `setReserveActive("${ASSET.underlying}", true).`;
+  if (bit(60)) return `This market is paused.`;
+  if (bit(57)) return `This reserve is frozen — no new supplies. Repay and withdraw still work.`;
+  const resDecimals = Number((c >> 48n) & 0xffn);
+  if (resDecimals !== ASSET.decimals) {
+    return `The reserve was listed with ${resDecimals} decimals but the token reports `
+      + `${ASSET.decimals}. Every amount would be scaled wrongly, so this reserve should be `
+      + `relisted rather than used.`;
+  }
+
+  // A contract Aave delegates to that holds no code is exactly what produces an
+  // empty revert, and the interest-rate strategy is called BEFORE the transfer.
+  const irs = rd.interestRateStrategyAddress;
+  if (!irs || irs === ethers.ZeroAddress || (await p.getCode(irs)) === "0x") {
+    return `This reserve's interest-rate strategy (${irs}) holds no code. Aave calls it `
+      + `before it moves any tokens, and a call into an empty address reverts with nothing `
+      + `to report — which is the message you saw. The reserve needs relisting.`;
+  }
+
+  // The aToken CUSTODIES the underlying, so on a gated token it needs its own
+  // attestation. This is the one that catches a CSB-issued currency.
+  try {
+    const { identity } = await getContracts();
+    if (!(await identity.isActive(rd.aTokenAddress))) {
+      return `The aToken for this reserve (${rd.aTokenAddress}) holds no KYC attestation, `
+        + `and ${ASSET.symbol} refuses to move to an address the identity registry does not `
+        + `know. The aToken is what custodies the supplied tokens, so every supply fails `
+        + `here. Fix: identity.register("${rd.aTokenAddress}", <hash>, 3) — or re-run `
+        + `scripts/currency-defi.js, which does it.`;
+    }
+    if (!(await identity.isActive(me))) {
+      return `Your address holds no active KYC attestation, so it cannot move `
+        + `${ASSET.symbol} at all.`;
+    }
+  } catch (_) { /* no registry on this chain — not the cause */ }
+
+  // The transfer Aave will make, simulated on its own. If this passes and supply
+  // still fails, the token gate is not the problem.
+  const t = new ethers.Contract(ASSET.underlying, ERC20_ABI, p);
+  const bal = await t.balanceOf(me).catch(() => null);
+  if (bal !== null && bal < amount) {
+    return `You hold ${fmtAsset(bal)} ${ASSET.symbol} and tried to supply ${fmtAsset(amount)}.`;
+  }
+  return null;
+}
+
 /** The pool, read-only, for simulating a write before the wallet is asked. */
 function poolRead() {
   return new ethers.Contract(CFG.aave.pool, POOL_ABI, getProvider());
@@ -442,7 +523,15 @@ async function ensureAllowance(signer, me, amount) {
     // revert payload and surfaces "missing revert data", which names neither the
     // contract nor the condition — and on this chain the condition is usually a
     // specific address lacking a specific attestation. eth_call returns it.
-    await preflight(poolRead(), "supply", [ASSET.underlying, amount, me, 0], me);
+    try {
+      await preflight(poolRead(), "supply", [ASSET.underlying, amount, me, 0], me);
+    } catch (e) {
+      // Locate it before reporting it. An empty revert is the case this exists
+      // for, but the walk is cheap and its answer is more specific than Aave's
+      // numeric codes even when there IS revert data.
+      const located = await whySupplyFailed(amount, me).catch(() => null);
+      throw new Error(located ?? explainAave(e));
+    }
     const pool = new ethers.Contract(CFG.aave.pool, POOL_ABI, signer);
     const tx = await pool.supply(ASSET.underlying, amount, me, 0, await feeOverrides());
     await tx.wait();

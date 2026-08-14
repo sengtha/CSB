@@ -152,6 +152,7 @@ const VAULT_ABI = [
   "function maxDebt(uint256 id, address who) view returns (uint256)",
   "function rielValueOf(uint256 id, uint256 debt) view returns (uint256)",
   "function collateralToken() view returns (address)",
+  "function rates() view returns (address)",
   "function deposit(uint256 id, uint256 amount)",
   "function mint(uint256 id, uint256 amount)",
   "function repay(uint256 id, uint256 amount)",
@@ -176,6 +177,11 @@ const VAULT_ABI = [
 ];
 
 const ERC20_ABI = [
+  // identity() and vault() are SyntheticCurrency's, not ERC-20's. They are here
+  // because an empty revert is usually a call into an address with no code, and
+  // these two are the addresses a currency calls into.
+  "function identity() view returns (address)",
+  "function vault() view returns (address)",
   "function name() view returns (string)",
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
@@ -317,6 +323,97 @@ function explainVault(e) {
       + `deployments.json has no code on this chain.`;
   }
   return explainError(e);
+}
+
+/**
+ * An empty revert names nothing, so walk the vault's wiring and find the break.
+ *
+ * `missing revert data` means the failure carried no payload. In Solidity that is
+ * overwhelmingly one thing: a high-level call into an address holding NO CODE,
+ * where the compiler's extcodesize guard reverts with nothing to say. The vault
+ * calls into three such addresses — the rate oracle, the currency, and the
+ * currency's identity registry — and a currency wired to a wrong one still reads
+ * back its own name and symbol perfectly, so the fault is invisible until
+ * somebody tries to issue.
+ *
+ * Every check is a read. Returns null when the wiring is sound, in which case the
+ * original error was the more informative thing.
+ */
+async function whyVaultFailed(me) {
+  const p = getProvider();
+  const empty = async (a) => !a || a === ethers.ZeroAddress || (await p.getCode(a)) === "0x";
+
+  if (await empty(CFG.currency.vault)) {
+    return `The vault address in deployments.json (${CFG.currency.vault}) holds no code on `
+      + `this chain. Nothing here can work until that is corrected.`;
+  }
+  if (await empty(CUR.synth)) {
+    return `${CUR.symbol}'s own address (${CUR.synth}) holds no code.`;
+  }
+
+  const synth = new ethers.Contract(CUR.synth, ERC20_ABI, p);
+
+  // The currency names its vault at construction and can never be repointed. One
+  // naming a different vault accepts no mint from this one.
+  const namedVault = await synth.vault().catch(() => null);
+  if (namedVault && namedVault.toLowerCase() !== String(CFG.currency.vault).toLowerCase()) {
+    return `${CUR.symbol} names ${namedVault} as its vault, but this page is using `
+      + `${CFG.currency.vault}. A currency can only be issued by the vault it was `
+      + `constructed with, so this one was registered against the wrong vault and has to be `
+      + `redeployed.`;
+  }
+
+  // The registry the CURRENCY calls, which is not necessarily the one the rest of
+  // the site uses — it is fixed in the currency's constructor.
+  const idOfSynth = await synth.identity().catch(() => null);
+  if (idOfSynth === null) {
+    return `${CUR.symbol} does not answer identity(), so it is not the contract this page `
+      + `expects at ${CUR.synth}.`;
+  }
+  if (await empty(idOfSynth)) {
+    return `${CUR.symbol} was deployed pointing at ${idOfSynth} as its identity registry, `
+      + `and that address holds NO CODE. Every transfer and every issuance calls into it, `
+      + `so all of them revert with nothing to report — which is the message you saw. The `
+      + `currency has to be redeployed against ${CFG.contracts.IdentityRegistry}; the `
+      + `address is fixed at construction and cannot be changed.`;
+  }
+  if (idOfSynth.toLowerCase() !== String(CFG.contracts.IdentityRegistry).toLowerCase()) {
+    return `${CUR.symbol} checks a different identity registry (${idOfSynth}) from the rest `
+      + `of this chain (${CFG.contracts.IdentityRegistry}). Attestations granted by the `
+      + `Identity Authority will not be seen by it.`;
+  }
+
+  // The oracle the VAULT calls.
+  const rates = await VAULT.rates().catch(() => null);
+  if (await empty(rates)) {
+    return `The vault reads its rates from ${rates}, which holds no code. Every valuation `
+      + `reverts. Point it at a live oracle with setRates().`;
+  }
+
+  const r = await new ethers.Contract(rates, ORACLE_ABI, p).describe(CUR.synth).catch(() => null);
+  if (!r || r.price === 0n) {
+    return `No exchange rate has ever been published for ${CUR.symbol} at ${CUR.synth}, so `
+      + `the vault cannot value the debt. Somebody holding RATE_PUBLISHER_ROLE must publish `
+      + `one — scripts/deploy-currency-vault.js does it, if the deployer holds that role.`;
+  }
+  if (r.stale) {
+    return `The rate for ${CUR.symbol} is stale. Issuing and releasing collateral are halted `
+      + `until it is republished; repaying still works.`;
+  }
+
+  try {
+    const { identity } = await getContracts();
+    if (!(await identity.isActive(me))) {
+      return `Your address holds no active KYC attestation. A CSB-issued currency checks the `
+        + `registry on issuance as well as transfer, so it cannot be minted to you.`;
+    }
+    if (!(await identity.isActive(CFG.currency.vault))) {
+      return `The vault holds no KYC attestation, so KHRt will not move into it. Register it: `
+        + `identity.register("${CFG.currency.vault}", <hash>, 3).`;
+    }
+  } catch (_) { /* no registry reachable — not the cause */ }
+
+  return null;
 }
 
 let _lastBtn = null;
@@ -512,7 +609,8 @@ async function refreshRisk() {
       const { signer, me } = await walletSigner();
       const amount = parseCur($("debt-amt").value);
       if (!amount || amount <= 0n) throw new Error(`Enter how much ${CUR.symbol} to repay first.`);
-      await preflight(VAULT, "liquidate", [CUR.id, b.dataset.who, amount], me);
+      try { await preflight(VAULT, "liquidate", [CUR.id, b.dataset.who, amount], me); }
+      catch (e) { throw new Error(await whyVaultFailed(me).catch(() => null) ?? explainVault(e)); }
       const tx = await VAULT.connect(signer)
         .liquidate(CUR.id, b.dataset.who, amount, await feeOverrides());
       await tx.wait();
@@ -620,7 +718,8 @@ async function ensureAllowance(signer, me, amount) {
     await ensureAllowance(signer, me, amount);
     // Asked of CSB before it is asked of the wallet: gas estimation drops the
     // revert data and leaves "missing revert data", which names nothing.
-    await preflight(VAULT, "deposit", [CUR.id, amount], me);
+    try { await preflight(VAULT, "deposit", [CUR.id, amount], me); }
+    catch (e) { throw new Error(await whyVaultFailed(me).catch(() => null) ?? explainVault(e)); }
     const tx = await VAULT.connect(signer).deposit(CUR.id, amount, await feeOverrides());
     await tx.wait();
     return `Locked ${fmtKHR(amount)} KHRt. The vault credits what actually arrived, `
@@ -631,7 +730,8 @@ async function ensureAllowance(signer, me, amount) {
   $("do-withdraw").onclick = () => run(async () => {
     const { signer, me } = await walletSigner();
     const amount = askKHR("coll-amt", "release");
-    await preflight(VAULT, "withdraw", [CUR.id, amount], me);
+    try { await preflight(VAULT, "withdraw", [CUR.id, amount], me); }
+    catch (e) { throw new Error(await whyVaultFailed(me).catch(() => null) ?? explainVault(e)); }
     const tx = await VAULT.connect(signer).withdraw(CUR.id, amount, await feeOverrides());
     await tx.wait();
     return `Released ${fmtKHR(amount)} KHRt. Tx ${shortHash(tx.hash)}`;
@@ -662,7 +762,8 @@ async function ensureAllowance(signer, me, amount) {
         + ` Lock KHRt with ${CUR.symbol} selected, then issue.`);
     }
 
-    await preflight(VAULT, "mint", [CUR.id, amount], me);
+    try { await preflight(VAULT, "mint", [CUR.id, amount], me); }
+    catch (e) { throw new Error(await whyVaultFailed(me).catch(() => null) ?? explainVault(e)); }
     const tx = await VAULT.connect(signer).mint(CUR.id, amount, await feeOverrides());
     await tx.wait();
     return `Issued ${fmtCur(amount)} ${CUR.symbol} against your locked riel. `
@@ -674,7 +775,8 @@ async function ensureAllowance(signer, me, amount) {
     const { signer, me } = await walletSigner();
     const amount = parseCur($("debt-amt").value);
     if (!amount || amount <= 0n) throw new Error(`Enter how much ${CUR.symbol} to repay.`);
-    await preflight(VAULT, "repay", [CUR.id, amount], me);
+    try { await preflight(VAULT, "repay", [CUR.id, amount], me); }
+    catch (e) { throw new Error(await whyVaultFailed(me).catch(() => null) ?? explainVault(e)); }
     const tx = await VAULT.connect(signer).repay(CUR.id, amount, await feeOverrides());
     await tx.wait();
     return `Repaid ${fmtCur(amount)} ${CUR.symbol}; it was burned. Repaying never `

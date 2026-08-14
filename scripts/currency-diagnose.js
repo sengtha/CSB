@@ -36,6 +36,7 @@ const VAULT_ABI = [
   "function maxDebt(uint256,address) view returns (uint256)",
   "function rielValueOf(uint256,uint256) view returns (uint256)",
   "function collateralToken() view returns (address)",
+  "function rates() view returns (address)",
   "function deposit(uint256,uint256)",
   "function mint(uint256,uint256)",
   "error NoSuchCurrency()",
@@ -52,6 +53,7 @@ const SYNTH_ABI = [
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address,address) view returns (uint256)",
   "function vault() view returns (address)",
+  "function identity() view returns (address)",
   "error NotKycActive(address account)",
   "error OnlyVault()",
 ];
@@ -155,6 +157,11 @@ async function main() {
 
   const ifaces = [VAULT_ABI, SYNTH_ABI, KHR_ABI].map((a) => new ethers.Interface(a));
 
+  const vaultRates = await vault.rates().catch(() => null);
+  const ratesLive = vaultRates && (await live(vaultRates));
+  console.log(`${ratesLive ? OK : NO} vault reads rates from ${vaultRates}`
+    + (ratesLive ? "" : "  — HOLDS NO CODE, so every valuation reverts"));
+
   // ---------------------------------------------------------------- the actor
   bar("The address");
   const active = await identity.isActive(who).catch(() => false);
@@ -182,6 +189,35 @@ async function main() {
     const amount = wholeUnits * one;
 
     bar(`#${i}  ${sym}   ${c.synth}`);
+
+    /*
+     * --- the wiring ---------------------------------------------------------
+     *
+     * Checked first because a break here is INVISIBLE from every other angle. A
+     * currency pointed at an identity registry that holds no code still returns
+     * its name, symbol, decimals and total supply perfectly; only issuance calls
+     * into that address, and the extcodesize guard reverts with NO revert data,
+     * so the failure arrives as "missing revert data" and names nothing at all.
+     * Both addresses are fixed at construction and cannot be repaired in place.
+     */
+    const namedVault = await synth.vault().catch(() => null);
+    const vaultMatches = namedVault
+      && namedVault.toLowerCase() === String(vaultAddr).toLowerCase();
+    console.log(`${vaultMatches ? OK : NO} names this vault as its issuer`
+      + (vaultMatches ? "" : ` — says ${namedVault}, expected ${vaultAddr}`));
+
+    const idOfSynth = await synth.identity().catch(() => null);
+    const idLive = idOfSynth && (await live(idOfSynth));
+    const idMatches = idOfSynth
+      && idOfSynth.toLowerCase() === String(d.contracts.IdentityRegistry).toLowerCase();
+    console.log(`${idLive && idMatches ? OK : NO} identity registry ${idOfSynth}`
+      + (!idLive ? "  — HOLDS NO CODE" : idMatches ? "" : "  — not the chain's registry"));
+    if (!idLive) {
+      console.log(`      Every transfer and every issuance calls into it, so all of them`);
+      console.log(`      revert with nothing to report. The currency must be REDEPLOYED`);
+      console.log(`      against ${d.contracts.IdentityRegistry} — the address is`);
+      console.log(`      immutable, so there is no repair short of a new contract.`);
+    }
 
     // --- the rate ---------------------------------------------------------
     const r = await oracle.describe(c.synth).catch(() => null);
