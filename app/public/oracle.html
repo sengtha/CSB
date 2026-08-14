@@ -451,11 +451,15 @@ async function init() {
     }
     // usdMarket is recorded by scripts/usdc-market.js and is independent of the
     // two oracles above — the page must still show it when neither is deployed.
-    // Retired means the stand-in dollar is no longer presented as one of this
-    // chain's assets. The pool is still on chain and still readable; what is
-    // withdrawn is the claim that its ratio is a riel/dollar rate worth quoting.
-    if (!CFG.usdMarket?.retired
-        && CFG.usdMarket?.pair && CFG.usdMarket?.khr && CFG.usdMarket?.bridged) {
+    // The stand-in dollar is no longer presented as one of this chain's assets.
+    // The pool is still on chain and still readable; what is withdrawn is the
+    // claim that its ratio is a riel/dollar rate worth quoting — a ratio against
+    // a token anyone can mint without limit is not a rate. The administered
+    // khUSD rate is on /currency.html and is what replaced it.
+    const retiredHere = retiredAddresses(CFG);
+    if (CFG.usdMarket?.pair && CFG.usdMarket?.khr && CFG.usdMarket?.bridged
+        && !retiredHere.has(String(CFG.usdMarket.bridged).toLowerCase())
+        && !retiredHere.has(String(CFG.usdMarket.pair).toLowerCase())) {
       const meta = async (a) => {
         const c = new ethers.Contract(a, USD_ERC20_ABI, provider);
         return { addr: a, symbol: await c.symbol().catch(() => "?"),

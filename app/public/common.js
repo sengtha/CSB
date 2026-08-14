@@ -248,6 +248,42 @@ async function loadConfig() {
   return _config;
 }
 
+/**
+ * Addresses this site no longer presents, as lowercase strings.
+ *
+ * The stand-in dollar is an unlimited-mint test token: its supply is arbitrary,
+ * so any price quoted against it is arbitrary too, and it was simultaneously
+ * accepted as lending collateral. CSB issues its own foreign currency now
+ * (docs/currency.md), so the stand-in has nothing left to show.
+ *
+ * DRIVEN BY THE FILE, NOT BY A HARD-CODED ADDRESS. An entry qualifies by carrying
+ * `standIn` (set at deployment by scripts/deploy-stand-in-usd.js) or `retired`
+ * (set by scripts/retire-usdx.js). A literal address here would be wrong on any
+ * other deployment of this repo, and silently so.
+ *
+ * HIDDEN IS NOT DELETED. Every contract stays on chain and every address stays in
+ * deployments.json. Pages that hide a market should say so and print the address,
+ * because a holder who still has a position needs somewhere to go — see the note
+ * lend.html renders when this drops a reserve.
+ */
+function retiredAddresses(cfg) {
+  const out = new Set();
+  const add = (a) => { if (typeof a === "string" && a.startsWith("0x")) out.add(a.toLowerCase()); };
+  for (const b of Object.values(cfg?.bridged ?? {})) {
+    if (b && (b.standIn || b.retired)) add(b.address);
+  }
+  // The pool built on it, and the TWAP's pair if that is the same pool. Both are
+  // recorded by scripts/usdc-market.js.
+  if (cfg?.usdMarket && (out.has(String(cfg.usdMarket.bridged).toLowerCase()) || cfg.usdMarket.retired)) {
+    add(cfg.usdMarket.pair);
+    add(cfg.usdMarket.bridged);
+  }
+  for (const r of Object.values(cfg?.aave?.reserves ?? {})) {
+    if (r?.retired) add(r.underlying);
+  }
+  return out;
+}
+
 async function getContracts(runner) {
   const cfg = await loadConfig();
   const r = runner ?? getProvider();

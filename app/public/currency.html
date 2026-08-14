@@ -93,6 +93,12 @@
           no interest — this vault charges none, so a position left alone stays
           exactly where you left it unless the published rate moves.
         </p>
+        <p class="small" style="margin-top:8px;line-height:1.7">
+          <b>Each currency has its own position.</b> Riel locked for khUSD does not
+          back khJPY — switching the selector above switches which position every
+          button acts on. Positions are kept apart so a rate that moves against one
+          currency cannot pull the others down with it.
+        </p>
       </div>
     </div>
 
@@ -414,7 +420,7 @@ async function refreshMe(prompt = false) {
       : `<span class="badge bad">${s.status.toUpperCase()}</span>`}
       ${s.frozen ? '<span class="badge bad">FROZEN</span>' : ""}<br/>
     <b>Wallet</b> ${fmtKHR(s.balance)} KHRt${held === null ? "" : ` · ${fmtCur(held)} ${CUR.symbol}`}<br/>
-    <b>Locked</b> ${fmtKHR(pos.collateral)} KHRt<br/>
+    <b>Locked for ${CUR.symbol}</b> ${fmtKHR(pos.collateral)} KHRt<br/>
     <b>Issued</b> ${fmtCur(pos.debt)} ${CUR.symbol}<br/>
     <b>Collateralisation</b> <span class="ratio ${cls}">${
       noDebt ? "—" : rNum === null ? "—" : rNum.toFixed(1) + "%"}</span>
@@ -566,7 +572,11 @@ async function ensureAllowance(signer, me, amount) {
   const sel = $("cur-sel");
   LIST.forEach((x, i) => sel.add(new Option(`${x.symbol} — ${x.name}`, String(i))));
   CUR = LIST[0];
+  // Every label carries the currency. The vault keeps one position per currency,
+  // so a bare "KHRt to lock" invites locking riel under whichever one happened to
+  // be selected and then wondering why the next currency will not issue.
   const relabel = () => {
+    $("coll-label").textContent = `KHRt to lock or release — for ${CUR.symbol}`;
     $("debt-label").textContent = `${CUR.symbol} to issue or repay`;
     $("do-mint").textContent = `Issue ${CUR.symbol}`;
     $("do-repay").textContent = `Repay ${CUR.symbol}`;
@@ -601,9 +611,30 @@ async function ensureAllowance(signer, me, amount) {
   });
 
   $("do-mint").onclick = () => run(async () => {
-    const { signer } = await walletSigner();
+    const { signer, me } = await walletSigner();
     const amount = parseCur($("debt-amt").value);
     if (!amount || amount <= 0n) throw new Error(`Enter how much ${CUR.symbol} to issue.`);
+
+    /*
+     * COLLATERAL IS PER CURRENCY, and this is the trap the page was walking
+     * people into. The vault keeps one position per (currency, owner), so riel
+     * locked while khUSD was selected does not back khJPY. Without this check the
+     * refusal arrives as Undercollateralised(0, 15000) — arithmetically true and
+     * useless, because "0%" reads as a bug rather than as "you locked it
+     * somewhere else".
+     */
+    const pos = await VAULT.positionOf(CUR.id, me);
+    if (pos.collateral === 0n) {
+      const others = (await Promise.all(LIST.filter((x) => x.id !== CUR.id).map(async (x) => {
+        const q = await VAULT.positionOf(x.id, me).catch(() => null);
+        return q && q.collateral > 0n ? `${fmtKHR(q.collateral)} KHRt against ${x.symbol}` : null;
+      }))).filter(Boolean);
+      throw new Error(`You have no KHRt locked for ${CUR.symbol}. Each currency has its own `
+        + `position — riel behind one does not back another.`
+        + (others.length ? ` You currently have ${others.join(", ")}.` : "")
+        + ` Lock KHRt with ${CUR.symbol} selected, then issue.`);
+    }
+
     const tx = await VAULT.connect(signer).mint(CUR.id, amount, await feeOverrides());
     await tx.wait();
     return `Issued ${fmtCur(amount)} ${CUR.symbol} against your locked riel. `

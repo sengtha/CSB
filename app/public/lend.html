@@ -188,6 +188,9 @@ async function currentAddress(prompt = false) {
  */
 let ASSET = null;
 
+/** Reserves that exist on chain but are no longer offered here. */
+let HIDDEN = [];
+
 async function assetList() {
   const a = CFG.aave;
   const out = [];
@@ -204,13 +207,17 @@ async function assetList() {
     out.push({ underlying: u, aToken: at, variableDebtToken: vd });
   };
   add(a.underlying, a.aToken, a.variableDebtToken);
-  for (const r of Object.values(a.reserves ?? {})) {
+  // Hidden, not delisted. The reserve is still on chain and a holder can still
+  // act on it — which is why the addresses are printed in a note rather than
+  // simply vanishing. See retiredAddresses() in common.js.
+  const retired = retiredAddresses(CFG);
+  HIDDEN = [];
+  for (const [key, r] of Object.entries(a.reserves ?? {})) {
     if (!r || typeof r !== "object") continue;
-    // A retired reserve is hidden, not delisted — the reserve is still on chain
-    // and its holders can still act on it directly. scripts/retire-usdx.js sets
-    // the flag and REFUSES to set it while anyone still has a balance, so hiding
-    // one here cannot strand a supplier.
-    if (r.retired) continue;
+    if (r.retired || retired.has(String(r.underlying).toLowerCase())) {
+      HIDDEN.push({ key, ...r });
+      continue;
+    }
     add(r.underlying, r.aToken, r.variableDebtToken);
   }
   for (const x of out) {
@@ -460,6 +467,23 @@ async function ensureAllowance(signer, me, amount) {
     banner($("msg"), "err", "Could not list the other reserves, so only the KHRt market is "
       + "shown: " + explainAave(e));
   }
+  // Say what was dropped and where it went. A market that simply disappears from
+  // the only interface anyone has is how a supplier loses track of a position.
+  if (HIDDEN.length) {
+    const box = document.createElement("div");
+    box.className = "caution";
+    box.innerHTML = `<b>${HIDDEN.length === 1 ? "One reserve is" : `${HIDDEN.length} reserves are`} `
+      + `retired and no longer listed here.</b> The stand-in dollar had an unguarded `
+      + `<span class="mono">mint()</span>, so its supply was arbitrary and every price `
+      + `derived from it was too — and it was accepted as collateral. CSB issues its own `
+      + `foreign currency now: <a href="currency.html">khUSD, khJPY, khEUR</a>.<br/><br/>`
+      + `Nothing was deleted. If you still hold a position in one, it is still there and `
+      + `still yours — act on it through the Pool at <span class="mono">${CFG.aave.pool}</span>, `
+      + `or check it with <span class="mono">scripts/aave-diagnose.js</span>:<br/>`
+      + HIDDEN.map((h) => `<span class="mono">${h.key}: ${h.underlying}</span>`).join("<br/>");
+    $("market-card").parentNode.insertBefore(box, $("market-card"));
+  }
+
   ASSET = assets[0];
   if (assets.length > 1) {
     const sel = $("asset-sel");

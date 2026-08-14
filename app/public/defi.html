@@ -213,18 +213,20 @@ async function discoverPools(cfg) {
   const seen = new Set();
   const out = [];
   // `currency.pools` is written by scripts/currency-defi.js — one pair per
-  // CSB-issued currency. A retired market is dropped rather than listed: the
-  // stand-in dollar's pool is still on chain and still readable, and offering it
-  // beside the real ones invites exactly the confusion retiring it was meant to
-  // end. `scripts/retire-usdx.js` is what sets the flag, and it refuses to set it
-  // while anyone still has a position.
-  const retired = cfg.usdMarket?.retired ? [String(cfg.usdMarket.pair).toLowerCase()] : [];
+  // CSB-issued currency.
+  //
+  // Pools built on the stand-in dollar are dropped, and dropped TWICE OVER: by
+  // the pair address, and again below by what is actually inside the pair. The
+  // second check is the one that holds, because a pool can be recorded under
+  // several keys (usdMarket.pair and oracle.twapPair are sometimes the same
+  // contract) and filtering a list of names cannot see that.
+  const retired = retiredAddresses(cfg);
   const candidates = [
     cfg.defi?.pair,
     ...(cfg.currency?.pools ?? []),
     cfg.usdMarket?.pair,
     cfg.oracle?.twapPair,
-  ].filter(Boolean).filter((a) => !retired.includes(String(a).toLowerCase()));
+  ].filter(Boolean).filter((a) => !retired.has(String(a).toLowerCase()));
   for (const addr of candidates) {
     const key = addr.toLowerCase();
     if (seen.has(key)) continue;
@@ -232,6 +234,8 @@ async function discoverPools(cfg) {
     try {
       const pair = new ethers.Contract(addr, PAIR_ABI, getProvider());
       const [t0, t1] = await Promise.all([pair.token0(), pair.token1()]);
+      // What is IN the pool decides, not which key recorded it.
+      if (retired.has(t0.toLowerCase()) || retired.has(t1.toLowerCase())) continue;
       const [m0, m1] = await Promise.all([meta(t0), meta(t1)]);
       out.push({ addr, label: `${m0.symbol} / ${m1.symbol}` });
     } catch (_) {
