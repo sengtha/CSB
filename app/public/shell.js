@@ -40,6 +40,7 @@
       label: "DeFi",
       items: [
         ["defi.html", "Liquidity pool", "Unmodified Uniswap V2 on CSB"],
+        ["dao.html", "DAOs", "Decide things together, weighted by a token"],
         ["lend.html", "Lending", "Unmodified Aave V3 — supply, borrow, repay"],
         ["vaults.html", "Vaults", "ERC-4626 over KHRt — one plain, one gated"],
         ["staking.html", "Staking", "Unmodified Synthetix, two reward tokens"],

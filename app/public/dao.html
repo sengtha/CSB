@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DAOs — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .lead { font-size: 14px; line-height: 1.7; }
+    .note { font-size: 12.5px; color: var(--muted); line-height: 1.65; }
+    .row { border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px; margin-bottom: 10px; }
+    .row .top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .row h3 { font-size: 14.5px; color: var(--blue); margin: 0; }
+    .pill { font-size: 11px; border-radius: 999px; padding: 2px 9px; background: #eef2fb; color: #22365e; }
+    .pill.open { background: #e6f6ec; color: #14532d; }
+    .pill.done { background: #eceff3; color: #445; }
+    .bar { height: 9px; border-radius: 5px; background: #eef1f5; overflow: hidden; margin-top: 4px; }
+    .bar > i { display: block; height: 100%; background: var(--blue); }
+    .choice { margin-top: 9px; font-size: 12.5px; }
+    .choice .l { display: flex; justify-content: space-between; gap: 10px; }
+    .win { font-weight: 700; color: #14532d; }
+    .warn { border-left: 3px solid var(--warn); background: #fffaf2; padding: 11px 14px;
+            border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.65; margin-top: 14px; }
+    .foot { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0 24px; line-height: 1.6; }
+  </style>
+  <script src="vendor/ethers.umd.min.js"></script>
+  <script src="common.js"></script>
+  <script src="shell.js" defer></script>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 DAOs</h1>
+    <span class="sub">decide things together, weighted by a token</span>
+    <nav></nav>
+  </header>
+
+  <main>
+    <div class="card">
+      <p class="lead">
+        A <strong>DAO</strong> here is a group that decides things by vote, weighted by
+        whatever token it chose — KHRt, a pool's LP token, a staking token, anything on this
+        chain. Anyone can create one, anyone holding the token can propose, and the count is
+        arithmetic on the ledger that anybody can recheck.
+      </p>
+      <p class="note" style="margin-top:10px">
+        Creating a DAO here is <strong>not</strong> a contract deployment — it is a record in
+        one shared contract. That is why it takes seconds and needs no special permission,
+        where deploying a governance contract on CSB would need a vetted deployer.
+      </p>
+    </div>
+
+    <div id="no-contract" class="card" style="display:none">
+      <h2>Not deployed yet</h2>
+      <p class="note">
+        An operator runs this once, and then every DAO afterwards is self-service:<br />
+        <code>npx hardhat run scripts/deploy-tokenvote.js --network csbRemote</code>
+      </p>
+    </div>
+
+    <div class="card" id="create-card" style="display:none">
+      <h2>Start a DAO</h2>
+      <div class="grid2">
+        <div>
+          <label>Name</label>
+          <input id="d-name" maxlength="64" placeholder="Kampot Growers" />
+          <label>Voting token</label>
+          <select id="d-token"></select>
+          <input id="d-token-other" placeholder="0x… another token" style="display:none;margin-top:6px" />
+        </div>
+        <div>
+          <label>Voting period</label>
+          <select id="d-period">
+            <option value="3600">1 hour</option>
+            <option value="86400" selected>1 day</option>
+            <option value="259200">3 days</option>
+            <option value="604800">7 days</option>
+          </select>
+          <label>Quorum — share of total supply that must vote</label>
+          <select id="d-quorum">
+            <option value="0" selected>None</option>
+            <option value="500">5%</option>
+            <option value="1000">10%</option>
+            <option value="2500">25%</option>
+            <option value="5000">50%</option>
+          </select>
+          <label>How votes are weighed</label>
+          <select id="d-weighing">
+            <option value="0">Lock tokens while voting (any token)</option>
+            <option value="1">Snapshot — nothing locked (checkpointed tokens only)</option>
+          </select>
+          <p class="note" id="d-weighing-note" style="margin-top:4px"></p>
+          <label>Tokens needed to propose</label>
+          <input id="d-minpropose" placeholder="0" />
+        </div>
+      </div>
+      <button id="d-go" style="margin-top:12px">Create DAO</button>
+      <div class="warn">
+        <strong>Voting locks your tokens until the proposal closes.</strong> That is what stops
+        the same tokens voting twice from a second address — they are not in your hands to
+        move. Pick a voting period you are willing to be without them for.
+      </div>
+    </div>
+
+    <div class="card" id="list-card" style="display:none">
+      <h2>DAOs on this chain</h2>
+      <div id="daos"><p class="note">Loading…</p></div>
+    </div>
+
+    <div class="card" id="dao-card" style="display:none">
+      <h2 id="dao-title"></h2>
+      <div class="kv" id="dao-detail"></div>
+
+      <h3 style="margin-top:18px">Put something to a vote</h3>
+      <label>Question</label>
+      <input id="p-title" maxlength="120" placeholder="Build a shared maize dryer?" />
+      <label>Detail <span class="note">(optional)</span></label>
+      <input id="p-body" maxlength="400" placeholder="Cost, siting, who maintains it" />
+      <label>Choices — one per line, at least two</label>
+      <textarea id="p-choices" rows="3" style="width:100%">Yes
+No</textarea>
+      <button id="p-go" style="margin-top:10px">Open the vote</button>
+
+      <h3 style="margin-top:22px">Proposals</h3>
+      <div id="proposals"><p class="note">Loading…</p></div>
+    </div>
+
+    <div id="msg" class="banner"></div>
+
+    <p class="foot">
+      A closed proposal is a <strong>recorded decision, not a transaction</strong>. Nothing
+      executes automatically — acting on an outcome is a job for a multisig whose owners can
+      read the result. Keeping the counting apart from the spending means a bug in one
+      cannot move the other.
+    </p>
+  </main>
+
+<script>
+"use strict";
+
+const VOTE_ABI = [
+  "function daoCount() view returns (uint256)",
+  "function proposalCount() view returns (uint256)",
+  "function daoAt(uint256) view returns (tuple(string name,address token,uint8 weighing,uint16 quorumBps,uint32 votingPeriod,uint256 minProposeBalance,address creator,uint64 createdAt))",
+  "function proposalAt(uint256) view returns (tuple(uint256 daoId,address proposer,string title,string body,uint64 opens,uint64 closes,uint256 snapshotBlock,bool closed,bool tied,uint8 winner,uint256 totalWeight))",
+  "function choicesOf(uint256) view returns (string[])",
+  "function weightsOf(uint256) view returns (uint256[])",
+  "function ballotOf(uint256,address) view returns (tuple(uint8 choice,uint256 weight,bool withdrawn))",
+  "function createDao(string,address,uint8,uint16,uint32,uint256) returns (uint256)",
+  "function isCheckpointed(address) view returns (bool)",
+  "function propose(uint256,string,string,string[]) returns (uint256)",
+  "function vote(uint256,uint8,uint256)",
+  "function close(uint256)",
+  "function withdraw(uint256)",
+];
+const ERC20_ABI = [
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function balanceOf(address) view returns (uint256)",
+  "function totalSupply() view returns (uint256)",
+  "function approve(address,uint256) returns (bool)",
+  "function allowance(address,address) view returns (uint256)",
+];
+const NO_RESULT = 255;
+
+let VOTE = null, CFG = null, OPEN = null, ME = null;
+const tokenMeta = new Map();
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function meta(addr) {
+  const k = addr.toLowerCase();
+  if (tokenMeta.has(k)) return tokenMeta.get(k);
+  const c = new ethers.Contract(addr, ERC20_ABI, getProvider());
+  const m = {
+    addr,
+    symbol: await c.symbol().catch(() => "???"),
+    decimals: await c.decimals().then(Number).catch(() => 18),
+  };
+  tokenMeta.set(k, m);
+  return m;
+}
+const fmt = (v, d) => Number(ethers.formatUnits(v, d)).toLocaleString("en-US", { maximumFractionDigits: 4 });
+
+/**
+ * Run an action, and never leave a pressed button silent.
+ *
+ * Defined here rather than imported: common.js does not export one, and the
+ * pages that have it each carry their own. Assuming otherwise is how oracle.html
+ * shipped a handler calling a `run` that did not exist on that page.
+ */
+let _busy = null;
+async function run(fn) {
+  const msg = $("msg");
+  if (_busy) _busy.disabled = false;
+  msg.className = "banner";
+  try {
+    banner(msg, "ok", await fn());
+  } catch (e) {
+    banner(msg, "err", explainError(e));
+  } finally {
+    msg.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+}
+
+async function signer() {
+  if (!window.ethereum) throw new Error("No wallet detected in this browser.");
+  await window.ethereum.request({ method: "eth_requestAccounts" });
+  return new ethers.BrowserProvider(window.ethereum).getSigner();
+}
+
+// --- the DAO list ---------------------------------------------------------
+async function loadDaos() {
+  const n = Number(await VOTE.daoCount());
+  const box = $("daos");
+  if (!n) {
+    box.innerHTML = `<p class="note">None yet. Yours would be the first.</p>`;
+    return;
+  }
+  const rows = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = await VOTE.daoAt(i);
+    const m = await meta(d.token);
+    rows.push(`
+      <div class="row">
+        <div class="top">
+          <h3>${esc(d.name)}</h3>
+          <span class="pill">${esc(m.symbol)}-weighted</span>
+        </div>
+        <p class="note" style="margin-top:6px">
+          ${Number(d.votingPeriod) / 3600}h voting ·
+          ${d.quorumBps === 0n || Number(d.quorumBps) === 0 ? "no quorum" : (Number(d.quorumBps) / 100) + "% quorum"} ·
+          ${Number(d.minProposeBalance) === 0 ? "anyone may propose" : fmt(d.minProposeBalance, m.decimals) + " " + esc(m.symbol) + " to propose"}
+        </p>
+        <p style="margin-top:8px"><button class="mini" data-dao="${i}">Open</button></p>
+      </div>`);
+  }
+  box.innerHTML = rows.join("");
+  box.querySelectorAll("button[data-dao]").forEach((b) => {
+    b.onclick = () => run(async () => { await openDao(Number(b.dataset.dao)); return "Opened."; });
+  });
+}
+
+async function openDao(daoId) {
+  const d = await VOTE.daoAt(daoId);
+  const m = await meta(d.token);
+  OPEN = { id: daoId, dao: d, token: m };
+  $("dao-card").style.display = "";
+  $("dao-title").textContent = d.name;
+  $("dao-detail").innerHTML =
+    `<div><b>Voting token</b> ${esc(m.symbol)} <span class="mono">${esc(m.addr)}</span></div>`
+    + `<div><b>Weighing</b> ${Number(d.weighing) === 1
+        ? "snapshot — nothing is locked, weight is what you held when the vote opened"
+        : "tokens are locked while the vote runs, and returned when it closes"}</div>`
+    + `<div><b>Voting period</b> ${Number(d.votingPeriod) / 3600} hours</div>`
+    + `<div><b>Quorum</b> ${Number(d.quorumBps) === 0 ? "none" : (Number(d.quorumBps) / 100) + "% of supply"}</div>`
+    + `<div><b>Created by</b> <span class="mono">${esc(d.creator)}</span></div>`;
+  await loadProposals();
+  $("dao-card").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// --- proposals ------------------------------------------------------------
+async function loadProposals() {
+  if (!OPEN) return;
+  const n = Number(await VOTE.proposalCount());
+  const m = OPEN.token;
+  const now = Math.floor(Date.now() / 1000);
+  const rows = [];
+
+  for (let i = n - 1; i >= 0; i--) {
+    const p = await VOTE.proposalAt(i);
+    if (Number(p.daoId) !== OPEN.id) continue;
+    const choices = await VOTE.choicesOf(i);
+    const weights = await VOTE.weightsOf(i);
+    const total = weights.reduce((a, b) => a + b, 0n);
+    const open = !p.closed && now < Number(p.closes);
+    const mine = ME ? await VOTE.ballotOf(i, ME) : null;
+
+    const bars = choices.map((c, idx) => {
+      const w = weights[idx];
+      const pct = total === 0n ? 0 : Number((w * 10000n) / total) / 100;
+      const won = p.closed && Number(p.winner) === idx;
+      return `<div class="choice">
+          <div class="l"><span class="${won ? "win" : ""}">${esc(c)}${won ? " — carried" : ""}</span>
+            <span>${fmt(w, m.decimals)} ${esc(m.symbol)} · ${pct.toFixed(1)}%</span></div>
+          <div class="bar"><i style="width:${pct}%"></i></div>
+        </div>`;
+    }).join("");
+
+    let verdict = "";
+    if (p.closed) {
+      verdict = p.tied ? `<span class="pill done">tied — no result</span>`
+        : Number(p.winner) === NO_RESULT ? `<span class="pill done">quorum not reached</span>`
+        : `<span class="pill done">carried: ${esc(choices[Number(p.winner)])}</span>`;
+    } else if (!open) {
+      verdict = `<span class="pill">voting ended — needs settling</span>`;
+    } else {
+      const left = Number(p.closes) - now;
+      verdict = `<span class="pill open">${left > 3600
+        ? Math.round(left / 3600) + "h left" : Math.max(1, Math.round(left / 60)) + "m left"}</span>`;
+    }
+
+    const snapshot = Number(OPEN.dao.weighing) === 1;
+    const canVote = open && ME && (!mine || mine.weight === 0n);
+    const canWithdraw = ME && mine && mine.weight > 0n && !mine.withdrawn && now >= Number(p.closes);
+
+    rows.push(`
+      <div class="row">
+        <div class="top"><h3>${esc(p.title)}</h3>${verdict}</div>
+        ${p.body ? `<p class="note" style="margin-top:5px">${esc(p.body)}</p>` : ""}
+        ${bars}
+        <p class="note" style="margin-top:8px">
+          ${fmt(total, m.decimals)} ${esc(m.symbol)} ${snapshot ? "voted" : "committed"}
+          ${snapshot ? `· weighed at block ${p.snapshotBlock}` : ""}
+          ${mine && mine.weight > 0n
+            ? ` · you voted <b>${esc(choices[Number(mine.choice)])}</b> with ${fmt(mine.weight, m.decimals)}`
+              + (mine.withdrawn ? " (returned)" : "")
+            : ""}
+        </p>
+        <p style="margin-top:8px">
+          ${canVote ? `${snapshot ? "" : `<input class="v-amt" data-p="${i}" placeholder="amount" style="max-width:130px" />`}
+             <select class="v-ch" data-p="${i}">${choices.map((c, idx) =>
+               `<option value="${idx}">${esc(c)}</option>`).join("")}</select>
+             <button class="mini" data-vote="${i}">Vote</button>` : ""}
+          ${!p.closed && !open ? `<button class="mini ghost" data-close="${i}">Settle result</button>` : ""}
+          ${canWithdraw ? `<button class="mini ghost" data-wd="${i}">Take back tokens</button>` : ""}
+        </p>
+      </div>`);
+  }
+
+  $("proposals").innerHTML = rows.length ? rows.join("")
+    : `<p class="note">Nothing has been put to a vote yet.</p>`;
+
+  $("proposals").querySelectorAll("button[data-vote]").forEach((b) => {
+    b.onclick = () => run(() => castVote(Number(b.dataset.vote)));
+  });
+  $("proposals").querySelectorAll("button[data-close]").forEach((b) => {
+    b.onclick = () => run(async () => {
+      const s = await signer();
+      await (await new ethers.Contract(CFG.dao.tokenVote, VOTE_ABI, s)
+        .close(Number(b.dataset.close), await feeOverrides())).wait();
+      await loadProposals();
+      return "Result settled and recorded.";
+    });
+  });
+  $("proposals").querySelectorAll("button[data-wd]").forEach((b) => {
+    b.onclick = () => run(async () => {
+      const s = await signer();
+      await (await new ethers.Contract(CFG.dao.tokenVote, VOTE_ABI, s)
+        .withdraw(Number(b.dataset.wd), await feeOverrides())).wait();
+      await loadProposals();
+      return "Tokens returned. Your vote stays recorded.";
+    });
+  });
+}
+
+async function castVote(proposalId) {
+  const amtEl = document.querySelector(`.v-amt[data-p="${proposalId}"]`);
+  const chEl = document.querySelector(`.v-ch[data-p="${proposalId}"]`);
+  const m = OPEN.token;
+
+  // Under snapshot weighing there is nothing to commit and nothing to approve:
+  // the weight is whatever they held at the snapshot block, and asking for an
+  // amount would imply a choice they do not have.
+  if (Number(OPEN.dao.weighing) === 1) {
+    const s2 = await signer();
+    await (await new ethers.Contract(CFG.dao.tokenVote, VOTE_ABI, s2)
+      .vote(proposalId, Number(chEl.value), 0, await feeOverrides())).wait();
+    await loadProposals();
+    return "Vote cast, weighted by what you held when the vote opened. Nothing was locked.";
+  }
+
+  const raw = (amtEl.value ?? "").trim();
+  if (!raw) throw new Error("Enter how much to commit.");
+  const amount = ethers.parseUnits(raw, m.decimals);
+  if (amount <= 0n) throw new Error("Commit more than zero.");
+
+  const s = await signer();
+  const me = await s.getAddress();
+  const token = new ethers.Contract(m.addr, ERC20_ABI, s);
+  const held = await token.balanceOf(me);
+  if (held < amount) {
+    throw new Error(`You hold ${fmt(held, m.decimals)} ${m.symbol} but tried to commit ${raw}.`);
+  }
+
+  // The escrow needs an allowance first. Asking only when it is short keeps the
+  // common case to one confirmation instead of two.
+  const allowance = await token.allowance(me, CFG.dao.tokenVote);
+  if (allowance < amount) {
+    await (await token.approve(CFG.dao.tokenVote, amount, await feeOverrides())).wait();
+  }
+  await (await new ethers.Contract(CFG.dao.tokenVote, VOTE_ABI, s)
+    .vote(proposalId, Number(chEl.value), amount, await feeOverrides())).wait();
+  await loadProposals();
+  return `Vote cast with ${raw} ${m.symbol}. They unlock when the proposal closes.`;
+}
+
+// --- creating -------------------------------------------------------------
+async function createDao() {
+  const name = $("d-name").value.trim();
+  if (!name) throw new Error("Give it a name.");
+  const pick = $("d-token").value;
+  const token = pick === "other" ? $("d-token-other").value.trim() : pick;
+  if (!ethers.isAddress(token)) throw new Error("Choose a valid voting token.");
+  const m = await meta(token);
+
+  const s = await signer();
+  const minPropose = ethers.parseUnits(($("d-minpropose").value || "0").trim(), m.decimals);
+  const weighing = Number($("d-weighing").value);
+  if (weighing === 1 && !(await VOTE.isCheckpointed(token))) {
+    throw new Error(`${m.symbol} keeps no balance history, so a snapshot cannot be taken. `
+      + `Choose "lock tokens while voting", or use a token with checkpoints.`);
+  }
+  await (await new ethers.Contract(CFG.dao.tokenVote, VOTE_ABI, s).createDao(
+    name, token, weighing, Number($("d-quorum").value), Number($("d-period").value), minPropose,
+    await feeOverrides())).wait();
+  await loadDaos();
+  return `"${name}" created, weighted by ${m.symbol}.`;
+}
+
+async function createProposal() {
+  if (!OPEN) throw new Error("Open a DAO first.");
+  const title = $("p-title").value.trim();
+  if (!title) throw new Error("Ask a question.");
+  const choices = $("p-choices").value.split("\n").map((c) => c.trim()).filter(Boolean);
+  if (choices.length < 2) throw new Error("Give at least two choices, one per line.");
+  if (choices.length > 8) throw new Error("At most eight choices.");
+
+  const s = await signer();
+  await (await new ethers.Contract(CFG.dao.tokenVote, VOTE_ABI, s)
+    .propose(OPEN.id, title, $("p-body").value.trim(), choices, await feeOverrides())).wait();
+  $("p-title").value = ""; $("p-body").value = "";
+  await loadProposals();
+  return "Open for voting.";
+}
+
+// --- boot -----------------------------------------------------------------
+(async () => {
+  await ensureSession();
+  CFG = await loadConfig();
+  if (!CFG.dao?.tokenVote) { $("no-contract").style.display = ""; return; }
+  VOTE = new ethers.Contract(CFG.dao.tokenVote, VOTE_ABI, getProvider());
+
+  try {
+    const accs = await window.ethereum?.request({ method: "eth_accounts" });
+    ME = accs?.[0] ?? null;
+  } catch (_) { /* no wallet */ }
+
+  // Offer the tokens this chain is known to have, so the common case is a pick
+  // rather than pasting an address nobody has to hand.
+  const known = [
+    [CFG.contracts?.KHRStablecoin, "KHRt"],
+    [CFG.bridged?.usdLocal?.address, "USDx"],
+    [CFG.usdMarket?.pair, "KHRt/USDx pool share"],
+    [CFG.defi?.pair, "pool share"],
+    [CFG.staking?.stakeToken, "staking token"],
+  ].filter(([a]) => a);
+  const sel = $("d-token");
+  for (const [addr, label] of known) {
+    const m = await meta(addr).catch(() => null);
+    sel.add(new Option(`${m?.symbol ?? "?"} — ${label}`, addr));
+  }
+  sel.add(new Option("Another token…", "other"));
+  // Say whether the chosen token can be snapshotted BEFORE the transaction is
+  // signed. The contract refuses the pair outright, and a refusal after a wallet
+  // confirmation reads as the site being broken rather than as an answer.
+  async function weighingNote() {
+    const note = $("d-weighing-note");
+    const pick = sel.value === "other" ? $("d-token-other").value.trim() : sel.value;
+    if (!ethers.isAddress(pick)) { note.textContent = ""; return; }
+    if (Number($("d-weighing").value) !== 1) {
+      note.textContent = "Works with any token. Voters get their tokens back when the vote closes.";
+      return;
+    }
+    note.textContent = "Checking whether this token keeps balance history…";
+    const ok = await VOTE.isCheckpointed(pick).catch(() => false);
+    const m = await meta(pick).catch(() => null);
+    note.textContent = ok
+      ? `${m?.symbol ?? "This token"} keeps checkpoints — a snapshot can be taken and nothing is locked.`
+      : `${m?.symbol ?? "This token"} keeps no balance history, so no snapshot is possible. `
+        + `Choose the locking option, or a token with checkpoints.`;
+  }
+
+  sel.onchange = () => {
+    $("d-token-other").style.display = sel.value === "other" ? "" : "none";
+    weighingNote();
+  };
+  $("d-token-other").oninput = weighingNote;
+  $("d-weighing").onchange = weighingNote;
+  await weighingNote();
+
+  $("create-card").style.display = "";
+  $("list-card").style.display = "";
+  $("d-go").onclick = () => run(createDao);
+  $("p-go").onclick = () => run(createProposal);
+  await loadDaos();
+})();
+</script>
+</body>
+</html>

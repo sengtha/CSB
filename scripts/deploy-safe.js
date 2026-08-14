@@ -292,7 +292,11 @@ async function main() {
       } else {
         // Tier 3 is what the deployer process uses for vetted institutions; the
         // identity hash names what this is rather than pretending to be a person.
-        const idHash = ethers.id(`csb:safe:${key}`);
+        // Salted with the ADDRESS, not the key. Two wallets recorded under the
+        // same key would otherwise share a commitment, and the registry's quota
+        // of one address per identity would refuse the second with
+        // QuotaExceeded — long after the wallet was created.
+        const idHash = ethers.id(`csb:safe:${safeAddr}`);
         await (await id.register(safeAddr, idHash, 3)).wait();
         console.log(`  registered, tier 3, identity ${idHash}`);
         console.log(`  NOT marked a system contract — the levy and tier caps apply to it.`);
