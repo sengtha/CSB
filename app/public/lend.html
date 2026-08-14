@@ -191,21 +191,35 @@ async function assetList() {
   const a = CFG.aave;
   const out = [];
   const seen = new Set();
+  // Every entry is validated, because deployments.json is written by a dozen
+  // scripts and read here: a null reserve, a half-written one, or an address
+  // that is not an address must cost that entry and nothing else. ethers throws
+  // SYNCHRONOUSLY on a malformed address, so a bad one here would take out the
+  // whole page rather than one row.
   const add = (u, at, vd) => {
-    if (!u || seen.has(u.toLowerCase())) return;
+    if (!u || typeof u !== "string" || !ethers.isAddress(u)) return;
+    if (seen.has(u.toLowerCase())) return;
     seen.add(u.toLowerCase());
     out.push({ underlying: u, aToken: at, variableDebtToken: vd });
   };
   add(a.underlying, a.aToken, a.variableDebtToken);
   for (const r of Object.values(a.reserves ?? {})) {
+    if (!r || typeof r !== "object") continue;
     add(r.underlying, r.aToken, r.variableDebtToken);
   }
   for (const x of out) {
-    const c = new ethers.Contract(x.underlying, ERC20_ABI, getProvider());
-    x.symbol = await c.symbol().catch(() => "???");
-    x.decimals = await c.decimals().then(Number).catch(() => 18);
+    try {
+      const c = new ethers.Contract(x.underlying, ERC20_ABI, getProvider());
+      x.symbol = await c.symbol().catch(() => "???");
+      x.decimals = await c.decimals().then(Number).catch(() => 18);
+    } catch (_) {
+      x.symbol = "???"; x.decimals = 18;
+    }
   }
-  return out;
+  // A reserve missing its aToken or debt token cannot be rendered or acted on,
+  // and listing it would offer buttons that revert.
+  return out.filter((x) => ethers.isAddress(x.aToken ?? "")
+    && ethers.isAddress(x.variableDebtToken ?? ""));
 }
 
 /** Amounts in the selected asset's own decimals — KHRt is 2, USDx is 6. */
@@ -221,6 +235,11 @@ function cell(t, v, d) {
 }
 
 async function refreshMarket() {
+  // ASSET is chosen during boot, but these run from an accountsChanged event
+  // too, and MetaMask fires that while the page is still loading. Reading a null
+  // asset there produced "Cannot read properties of null (reading 'aToken')" on
+  // a page that otherwise looked fine.
+  if (!ASSET || !CFG?.aave) return;
   const a = CFG.aave;
   const p = getProvider();
   const pool = new ethers.Contract(a.pool, POOL_ABI, p);
@@ -247,6 +266,7 @@ async function refreshMarket() {
 }
 
 async function refreshMe(prompt = false) {
+  if (!ASSET || !CFG?.aave) return;
   const el = $("me");
   const addr = await currentAddress(prompt);
   if (!addr) {
@@ -395,7 +415,26 @@ async function ensureAllowance(signer, me, amount) {
   });
 
   // --- the asset selector ------------------------------------------------
-  const assets = await assetList();
+  //
+  // Wrapped, because an exception here used to kill the whole boot: the page
+  // rendered its static shell, ASSET stayed null, nothing refreshed, and the
+  // first thing anyone touched failed with "Cannot read properties of null
+  // (reading 'aToken')" — an error about a symptom three steps from the cause.
+  // A reserve list that cannot be built is a reason to show one market, not to
+  // stop having a page.
+  let assets;
+  try {
+    assets = await assetList();
+    if (!assets.length) throw new Error("no reserves resolved");
+  } catch (e) {
+    const a = CFG.aave;
+    assets = [{
+      underlying: a.underlying, aToken: a.aToken, variableDebtToken: a.variableDebtToken,
+      symbol: "KHRt", decimals: 2,
+    }];
+    banner($("msg"), "err", "Could not list the other reserves, so only the KHRt market is "
+      + "shown: " + explainAave(e));
+  }
   ASSET = assets[0];
   if (assets.length > 1) {
     const sel = $("asset-sel");
