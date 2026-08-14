@@ -82,7 +82,7 @@
           </div>
           <p class="small" id="faucet-note" style="margin-top:5px"></p>
         </div>
-        <label>Amount (KHRt)</label>
+        <label id="amt-label">Amount (KHRt)</label>
         <input id="amt" placeholder="e.g. 1,000.00" />
         <div class="acts" style="margin-top:10px">
           <button id="do-supply">Supply</button>
@@ -151,6 +151,11 @@ const POOL_ABI = [
   "function getReserveData(address asset) view returns (tuple(tuple(uint256 data) configuration, uint128 liquidityIndex, uint128 currentLiquidityRate, uint128 variableBorrowIndex, uint128 currentVariableBorrowRate, uint128 currentStableBorrowRate, uint40 lastUpdateTimestamp, uint16 id, address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress, address interestRateStrategyAddress, uint128 accruedToTreasury, uint128 unbacked, uint128 isolationModeTotalDebt))",
 ];
 const ERC20_ABI = [
+  // symbol/decimals are needed since the page gained a second reserve. Without
+  // them ethers has no such method, the call throws, and the asset falls back to
+  // 18 decimals — which silently rescales every amount on the page.
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address,address) view returns (uint256)",
   "function approve(address,uint256) returns (bool)",
@@ -210,15 +215,24 @@ async function assetList() {
   for (const x of out) {
     try {
       const c = new ethers.Contract(x.underlying, ERC20_ABI, getProvider());
-      x.symbol = await c.symbol().catch(() => "???");
-      x.decimals = await c.decimals().then(Number).catch(() => 18);
+      // A symbol that cannot be read is cosmetic; show the address instead of
+      // "???", which reads as an error rather than as a nameless token.
+      x.symbol = await c.symbol().catch(() => x.underlying.slice(0, 8) + "…");
+      // Decimals are NOT cosmetic. Every amount typed, parsed, and displayed on
+      // this page is scaled by them, so a guess here is worse than no asset:
+      // defaulting to 18 against a 2-decimal token turns "1000" into a request
+      // for ten thousand million. Unreadable means unusable, deliberately.
+      x.decimals = await c.decimals().then(Number).catch(() => null);
     } catch (_) {
-      x.symbol = "???"; x.decimals = 18;
+      x.symbol = x.underlying.slice(0, 8) + "…";
+      x.decimals = null;
     }
   }
-  // A reserve missing its aToken or debt token cannot be rendered or acted on,
-  // and listing it would offer buttons that revert.
-  return out.filter((x) => ethers.isAddress(x.aToken ?? "")
+  // Dropped: a reserve missing its aToken or debt token cannot be acted on and
+  // would offer buttons that revert, and one whose decimals cannot be read
+  // cannot have its amounts trusted.
+  return out.filter((x) => Number.isInteger(x.decimals)
+    && ethers.isAddress(x.aToken ?? "")
     && ethers.isAddress(x.variableDebtToken ?? ""));
 }
 
@@ -253,6 +267,7 @@ async function refreshMarket() {
   ]);
 
   $("mkt-title").textContent = `${ASSET.symbol} market`;
+  $("amt-label").textContent = `Amount (${ASSET.symbol})`;
   $("stats").innerHTML =
     cell("Supplied", fmtAsset(supplied), `total a${ASSET.symbol} outstanding`) +
     cell("Borrowed", fmtAsset(debt), "variable-rate debt") +
