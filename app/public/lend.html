@@ -364,6 +364,15 @@ function explainAave(e) {
   // string so an address or amount in the message cannot be mistaken for one.
   const m = raw.match(/reverted:?\s*["']?(\d{1,2})["']?/);
   if (m && AAVE_CODES[m[1]]) return `Aave refused this (code ${m[1]}). ${AAVE_CODES[m[1]]}`;
+  // An empty revert. On a gated chain the usual cause is a token refusing a
+  // transfer to a contract the identity registry does not know — Aave's aToken
+  // custodies the underlying, so it needs an attestation of its own.
+  if (/missing revert data/i.test(raw)) {
+    return "The chain refused this without saying why — an empty revert. For a "
+      + "CSB-issued currency the usual cause is that this reserve's aToken holds no KYC "
+      + "attestation, so it cannot receive the token. Check it with:\n"
+      + "  npx hardhat run scripts/currency-diagnose.js --network csbRemote";
+  }
   return explainError(e);
 }
 
@@ -382,6 +391,11 @@ async function run(fn) {
     if (btn) { btn.disabled = false; btn.textContent = label; }
     msg.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
+}
+
+/** The pool, read-only, for simulating a write before the wallet is asked. */
+function poolRead() {
+  return new ethers.Contract(CFG.aave.pool, POOL_ABI, getProvider());
 }
 
 async function signerAndAmount() {
@@ -424,6 +438,11 @@ async function ensureAllowance(signer, me, amount) {
   $("do-supply").onclick = () => run(async () => {
     const { signer, amount, me } = await signerAndAmount();
     await ensureAllowance(signer, me, amount);
+    // Simulated against CSB first. Gas estimation through the wallet drops the
+    // revert payload and surfaces "missing revert data", which names neither the
+    // contract nor the condition — and on this chain the condition is usually a
+    // specific address lacking a specific attestation. eth_call returns it.
+    await preflight(poolRead(), "supply", [ASSET.underlying, amount, me, 0], me);
     const pool = new ethers.Contract(CFG.aave.pool, POOL_ABI, signer);
     const tx = await pool.supply(ASSET.underlying, amount, me, 0, await feeOverrides());
     await tx.wait();
@@ -432,6 +451,7 @@ async function ensureAllowance(signer, me, amount) {
 
   $("do-withdraw").onclick = () => run(async () => {
     const { signer, amount, me } = await signerAndAmount();
+    await preflight(poolRead(), "withdraw", [ASSET.underlying, amount, me], me);
     const pool = new ethers.Contract(CFG.aave.pool, POOL_ABI, signer);
     const tx = await pool.withdraw(ASSET.underlying, amount, me, await feeOverrides());
     await tx.wait();
@@ -440,6 +460,7 @@ async function ensureAllowance(signer, me, amount) {
 
   $("do-borrow").onclick = () => run(async () => {
     const { signer, amount, me } = await signerAndAmount();
+    await preflight(poolRead(), "borrow", [ASSET.underlying, amount, VARIABLE_RATE, 0, me], me);
     const pool = new ethers.Contract(CFG.aave.pool, POOL_ABI, signer);
     const tx = await pool.borrow(ASSET.underlying, amount, VARIABLE_RATE, 0, me, await feeOverrides());
     await tx.wait();
@@ -545,6 +566,7 @@ async function ensureAllowance(signer, me, amount) {
   $("do-repay").onclick = () => run(async () => {
     const { signer, amount, me } = await signerAndAmount();
     await ensureAllowance(signer, me, amount);
+    await preflight(poolRead(), "repay", [ASSET.underlying, amount, VARIABLE_RATE, me], me);
     const pool = new ethers.Contract(CFG.aave.pool, POOL_ABI, signer);
     const tx = await pool.repay(ASSET.underlying, amount, VARIABLE_RATE, me, await feeOverrides());
     await tx.wait();

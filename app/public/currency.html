@@ -169,6 +169,10 @@ const VAULT_ABI = [
   "error TransferFailed()",
   "error Reentrant()",
   "error BadParameters()",
+  // The oracle's, reached THROUGH the vault. Without these two the most likely
+  // refusal on this page arrives as an undecodable hex blob.
+  "error RateNotSet(address asset)",
+  "error RateStale(address asset, uint64 publishedAt, uint256 maxAge)",
 ];
 
 const ERC20_ABI = [
@@ -267,6 +271,14 @@ function explainVault(e) {
           return "Refused: issuance of this currency is paused. Repaying and withdrawing still work.";
         case "NothingToDo":
           return "Enter an amount greater than zero.";
+        case "RateNotSet":
+          return `No exchange rate has ever been published for this currency, so the vault `
+            + `cannot value the debt. Nothing can be issued against it until somebody with `
+            + `RATE_PUBLISHER_ROLE posts one for ${a[0]}.`;
+        case "RateStale":
+          return `The published rate for this currency is stale — last set ${a[1]}, and the `
+            + `oracle stops answering after ${a[2]} seconds. Issuing and releasing collateral `
+            + `are halted until it is republished. Repaying still works.`;
         default:
           return `Refused: ${p.name}.`;
       }
@@ -287,6 +299,16 @@ function explainVault(e) {
   // chain has one overwhelming cause: the read went to a network where that
   // contract does not exist. It used to surface as the bare ethers string "could
   // not decode result data", which names neither the contract nor the reason.
+  // Nothing came back at all. After the pre-flight this should be rare, and when
+  // it happens it is almost always a high-level call into an address with no code
+  // — Solidity's extcodesize guard reverts with an empty payload, which is why
+  // there is nothing to decode.
+  if (/missing revert data/i.test(raw)) {
+    return "The chain refused this without saying why — an empty revert, which usually "
+      + "means a contract called an address that holds no code. Check the vault, the "
+      + "oracle and the currency addresses against the chain:\n"
+      + "  npx hardhat run scripts/currency-diagnose.js --network csbRemote";
+  }
   if (e?.code === "BAD_DATA" || /could not decode result data/i.test(raw)) {
     const where = e?.info?.method ? ` (${e.info.method})` : "";
     return `A contract read came back empty${where}, which almost always means the `
@@ -487,11 +509,12 @@ async function refreshRisk() {
 
   body.querySelectorAll("button.liq").forEach((b) => {
     b.onclick = () => run(async () => {
-      const { signer } = await walletSigner();
+      const { signer, me } = await walletSigner();
       const amount = parseCur($("debt-amt").value);
       if (!amount || amount <= 0n) throw new Error(`Enter how much ${CUR.symbol} to repay first.`);
-      const v = VAULT.connect(signer);
-      const tx = await v.liquidate(CUR.id, b.dataset.who, amount, await feeOverrides());
+      await preflight(VAULT, "liquidate", [CUR.id, b.dataset.who, amount], me);
+      const tx = await VAULT.connect(signer)
+        .liquidate(CUR.id, b.dataset.who, amount, await feeOverrides());
       await tx.wait();
       return `Closed ${fmtCur(amount)} ${CUR.symbol} of ${short(b.dataset.who)}'s debt. `
         + `Tx ${shortHash(tx.hash)}`;
@@ -595,6 +618,9 @@ async function ensureAllowance(signer, me, amount) {
     const { signer, me } = await walletSigner();
     const amount = askKHR("coll-amt", "lock");
     await ensureAllowance(signer, me, amount);
+    // Asked of CSB before it is asked of the wallet: gas estimation drops the
+    // revert data and leaves "missing revert data", which names nothing.
+    await preflight(VAULT, "deposit", [CUR.id, amount], me);
     const tx = await VAULT.connect(signer).deposit(CUR.id, amount, await feeOverrides());
     await tx.wait();
     return `Locked ${fmtKHR(amount)} KHRt. The vault credits what actually arrived, `
@@ -603,8 +629,9 @@ async function ensureAllowance(signer, me, amount) {
   });
 
   $("do-withdraw").onclick = () => run(async () => {
-    const { signer } = await walletSigner();
+    const { signer, me } = await walletSigner();
     const amount = askKHR("coll-amt", "release");
+    await preflight(VAULT, "withdraw", [CUR.id, amount], me);
     const tx = await VAULT.connect(signer).withdraw(CUR.id, amount, await feeOverrides());
     await tx.wait();
     return `Released ${fmtKHR(amount)} KHRt. Tx ${shortHash(tx.hash)}`;
@@ -635,6 +662,7 @@ async function ensureAllowance(signer, me, amount) {
         + ` Lock KHRt with ${CUR.symbol} selected, then issue.`);
     }
 
+    await preflight(VAULT, "mint", [CUR.id, amount], me);
     const tx = await VAULT.connect(signer).mint(CUR.id, amount, await feeOverrides());
     await tx.wait();
     return `Issued ${fmtCur(amount)} ${CUR.symbol} against your locked riel. `
@@ -643,9 +671,10 @@ async function ensureAllowance(signer, me, amount) {
   });
 
   $("do-repay").onclick = () => run(async () => {
-    const { signer } = await walletSigner();
+    const { signer, me } = await walletSigner();
     const amount = parseCur($("debt-amt").value);
     if (!amount || amount <= 0n) throw new Error(`Enter how much ${CUR.symbol} to repay.`);
+    await preflight(VAULT, "repay", [CUR.id, amount], me);
     const tx = await VAULT.connect(signer).repay(CUR.id, amount, await feeOverrides());
     await tx.wait();
     return `Repaid ${fmtCur(amount)} ${CUR.symbol}; it was burned. Repaying never `

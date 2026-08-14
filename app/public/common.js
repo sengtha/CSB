@@ -266,6 +266,35 @@ async function loadConfig() {
  * because a holder who still has a position needs somewhere to go — see the note
  * lend.html renders when this drops a reserve.
  */
+/**
+ * Run a write as a CALL first, through this page's own provider.
+ *
+ * A transaction that will revert is normally discovered by the wallet during gas
+ * estimation, and what comes back is "missing revert data" — ethers' way of
+ * saying the failure arrived with no payload to decode. That is the least useful
+ * message the stack can produce: it names neither the contract nor the condition,
+ * and on a gated chain the condition is usually a specific address lacking a
+ * specific attestation.
+ *
+ * Asking CSB directly, with eth_call, returns the revert data. So every write
+ * that can fail for a reason worth naming is simulated here first and the error
+ * is rethrown untouched, for the page's own decoder to turn into a sentence.
+ *
+ * `contract` MUST be connected to a provider rather than a signer, or the call
+ * goes back out through the wallet and the data is lost again.
+ */
+async function preflight(contract, fn, args, from) {
+  await contract[fn].staticCall(...args, { from });
+}
+
+/** Integer square root, for Uniswap's first-deposit LP formula. */
+function bigSqrt(v) {
+  if (v < 2n) return v;
+  let x = v, y = (x + 1n) / 2n;
+  while (y < x) { x = y; y = (x + v / x) / 2n; }
+  return x;
+}
+
 function retiredAddresses(cfg) {
   const out = new Set();
   const add = (a) => { if (typeof a === "string" && a.startsWith("0x")) out.add(a.toLowerCase()); };

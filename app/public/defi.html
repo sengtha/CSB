@@ -94,6 +94,8 @@
         Deposit <b>both</b> sides of the pool and receive LP tokens — a claim on your share
         of it. Enter one amount and the other is computed at the pool's current ratio;
         depositing off-ratio would hand the difference to the next trader.
+        <b>An empty pool has no ratio to match</b>, so there both amounts are yours to
+        choose and the one you choose becomes the opening price.
       </p>
       <div class="grid2">
         <div>
@@ -397,24 +399,68 @@ async function liqQuote(edited) {
   const raw = ($(edited === 0 ? "liq-a0" : "liq-a1").value ?? "").trim();
   if (!raw) { q.textContent = ""; return null; }
 
+  /*
+   * AN EMPTY POOL IS A DIFFERENT OPERATION, and treating it as the same one made
+   * the page unusable for exactly the case it was most needed in. With no
+   * reserves there is no ratio to match, so the code below computed the other
+   * side as zero, wrote that zero into the field, and offered to deposit one
+   * side of a two-sided pool. A newly created pair could never be seeded here.
+   *
+   * The first deposit SETS the price — that is what makes it different, and the
+   * only thing to say about it. So both fields stay under the depositor's
+   * control and the note says what ratio they are choosing.
+   */
+  const empty = r0 === 0n || r1 === 0n;
   let a0, a1;
   try {
-    if (edited === 0) {
+    if (empty) {
+      const s0 = ($("liq-a0").value ?? "").trim();
+      const s1 = ($("liq-a1").value ?? "").trim();
+      a0 = s0 ? ethers.parseUnits(s0, POOL.meta0.decimals) : 0n;
+      a1 = s1 ? ethers.parseUnits(s1, POOL.meta1.decimals) : 0n;
+    } else if (edited === 0) {
       a0 = ethers.parseUnits(raw, POOL.meta0.decimals);
-      a1 = r0 === 0n ? 0n : (a0 * r1) / r0;
+      a1 = (a0 * r1) / r0;
     } else {
       a1 = ethers.parseUnits(raw, POOL.meta1.decimals);
-      a0 = r1 === 0n ? 0n : (a1 * r0) / r1;
+      a0 = (a1 * r0) / r1;
     }
   } catch (_) { q.textContent = "Enter a number."; return null; }
 
-  // Echo the computed side back without retriggering this handler.
-  _liqSync = true;
-  if (edited === 0) $("liq-a1").value = ethers.formatUnits(a1, POOL.meta1.decimals);
-  else $("liq-a0").value = ethers.formatUnits(a0, POOL.meta0.decimals);
-  _liqSync = false;
+  if (!empty) {
+    // Echo the computed side back without retriggering this handler.
+    _liqSync = true;
+    if (edited === 0) $("liq-a1").value = ethers.formatUnits(a1, POOL.meta1.decimals);
+    else $("liq-a0").value = ethers.formatUnits(a0, POOL.meta0.decimals);
+    _liqSync = false;
+  }
 
   const supply = await POOL.pair.totalSupply();
+
+  if (empty) {
+    if (a0 === 0n || a1 === 0n) {
+      q.innerHTML = `<b>This pool is empty.</b> Both sides are needed, and whatever `
+        + `ratio you choose becomes its opening price — nothing else is setting one. `
+        + `Match the published rate on <a href="currency.html">the currency page</a> `
+        + `unless you mean to quote a different one.`;
+      return null;
+    }
+    // Uniswap's first mint: sqrt(a0*a1), less 1000 wei burned to address(0)
+    // forever. That burn is Uniswap's, not ours, and it is worth stating because
+    // it makes the first deposit very slightly unrecoverable.
+    const minted = bigSqrt(a0 * a1) - 1000n;
+    const price = Number(ethers.formatUnits(a1, POOL.meta1.decimals))
+      / Number(ethers.formatUnits(a0, POOL.meta0.decimals));
+    q.innerHTML = `<b>Opening this pool.</b> Deposits `
+      + `<b>${fmtUnits(a0, POOL.meta0.decimals)} ${POOL.meta0.symbol}</b> and `
+      + `<b>${fmtUnits(a1, POOL.meta1.decimals)} ${POOL.meta1.symbol}</b>, which sets the price at `
+      + `<b>${price.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${POOL.meta1.symbol}`
+      + ` per ${POOL.meta0.symbol}</b> and mints about <b>${fmtUnits(minted > 0n ? minted : 0n, 18)}</b> LP. `
+      + `Uniswap permanently burns the first 1000 wei of LP, so a first deposit is never `
+      + `fully withdrawable.`;
+    return { a0, a1, minted };
+  }
+
   // Uniswap mints min(a0*supply/r0, a1*supply/r1) — the smaller side decides,
   // which is exactly why an off-ratio deposit loses the surplus.
   const minted = supply === 0n ? 0n
@@ -430,12 +476,22 @@ async function liqQuote(edited) {
 async function addLiquidity() {
   if (!window.ethereum) throw new Error("No wallet detected in this browser.");
   const q = await liqQuote($("liq-a0").value ? 0 : 1);
-  if (!q || (q.a0 === 0n && q.a1 === 0n)) throw new Error("Enter an amount first.");
+  if (!q || q.a0 === 0n || q.a1 === 0n) {
+    throw new Error("Enter an amount for both sides — a pool takes two.");
+  }
 
   const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
   const me = await signer.getAddress();
   const t0 = new ethers.Contract(POOL.meta0.addr, ERC20_ABI, signer);
   const t1 = new ethers.Contract(POOL.meta1.addr, ERC20_ABI, signer);
+
+  // Simulated through this page's provider BEFORE either side moves. A gated
+  // token refuses a transfer to a pair the identity registry does not know, and
+  // discovering that between the two transfers leaves the first one stranded in
+  // the pair. eth_call also returns the revert data that gas estimation drops.
+  const p = getProvider();
+  await preflight(new ethers.Contract(POOL.meta0.addr, ERC20_ABI, p), "transfer", [POOL.addr, q.a0], me);
+  await preflight(new ethers.Contract(POOL.meta1.addr, ERC20_ABI, p), "transfer", [POOL.addr, q.a1], me);
 
   // Both sides move before mint() is called. If the second transfer fails the
   // first is already sitting in the pair, so say which step failed rather than
