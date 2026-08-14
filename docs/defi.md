@@ -493,7 +493,7 @@ npx hardhat run scripts/aave-diagnose.js --network csbRemote
 ## The stand-in dollar is freely mintable, and it is collateral
 
 USDx is Aave's `MintableERC20`, whose `mint()` has **no access control** — any
-address can mint any amount. `/lend.html` exposes that as a faucet, because a
+address can mint any amount. `/lend.html` exposed that as a faucet, because a
 button cannot grant a permission that already exists and hiding it would only
 mean people asked an operator for something they could do themselves.
 
@@ -504,11 +504,30 @@ testnet where every participant is allow-listed and nothing is worth anything,
 that is acceptable and is what makes the cross-asset borrow demonstrable at all.
 It would not be acceptable anywhere else.
 
-Three ways to close it if this ever needs to matter, in increasing order of
-honesty: cap the faucet (cosmetic — the token is callable directly), set USDx's
-LTV to zero so it is borrowable but not collateral (keeps the market, loses the
-cross-asset demonstration), or issue the dollar through a real gated token
-(loses the "unmodified upstream contracts" property this whole section rests on).
+Three ways to close it, in increasing order of honesty: cap the faucet (cosmetic
+— the token is callable directly), set USDx's LTV to zero so it is borrowable but
+not collateral (keeps the market, loses the cross-asset demonstration), or issue
+the dollar through a real gated token (loses the "unmodified upstream contracts"
+property this whole section rests on).
+
+### What was done about it, 2026-08-14
+
+The third one, in a place where it costs nothing: **CSB now issues foreign
+currency itself**, against locked riel, through `CurrencyVault` — see
+`docs/currency.md`. That is a separate mechanism rather than a change to Aave, so
+the "unmodified upstream contracts" claim above still stands exactly as written.
+
+What changed on the site: the faucet on `/lend.html` and the mint button on
+`/assets.html` are gone, and both pages now say why. **The permission itself is
+unchanged** — USDx's `mint()` is still open to anyone with an RPC connection, and
+it is still an Aave reserve at 75% LTV. Removing a button is not a control, and
+this document should not be read as claiming otherwise. The reserve stays
+selectable in the UI so that anyone who already supplied can withdraw; the
+remaining on-chain step, if this ever needs to matter, is setting its LTV to zero.
+
+`scripts/deploy-stand-in-usd.js` and `scripts/usdc-market.js` are kept and marked
+superseded. Every measurement in this file and in `docs/oracle.md` came from them,
+and deleting them would leave those claims unreproducible.
 
 ## Where the evidence lives
 

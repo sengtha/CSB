@@ -3,6 +3,20 @@ const fs = require("fs");
 const path = require("path");
 
 /**
+ * SUPERSEDED — kept because it reproduces published findings, not because it
+ * should be run again.
+ *
+ * The stand-in dollar this builds has an unguarded mint(), which is what made
+ * every dollar figure on CSB arbitrary. Foreign currency is now ORIGINATED
+ * against locked riel by contracts/currency/CurrencyVault.sol, and the site's
+ * mint affordances for this token were removed on 2026-08-14. Nothing here was
+ * deleted: the results in docs/defi.md and docs/oracle.md were measured with
+ * exactly this script, and deleting it would leave those claims unreproducible.
+ *
+ * If you run it, you are creating a token anybody can mint without limit. Do not
+ * add it to a lending market again.
+ */
+/**
  * Deploy a plain dollar-denominated ERC-20 on CSB, as a stand-in for a bridged one.
  *
  *   source ops/csb-env.sh

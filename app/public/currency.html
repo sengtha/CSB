@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Foreign currency — CSB</title>
+  <link rel="stylesheet" href="app.css" />
+  <style>
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 6px 0; }
+    @media (max-width: 760px) { .stats { grid-template-columns: 1fr 1fr; } }
+    .stats .cell { border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; background: #fbfcfe; }
+    .stats .t { font-size: 11.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+    .stats .v { font-size: 19px; font-weight: 700; color: var(--blue); margin-top: 3px; font-variant-numeric: tabular-nums; }
+    .stats .d { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+    .ratio { font-weight: 700; }
+    .ratio.ok { color: var(--ok, #157347); } .ratio.warn { color: var(--warn); } .ratio.bad { color: var(--red); }
+    .caution { border-left: 3px solid var(--warn); background: #fef8ec; padding: 12px 15px; border-radius: 0 9px 9px 0; margin: 14px 0; font-size: 13px; line-height: 1.7; }
+    .finding { border-left: 3px solid var(--blue); background: #f2f5fc; padding: 13px 15px; border-radius: 0 9px 9px 0; margin: 16px 0; font-size: 13px; line-height: 1.7; }
+    .finding h3 { font-size: 13.5px; margin-bottom: 5px; }
+    .acts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .bar { height: 7px; border-radius: 4px; background: #e8ecf4; overflow: hidden; margin-top: 6px; }
+    .bar > i { display: block; height: 100%; background: var(--blue); }
+    table.pos { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.pos th, table.pos td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+    table.pos th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  </style>
+  <script src="vendor/ethers.umd.min.js"></script>
+  <script src="common.js"></script>
+  <script src="shell.js" defer></script>
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <header class="site">
+    <h1>🇰🇭 CSB Foreign Currency</h1>
+    <span class="sub">lock riel, issue dollars — the riel is the collateral, not the peg</span>
+    <nav></nav>
+  </header>
+  <main>
+    <div class="caution">
+      <b>The exchange rate here is published by hand.</b> CSB has no market to read
+      a rate from, so every price below comes from the administered oracle — a
+      number a role posts, with a citation, not an observation of trading. The
+      collateral arithmetic is real; the valuation underneath it is only as good as
+      that number, which is why each currency has a hard cap on how much can ever
+      be issued. Test tokens, no value, personal experiment.
+    </div>
+
+    <div id="no-vault" class="card" style="display:none">
+      <h2>No currency vault deployed yet</h2>
+      <p class="small" style="line-height:1.8">
+        Nothing on this chain issues foreign currency. To deploy it:<br/>
+        <code>source ops/csb-env.sh</code><br/>
+        <code>npx hardhat run scripts/deploy-currency-vault.js --network csbRemote</code><br/>
+        It needs an administered rate oracle first — see
+        <span class="mono">scripts/oracle-deploy.js</span>.
+      </p>
+    </div>
+
+    <div id="market" class="card" style="display:none">
+      <h2 id="mkt-title">Currency</h2>
+      <div style="margin-bottom:12px">
+        <label>Currency</label>
+        <select id="cur-sel"></select>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div id="ceiling-bar"></div>
+      <div class="small" id="addrs" style="margin-top:10px"></div>
+    </div>
+
+    <div class="grid2" id="act-row" style="display:none">
+      <div class="card">
+        <h2>Your position</h2>
+        <div id="me" class="kv"><span class="small">Checking your wallet…</span></div>
+        <button id="me-check" style="margin-top:10px">Check my wallet</button>
+      </div>
+      <div class="card">
+        <h2>Borrow against riel</h2>
+        <label id="coll-label">KHRt to lock or release</label>
+        <input id="coll-amt" placeholder="e.g. 100,000" />
+        <div class="acts">
+          <button id="do-deposit">Lock KHRt</button>
+          <button id="do-withdraw" class="ghost">Release KHRt</button>
+        </div>
+        <label id="debt-label" style="margin-top:14px">Currency to issue or repay</label>
+        <input id="debt-amt" placeholder="e.g. 25.00" />
+        <div class="acts">
+          <button id="do-mint">Issue</button>
+          <button id="do-repay" class="ghost">Repay</button>
+        </div>
+        <p class="small" style="margin-top:12px;line-height:1.7">
+          <b>Lock first, then issue.</b> Both are ordinary transactions and both
+          can be undone: repay what you issued and the riel comes back. There is
+          no interest — this vault charges none, so a position left alone stays
+          exactly where you left it unless the published rate moves.
+        </p>
+      </div>
+    </div>
+
+    <div id="msg" class="banner"></div>
+
+    <div id="risk-card" class="card" style="display:none">
+      <h2>Positions at risk</h2>
+      <p class="small" style="line-height:1.7">
+        Anyone holding the currency may close an undercollateralised position,
+        repaying part of its debt and taking that much collateral plus the
+        penalty. Not a privilege of this page — it is what
+        <span class="mono">liquidate()</span> does for any caller.
+      </p>
+      <div id="risk-body" class="small" style="margin-top:10px">Scanning…</div>
+    </div>
+
+    <div class="finding">
+      <h3>Why this replaced a mintable dollar</h3>
+      The dollar on this chain used to be a test token with an unguarded
+      <span class="mono">mint()</span>. Anyone could create any amount, so its
+      supply was arbitrary, the price in the KHRt pool meant nothing, and it was
+      simultaneously accepted as Aave collateral — anyone could have minted a pile
+      and borrowed out the other side. That has been removed.<br/><br/>
+      <b>Every unit here was originated.</b> Total supply is not a decision anybody
+      makes; it is the sum of the vault's books, and the tests assert those two
+      numbers stay equal.<br/><br/>
+      <b>It is inside the compliance perimeter, and a bridged dollar cannot be.</b>
+      <span class="mono">docs/architecture.md</span> §7.1 accepts that a bridged
+      token arrives with no identity hook and no freeze, because it is somebody
+      else's contract minted by somebody else's bridge. A currency CSB issues
+      itself checks the identity registry on every transfer — including issuance.
+      That is the strongest argument for minting foreign currency here rather than
+      importing it, and it is worth more than the economics.<br/><br/>
+      <b>What bounds the damage is the ceiling, not the ratio.</b> A collateral
+      ratio protects against a rate that moves; nothing about a ratio protects
+      against one that is wrong. Reproduce all of it:
+      <span class="mono">npx hardhat test test/currency-vault.test.js</span> — see
+      <span class="mono">docs/currency.md</span>.
+    </div>
+  </main>
+  <div class="footer">CSB v0 prototype — a personal experiment; not affiliated with or endorsed by any government. Test tokens only.</div>
+
+<script>
+"use strict";
+
+const VAULT_ABI = [
+  "function currencyCount() view returns (uint256)",
+  "function currencyAt(uint256 id) view returns (tuple(address synth, uint8 synthDecimals, uint16 minRatioBps, uint16 liqThresholdBps, uint16 liqPenaltyBps, uint256 debtCeiling, uint256 totalDebt, bool mintingPaused))",
+  "function positionOf(uint256 id, address who) view returns (tuple(uint256 collateral, uint256 debt))",
+  "function ratioBps(uint256 id, address who) view returns (uint256)",
+  "function maxDebt(uint256 id, address who) view returns (uint256)",
+  "function rielValueOf(uint256 id, uint256 debt) view returns (uint256)",
+  "function collateralToken() view returns (address)",
+  "function deposit(uint256 id, uint256 amount)",
+  "function mint(uint256 id, uint256 amount)",
+  "function repay(uint256 id, uint256 amount)",
+  "function withdraw(uint256 id, uint256 amount)",
+  "function liquidate(uint256 id, address who, uint256 repayAmount) returns (uint256)",
+  "event Minted(uint256 indexed id, address indexed who, uint256 amount)",
+  "error NoSuchCurrency()",
+  "error MintingPaused()",
+  "error DebtCeilingReached(uint256 ceiling, uint256 wouldBe)",
+  "error Undercollateralised(uint256 ratioBps, uint256 requiredBps)",
+  "error NotLiquidatable(uint256 ratioBps, uint256 thresholdBps)",
+  "error NothingToDo()",
+  "error RepayExceedsDebt(uint256 debt, uint256 offered)",
+  "error InsufficientCollateral(uint256 held, uint256 requested)",
+  "error TransferFailed()",
+  "error Reentrant()",
+  "error BadParameters()",
+];
+
+const ERC20_ABI = [
+  "function name() view returns (string)",
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address,address) view returns (uint256)",
+  "function approve(address,uint256) returns (bool)",
+  "function totalSupply() view returns (uint256)",
+];
+
+const ORACLE_ABI = [
+  "function BASE_CURRENCY_UNIT() view returns (uint256)",
+  "function describe(address asset) view returns (uint256 price, uint64 publishedAt, bytes32 sourceRef, bool stale)",
+];
+
+const BPS = 10_000n;
+
+let CFG = null, VAULT = null, ORACLE = null, UNIT = null;
+let LIST = [];      // [{ id, symbol, decimals, synth, cfg }]
+let CUR = null;     // the selected entry
+const $ = (id) => document.getElementById(id);
+
+async function currentAddress(prompt = false) {
+  if (!window.ethereum) return null;
+  try {
+    const a = await window.ethereum.request({
+      method: prompt ? "eth_requestAccounts" : "eth_accounts",
+    });
+    return a?.[0] ?? null;
+  } catch (_) { return null; }
+}
+
+/** Amounts in the selected currency's own decimals — khUSD is 2, khJPY is 0. */
+const fmtCur = (v) => Number(ethers.formatUnits(v, CUR.decimals))
+  .toLocaleString("en-US", { maximumFractionDigits: CUR.decimals });
+const parseCur = (v) => {
+  try { return ethers.parseUnits(String(v).trim().replaceAll(",", ""), CUR.decimals); }
+  catch (_) { return null; }
+};
+
+function cell(t, v, d) {
+  return `<div class="cell"><div class="t">${t}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
+}
+
+/**
+ * The vault's own errors, then everything common.js already knows.
+ *
+ * `Undercollateralised(11764, 15000)` is arithmetic, not English, and the numbers
+ * are the two facts a user needs. The synth's `NotKycActive` is already handled by
+ * common.js, which matters here because it is the error a liquidator without an
+ * attestation hits.
+ */
+const VAULT_IFACE = new ethers.Interface(VAULT_ABI);
+// Tolerates a number or a bigint: ethers has changed which one it hands back for
+// small integer types across versions, and a `% 100n` here would throw on the
+// wrong one — inside an error formatter, where it would replace the real message.
+const pct = (bps) => {
+  const n = Number(bps) / 100;
+  return (Number.isInteger(n) ? n.toFixed(0) : n.toFixed(2)) + "%";
+};
+
+/** KHRt amounts, refusing rather than guessing. parseKHR throws on nonsense. */
+function askKHR(id, what) {
+  const raw = ($(id).value || "").trim();
+  let v = null;
+  try { v = raw ? parseKHR(raw) : null; } catch (_) { v = null; }
+  if (v === null || v <= 0n) throw new Error(`Enter how much KHRt to ${what}.`);
+  return v;
+}
+
+function explainVault(e) {
+  const data = e?.info?.error?.data ?? e?.data ?? e?.error?.data;
+  if (typeof data === "string" && data.startsWith("0x") && data.length >= 10) {
+    let p = null;
+    try { p = VAULT_IFACE.parseError(data); } catch (_) { /* fall through */ }
+    if (p) {
+      const a = p.args;
+      switch (p.name) {
+        case "Undercollateralised":
+          return `Refused: that would leave the position at ${pct(a[0])}, below the `
+            + `${pct(a[1])} this currency requires. Lock more KHRt, or issue less.`;
+        case "DebtCeilingReached":
+          return `Refused: this currency's issuance ceiling is ${a[0]} minor units and `
+            + `that would take it to ${a[1]}. The ceiling is the control that bounds a `
+            + `wrong exchange rate, so it is deliberately not generous.`;
+        case "NotLiquidatable":
+          return `Refused: that position is at ${pct(a[0])}, at or above the `
+            + `${pct(a[1])} liquidation threshold. Nothing to close.`;
+        case "RepayExceedsDebt":
+          return `Refused: only ${a[0]} minor units are owed and ${a[1]} were offered.`;
+        case "InsufficientCollateral":
+          return `Refused: the position holds ${fmtKHR(a[0])} KHRt and ${fmtKHR(a[1])} was requested.`;
+        case "MintingPaused":
+          return "Refused: issuance of this currency is paused. Repaying and withdrawing still work.";
+        case "NothingToDo":
+          return "Enter an amount greater than zero.";
+        default:
+          return `Refused: ${p.name}.`;
+      }
+    }
+  }
+  // A stale rate surfaces from the oracle, not the vault, and is the single most
+  // likely refusal on this page — so it is named rather than left as a hex blob.
+  const raw = String(e?.shortMessage ?? e?.message ?? e);
+  if (/RateStale/.test(raw)) {
+    return "The published exchange rate is stale, so the vault will not issue or "
+      + "release collateral against live debt. Repaying always works, and once a "
+      + "position has no debt its collateral comes out too.";
+  }
+  if (/RateNotSet/.test(raw)) {
+    return "No exchange rate has been published for this currency yet.";
+  }
+  return explainError(e);
+}
+
+let _lastBtn = null;
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("button");
+  if (b) _lastBtn = b;
+}, true);
+
+async function run(fn) {
+  const msg = $("msg");
+  const btn = _lastBtn;
+  const label = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = "Working…"; }
+  msg.className = "banner";
+  try {
+    banner(msg, "ok", await fn());
+    await refreshMarket(); await refreshMe(); await refreshRisk();
+  } catch (e) {
+    banner(msg, "err", explainVault(e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    msg.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+}
+
+// ---------------------------------------------------------------------- reading
+
+async function refreshMarket() {
+  if (!CUR) return;
+  const p = getProvider();
+  const c = await VAULT.currencyAt(CUR.id);
+  CUR.cfg = c;
+
+  // describe() never reverts, unlike getAssetPrice — so a stale rate can be shown
+  // as stale rather than taking out the whole card.
+  const r = await ORACLE.describe(CUR.synth).catch(() => null);
+  const rate = r && r.price > 0n ? Number(r.price * 100n / UNIT) / 100 : null;
+  const age = r && r.publishedAt > 0n
+    ? Math.round(Date.now() / 1000 - Number(r.publishedAt)) : null;
+
+  $("mkt-title").textContent = `${CUR.symbol} — ${CUR.name}`;
+  $("stats").innerHTML =
+    cell("Rate", rate === null ? "—" : rate.toLocaleString("en-US"),
+      rate === null ? "no rate published" :
+      `riel per ${CUR.symbol}${r.stale ? " — STALE" : ""}${age !== null ? `, ${Math.round(age / 60)} min old` : ""}`) +
+    cell("Issued", fmtCur(c.totalDebt), `of ${fmtCur(c.debtCeiling)} allowed`) +
+    cell("To issue", pct(c.minRatioBps), "riel locked per unit of debt") +
+    cell("Liquidation", pct(c.liqThresholdBps), `below this, anyone may close it (+${pct(c.liqPenaltyBps)})`);
+
+  const usedPct = c.debtCeiling === 0n ? 0
+    : Math.min(100, Number(c.totalDebt * 1000n / c.debtCeiling) / 10);
+  $("ceiling-bar").innerHTML =
+    `<div class="bar"><i style="width:${usedPct.toFixed(1)}%"></i></div>`
+    + `<div class="small" style="margin-top:5px">${usedPct.toFixed(1)}% of the issuance ceiling used`
+    + `${c.mintingPaused ? ' — <b>issuance is paused</b>' : ""}.</div>`;
+
+  const locked = await new ethers.Contract(CFG.contracts.KHRStablecoin, ERC20_ABI, p)
+    .balanceOf(CFG.currency.vault).catch(() => null);
+  $("addrs").innerHTML =
+    `Vault <span class="mono">${CFG.currency.vault}</span>`
+    + (locked === null ? "" : ` — holds ${fmtKHR(locked)} KHRt across every currency`)
+    + `<br/>${CUR.symbol} <span class="mono">${CUR.synth}</span>`;
+}
+
+/** The rate at which this position becomes liquidatable, in riel per whole unit. */
+function liquidationRate(pos, c) {
+  if (pos.debt === 0n || pos.collateral === 0n) return null;
+  const num = pos.collateral * BPS * (10n ** BigInt(c.synthDecimals));
+  const den = BigInt(c.liqThresholdBps) * pos.debt * 100n;   // KHRt has 2 decimals
+  return den === 0n ? null : Number(num * 100n / den) / 100;
+}
+
+async function refreshMe(prompt = false) {
+  if (!CUR) return;
+  const el = $("me");
+  const addr = await currentAddress(prompt);
+  if (!addr) {
+    el.innerHTML = window.ethereum
+      ? '<span class="small">No wallet connected. Use the button below.</span>'
+      : '<span class="small">No wallet detected in this browser.</span>';
+    return;
+  }
+  const p = getProvider();
+  const [pos, s, held, ratio, room] = await Promise.all([
+    VAULT.positionOf(CUR.id, addr),
+    kycSummary(addr),
+    new ethers.Contract(CUR.synth, ERC20_ABI, p).balanceOf(addr).catch(() => null),
+    // Both revert when the rate is stale. That is the correct behaviour of the
+    // contract and a bad reason to blank the page, so they degrade to "—".
+    VAULT.ratioBps(CUR.id, addr).catch(() => null),
+    VAULT.maxDebt(CUR.id, addr).catch(() => null),
+  ]);
+
+  const noDebt = pos.debt === 0n;
+  const rNum = ratio === null || noDebt ? null : Number(ratio) / 100;
+  const thr = Number(CUR.cfg.liqThresholdBps) / 100;
+  const min = Number(CUR.cfg.minRatioBps) / 100;
+  const cls = rNum === null ? "ok" : rNum < thr ? "bad" : rNum < min ? "warn" : "ok";
+  const liqAt = liquidationRate(pos, CUR.cfg);
+
+  el.innerHTML = `
+    <b>Address</b> <span class="mono">${short(addr)}</span><br/>
+    <b>KYC</b> ${s.status === "active" ? '<span class="badge ok">ACTIVE</span>'
+      : `<span class="badge bad">${s.status.toUpperCase()}</span>`}
+      ${s.frozen ? '<span class="badge bad">FROZEN</span>' : ""}<br/>
+    <b>Wallet</b> ${fmtKHR(s.balance)} KHRt${held === null ? "" : ` · ${fmtCur(held)} ${CUR.symbol}`}<br/>
+    <b>Locked</b> ${fmtKHR(pos.collateral)} KHRt<br/>
+    <b>Issued</b> ${fmtCur(pos.debt)} ${CUR.symbol}<br/>
+    <b>Collateralisation</b> <span class="ratio ${cls}">${
+      noDebt ? "—" : rNum === null ? "—" : rNum.toFixed(1) + "%"}</span>
+    <span class="small">${noDebt ? "no debt" : rNum === null ? "rate unavailable"
+      : rNum < thr ? "liquidatable now" : `liquidatable below ${thr}%`}</span><br/>
+    <b>Room to issue</b> ${room === null ? "—" : `${fmtCur(room)} ${CUR.symbol}`}
+    ${liqAt === null ? "" : `<br/><b>Liquidated if the rate passes</b> `
+      + `${liqAt.toLocaleString("en-US", { maximumFractionDigits: 2 })} riel per ${CUR.symbol}`}`;
+}
+
+/**
+ * Who has a position, found from the vault's own Minted events.
+ *
+ * There is no registry of borrowers — the vault stores positions in a mapping,
+ * which cannot be enumerated. Logs are the only honest source, so a node that
+ * refuses a wide `eth_getLogs` range means this panel says so rather than
+ * quietly showing an empty list, which would read as "nobody is at risk".
+ */
+async function refreshRisk() {
+  const body = $("risk-body");
+  if (!CUR) return;
+  let addrs;
+  try {
+    const logs = await getProvider().getLogs({
+      address: CFG.currency.vault,
+      topics: [ethers.id("Minted(uint256,address,uint256)"),
+        ethers.zeroPadValue(ethers.toBeHex(CUR.id), 32)],
+      fromBlock: 0, toBlock: "latest",
+    });
+    addrs = [...new Set(logs.map((l) => ethers.getAddress("0x" + l.topics[2].slice(26))))];
+  } catch (e) {
+    body.innerHTML = `Could not read the vault's history from this node, so open `
+      + `positions cannot be listed. ${explainError(e)}`;
+    return;
+  }
+  if (!addrs.length) { body.textContent = `Nobody has issued ${CUR.symbol} yet.`; return; }
+
+  const rows = (await Promise.all(addrs.map(async (a) => {
+    const [pos, ratio] = await Promise.all([
+      VAULT.positionOf(CUR.id, a),
+      VAULT.ratioBps(CUR.id, a).catch(() => null),
+    ]);
+    return { a, pos, ratio };
+  }))).filter((r) => r.pos.debt > 0n);
+
+  if (!rows.length) { body.textContent = `No ${CUR.symbol} is outstanding.`; return; }
+  rows.sort((x, y) => (x.ratio ?? 0n) < (y.ratio ?? 0n) ? -1 : 1);
+  const thr = BigInt(CUR.cfg.liqThresholdBps);
+
+  body.innerHTML = `<table class="pos"><tr><th>Address</th><th>Locked</th><th>Issued</th>`
+    + `<th>Ratio</th><th></th></tr>` + rows.map((r) => {
+      const at = r.ratio !== null && r.ratio < thr;
+      return `<tr><td class="mono">${short(r.a)}</td><td>${fmtKHR(r.pos.collateral)}</td>`
+        + `<td>${fmtCur(r.pos.debt)}</td>`
+        + `<td class="ratio ${at ? "bad" : "ok"}">${r.ratio === null ? "—"
+          : (Number(r.ratio) / 100).toFixed(1) + "%"}</td>`
+        + `<td>${at ? `<button class="ghost liq" data-who="${r.a}">Close</button>` : ""}</td></tr>`;
+    }).join("") + `</table>`
+    + `<p class="small" style="margin-top:8px">Closing repays the amount in the `
+    + `<b>${CUR.symbol}</b> field above from your own wallet and pays you that much `
+    + `collateral plus ${pct(CUR.cfg.liqPenaltyBps)}. You must hold ${CUR.symbol} to do it, `
+    + `and holding it requires an attestation — so liquidation here is open to anyone `
+    + `the chain already knows and to nobody else.</p>`;
+
+  body.querySelectorAll("button.liq").forEach((b) => {
+    b.onclick = () => run(async () => {
+      const { signer } = await walletSigner();
+      const amount = parseCur($("debt-amt").value);
+      if (!amount || amount <= 0n) throw new Error(`Enter how much ${CUR.symbol} to repay first.`);
+      const v = VAULT.connect(signer);
+      const tx = await v.liquidate(CUR.id, b.dataset.who, amount, await feeOverrides());
+      await tx.wait();
+      return `Closed ${fmtCur(amount)} ${CUR.symbol} of ${short(b.dataset.who)}'s debt. `
+        + `Tx ${shortHash(tx.hash)}`;
+    });
+  });
+}
+
+// ---------------------------------------------------------------------- writing
+
+async function walletSigner() {
+  if (!window.ethereum) throw new Error("No wallet detected in this browser.");
+  const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
+  return { signer, me: await signer.getAddress() };
+}
+
+async function ensureAllowance(signer, me, amount) {
+  const t = new ethers.Contract(CFG.contracts.KHRStablecoin, ERC20_ABI, signer);
+  if (await t.allowance(me, CFG.currency.vault) < amount) {
+    await (await t.approve(CFG.currency.vault, amount, await feeOverrides())).wait();
+  }
+}
+
+(async () => {
+  await ensureSession();
+  CFG = await loadConfig();
+
+  if (!CFG.currency?.vault) { $("no-vault").style.display = ""; return; }
+  const p = getProvider();
+  VAULT = new ethers.Contract(CFG.currency.vault, VAULT_ABI, p);
+  ORACLE = new ethers.Contract(CFG.currency.oracle ?? CFG.oracle?.referenceRate, ORACLE_ABI, p);
+  UNIT = await ORACLE.BASE_CURRENCY_UNIT();
+
+  // The list comes from the chain, not from deployments.json: a currency added by
+  // an operator after the file was last written would otherwise be invisible, and
+  // the id used for every call has to be the vault's own.
+  const n = await VAULT.currencyCount();
+  for (let i = 0n; i < n; i++) {
+    const c = await VAULT.currencyAt(i);
+    const t = new ethers.Contract(c.synth, ERC20_ABI, p);
+    LIST.push({
+      id: i, synth: c.synth, cfg: c,
+      decimals: Number(c.synthDecimals),
+      symbol: await t.symbol().catch(() => c.synth.slice(0, 8) + "…"),
+      name: await t.name().catch(() => ""),
+    });
+  }
+  if (!LIST.length) { $("no-vault").style.display = ""; return; }
+
+  $("market").style.display = "";
+  $("act-row").style.display = "";
+  $("risk-card").style.display = "";
+
+  const sel = $("cur-sel");
+  LIST.forEach((x, i) => sel.add(new Option(`${x.symbol} — ${x.name}`, String(i))));
+  CUR = LIST[0];
+  const relabel = () => {
+    $("debt-label").textContent = `${CUR.symbol} to issue or repay`;
+    $("do-mint").textContent = `Issue ${CUR.symbol}`;
+    $("do-repay").textContent = `Repay ${CUR.symbol}`;
+  };
+  relabel();
+  sel.onchange = () => run(async () => {
+    CUR = LIST[Number(sel.value)];
+    relabel();
+    return `Now showing ${CUR.symbol}.`;
+  });
+
+  window.ethereum?.on?.("accountsChanged", () => { refreshMe(); });
+  $("me-check").onclick = () => run(async () => { await refreshMe(true); return "Wallet read."; });
+
+  $("do-deposit").onclick = () => run(async () => {
+    const { signer, me } = await walletSigner();
+    const amount = askKHR("coll-amt", "lock");
+    await ensureAllowance(signer, me, amount);
+    const tx = await VAULT.connect(signer).deposit(CUR.id, amount, await feeOverrides());
+    await tx.wait();
+    return `Locked ${fmtKHR(amount)} KHRt. The vault credits what actually arrived, `
+      + `so a transfer levy comes out of the amount rather than out of the books. `
+      + `Tx ${shortHash(tx.hash)}`;
+  });
+
+  $("do-withdraw").onclick = () => run(async () => {
+    const { signer } = await walletSigner();
+    const amount = askKHR("coll-amt", "release");
+    const tx = await VAULT.connect(signer).withdraw(CUR.id, amount, await feeOverrides());
+    await tx.wait();
+    return `Released ${fmtKHR(amount)} KHRt. Tx ${shortHash(tx.hash)}`;
+  });
+
+  $("do-mint").onclick = () => run(async () => {
+    const { signer } = await walletSigner();
+    const amount = parseCur($("debt-amt").value);
+    if (!amount || amount <= 0n) throw new Error(`Enter how much ${CUR.symbol} to issue.`);
+    const tx = await VAULT.connect(signer).mint(CUR.id, amount, await feeOverrides());
+    await tx.wait();
+    return `Issued ${fmtCur(amount)} ${CUR.symbol} against your locked riel. `
+      + `Watch the collateralisation — below the threshold anyone can close the `
+      + `position. Tx ${shortHash(tx.hash)}`;
+  });
+
+  $("do-repay").onclick = () => run(async () => {
+    const { signer } = await walletSigner();
+    const amount = parseCur($("debt-amt").value);
+    if (!amount || amount <= 0n) throw new Error(`Enter how much ${CUR.symbol} to repay.`);
+    const tx = await VAULT.connect(signer).repay(CUR.id, amount, await feeOverrides());
+    await tx.wait();
+    return `Repaid ${fmtCur(amount)} ${CUR.symbol}; it was burned. Repaying never `
+      + `consults the exchange rate, so it works even when the rate is stale. `
+      + `Tx ${shortHash(tx.hash)}`;
+  });
+
+  await refreshMarket();
+  await refreshMe();
+  await refreshRisk();
+})();
+</script>
+</body>
+</html>

@@ -90,9 +90,18 @@
     <div class="card" id="usd-card" style="display:none;margin-top:18px">
       <h2>Riel against the dollar</h2>
       <p class="small" style="margin-bottom:12px">
-        From the <b>KHRt / USDx</b> pool on this chain. USDx is a locally issued stand-in
-        for a bridged dollar, so this is a rate <em>this chain</em> discovered — not a
-        quote from anywhere else, and not a claim about the real riel.
+        From the <b>KHRt / USDx</b> pool on this chain — a rate <em>this chain</em>
+        discovered, not a quote from anywhere else and not a claim about the real riel.
+      </p>
+      <p class="small" style="margin-bottom:12px">
+        <b>Read it knowing what USDx is.</b> It is a test token whose
+        <span class="mono">mint()</span> has no access control, so anybody can create
+        any amount of it and move this pool. A traded price is only as meaningful as
+        the scarcity of both sides, and one side here has none. CSB's answer to that
+        is <a href="currency.html">khUSD</a>, which is issued against locked riel at a
+        published rate and capped — so its supply is the vault's books rather than
+        anyone's decision. This card stays because the pool is real and the
+        arithmetic is worth showing; the number is not a valuation.
       </p>
       <div class="pool" id="usd-stats"></div>
       <div class="kv" id="usd-detail" style="margin-top:12px"></div>

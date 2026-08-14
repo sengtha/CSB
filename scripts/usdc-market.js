@@ -4,6 +4,20 @@ const path = require("path");
 const { deploy, at } = require("./lib/aave");
 
 /**
+ * SUPERSEDED — kept because it reproduces published findings, not because it
+ * should be run again.
+ *
+ * The stand-in dollar this builds has an unguarded mint(), which is what made
+ * every dollar figure on CSB arbitrary. Foreign currency is now ORIGINATED
+ * against locked riel by contracts/currency/CurrencyVault.sol, and the site's
+ * mint affordances for this token were removed on 2026-08-14. Nothing here was
+ * deleted: the results in docs/defi.md and docs/oracle.md were measured with
+ * exactly this script, and deleting it would leave those claims unreproducible.
+ *
+ * If you run it, you are creating a token anybody can mint without limit. Do not
+ * add it to a lending market again.
+ */
+/**
  * Build a market around a bridged dollar, so the chain finally has TWO assets.
  *
  *   source ops/csb-env.sh

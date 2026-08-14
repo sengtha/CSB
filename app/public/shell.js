@@ -39,6 +39,7 @@
     {
       label: "DeFi",
       items: [
+        ["currency.html", "Foreign currency", "Lock riel, issue dollars or yen"],
         ["defi.html", "Liquidity pool", "Unmodified Uniswap V2 on CSB"],
         ["dao.html", "DAOs", "Decide things together, weighted by a token"],
         ["lend.html", "Lending", "Unmodified Aave V3 — supply, borrow, repay"],

@@ -231,6 +231,22 @@ donation on the payment panel and the running total raised.
 - Gas priced at ~1 tRIEL per ordinary payment, with all gas fees routed to the public-good fund via RewardManager (see Money and fee policy).
 - ICM Messenger/Registry deployed, but the **relayer is not funded** (chose "Not now" at deploy) — cross-chain egress delivery needs it funded first.
 
+### Built and tested, NOT yet deployed on 8555
+
+Written, compiled and covered by the suite; nothing of the following exists on
+chain until the named script is run on `/opt/csb`. Do not describe any of it as
+live.
+
+| | |
+|---|---|
+| **CurrencyVault + khUSD/khJPY/khEUR** | `scripts/deploy-currency-vault.js`. Needs `oracle.referenceRate` deployed first, and the deployer to hold `ISSUER_ROLE` (to attest the vault) and `RATE_PUBLISHER_ROLE` (to post the initial rates). `docs/currency.md` |
+| Site page `/currency.html` | Shows the "no currency vault deployed yet" card until then. |
+
+The USD cleanup that goes with it is already in the repo: the mint buttons are
+gone from `/lend.html` and `/assets.html`. **USDx's own `mint()` is untouched and
+it is still an Aave reserve at 75% LTV** — the on-chain step, if it is ever
+wanted, is setting that reserve's LTV to zero. See `docs/defi.md`.
+
 ## Operate it
 
 **Load the operator environment first.** `ops/csb-env.sh` exports the RPC URL,

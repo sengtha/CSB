@@ -73,14 +73,10 @@
       </div>
       <div class="card">
         <h2>Supply &amp; borrow</h2>
-        <!-- Only shown for a token whose mint() this wallet can actually call. -->
+        <!-- Shown for a token whose mint() anybody can call. There used to be a
+             button here; see the note for why there is not one now. -->
         <div id="faucet" style="display:none;margin-bottom:12px">
-          <label>Get test tokens</label>
-          <div style="display:flex;gap:8px">
-            <input id="faucet-amt" placeholder="1000" style="flex:1" />
-            <button id="faucet-go" class="ghost">Mint</button>
-          </div>
-          <p class="small" id="faucet-note" style="margin-top:5px"></p>
+          <p class="small" id="faucet-note" style="margin:0"></p>
         </div>
         <label id="amt-label">Amount (KHRt)</label>
         <input id="amt" placeholder="e.g. 1,000.00" />
@@ -464,13 +460,20 @@ async function ensureAllowance(signer, me, amount) {
   }
 
   /**
-   * A faucet, but only where one honestly exists.
+   * WHERE THE FAUCET WENT.
    *
    * The stand-in dollar is Aave's MintableERC20, whose mint() has NO access
-   * control — anyone can already call it. Showing a button does not grant a
-   * permission, it exposes one. KHRt's issuance is role-gated, so the button
-   * must not appear there and pretend otherwise; the probe below is a
-   * staticCall, so what is offered is whatever the chain will actually allow.
+   * control, so this page could offer a button and the chain would honour it.
+   * That was the problem rather than the feature: a dollar anybody can create
+   * without limit has an arbitrary supply, which made its pool price meaningless
+   * and made it worthless as the collateral this market nevertheless accepted at
+   * 75% LTV. CSB now ORIGINATES foreign currency against locked riel instead
+   * (/currency.html), so the button is gone.
+   *
+   * The probe stays, and so does the warning it triggers. Removing a button does
+   * not remove a permission: the token's mint() is still open to anyone with an
+   * RPC connection, and this market still takes it as collateral. Saying so where
+   * the reserve is selected is more use than saying nothing.
    */
   async function refreshFaucet() {
     const box = $("faucet");
@@ -484,33 +487,22 @@ async function ensureAllowance(signer, me, amount) {
     box.style.display = "";
     // The consequence, not just the fact. An unlimited-mint token accepted as
     // collateral means the borrowable side of this market is only as safe as
-    // everyone's restraint — which is worth saying next to the button that mints
-    // it, rather than in a document nobody opens.
+    // everyone's restraint — which is worth saying where the reserve is chosen,
+    // rather than in a document nobody opens.
     $("faucet-note").innerHTML = `<b>${ASSET.symbol} can be minted by anyone</b>, in any amount — `
-      + `it is a test token with no issuance control, which is why this button works at all. `
-      + `It is also accepted as <b>collateral</b> here, so anyone could mint a large amount, `
-      + `post it, and borrow out the other side of this market. That is fine on a permissioned `
-      + `testnet where every participant is known and nothing is worth anything; it would not `
-      + `be fine anywhere else. Treat its supply, and any price derived from it, as arbitrary.`;
+      + `it is a test token with no issuance control. It is also accepted as <b>collateral</b> `
+      + `here, so anyone could mint a large amount, post it, and borrow out the other side of `
+      + `this market. That is why the faucet that used to sit here was removed, and why this `
+      + `reserve should be treated as retired: CSB issues foreign currency against locked riel `
+      + `now — see <a href="currency.html">khUSD and khJPY</a>. Removing the button did not `
+      + `close the mint, so treat this token's supply, and any price derived from it, as `
+      + `arbitrary. The reserve stays selectable so anyone who already supplied can withdraw.`;
   }
   // First render, now that ASSET is set. Doing this at the top of boot — where
   // it used to be — would read a null asset.
   await refreshMarket();
   await refreshMe();
   await refreshFaucet();
-
-  $("faucet-go").onclick = () => run(async () => {
-    if (!window.ethereum) throw new Error("No wallet detected in this browser.");
-    const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
-    const amount = parseAsset($("faucet-amt").value || "1000");
-    if (!amount || amount <= 0n) throw new Error("Enter an amount to mint.");
-    const t = new ethers.Contract(ASSET.underlying,
-      ["function mint(uint256) returns (bool)"], signer);
-    const tx = await t.mint(amount, await feeOverrides());
-    await tx.wait();
-    await refreshMe(true); await refreshMarket();
-    return `Minted ${fmtAsset(amount)} ${ASSET.symbol} to your wallet. Tx ${shortHash(tx.hash)}`;
-  });
 
   $("do-repay").onclick = () => run(async () => {
     const { signer, amount, me } = await signerAndAmount();
