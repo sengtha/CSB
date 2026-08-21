@@ -423,6 +423,75 @@ describe("Grove — anchored records, licensed verifiers, and survival-based ple
       await expect(title.connect(f.groveAuthority).mint(f.groveAuthority.address, 1_000_000n))
         .to.be.revertedWithCustomError(title, "AccessControlUnauthorizedAccount");
     });
+
+    /*
+     * The test above passed while the property it names was false, which is why
+     * these exist. It checks that a door is locked in a room where the same
+     * person holds the key cabinet: AccessControl administers every role with
+     * DEFAULT_ADMIN_ROLE unless _setRoleAdmin says otherwise, nothing in
+     * contracts/ calls _setRoleAdmin, and _deployTitle used to hand
+     * DEFAULT_ADMIN_ROLE to _msgSender() — the grove authority registering the
+     * grove. Two transactions closed the gap: grantRole(AGENT_ROLE, self), then
+     * whichever agent power you wanted.
+     *
+     * Assert on the capability, not on the door.
+     */
+    it("does not let the grove authority administer the title's roles", async function () {
+      const f = await deploy();
+      await anchorAndConfirm(f, OBS(1), 500);
+      const title = await registerGrove(f);
+      const AGENT = await title.AGENT_ROLE();
+      const DEFAULT_ADMIN = await title.DEFAULT_ADMIN_ROLE();
+
+      // AGENT_ROLE is still administered by DEFAULT_ADMIN_ROLE — unchanged, and
+      // deliberately so; the fix is WHO holds it, not making it unassignable.
+      expect(await title.getRoleAdmin(AGENT)).to.equal(DEFAULT_ADMIN);
+      expect(await title.hasRole(DEFAULT_ADMIN, f.groveAuthority.address)).to.equal(false);
+      expect(await title.hasRole(DEFAULT_ADMIN, f.council.address)).to.equal(true);
+
+      await expect(title.connect(f.groveAuthority).grantRole(AGENT, f.groveAuthority.address))
+        .to.be.revertedWithCustomError(title, "AccessControlUnauthorizedAccount");
+    });
+
+    it("blocks the full escalation: mint, burn, freeze and pause", async function () {
+      const f = await deploy();
+      await anchorAndConfirm(f, OBS(1), 500);
+      const title = await registerGrove(f);
+      const AGENT = await title.AGENT_ROLE();
+      const ga = title.connect(f.groveAuthority);
+
+      // The self-grant is the whole attack; without it every power below is out
+      // of reach. AGENT_ROLE gates mint, burn, setAddressFrozen and setPaused.
+      await expect(ga.grantRole(AGENT, f.groveAuthority.address))
+        .to.be.revertedWithCustomError(title, "AccessControlUnauthorizedAccount");
+
+      for (const call of [
+        ga.mint(f.groveAuthority.address, 1_000_000n),
+        ga.burn(f.farmer.address, 1n),
+        ga.setAddressFrozen(f.farmer.address, true),
+        ga.setPaused(true),
+      ]) {
+        await expect(call).to.be.revertedWithCustomError(title, "AccessControlUnauthorizedAccount");
+      }
+
+      // And the correction still works, which is the half that used to break:
+      // an unbacked mint to a non-steward wedges _sync on SupplyDriftUnresolved.
+      const [, , inSync] = await f.registry.supplyStatus(PLOT);
+      expect(inSync).to.equal(true);
+      await f.registry.syncSupply(PLOT);
+      expect(await title.totalSupply()).to.equal(500n);
+    });
+
+    it("lets the council retarget the admin of titles deployed afterwards", async function () {
+      const f = await deploy();
+      await expect(f.registry.connect(f.groveAuthority).setTitleAdmin(f.groveAuthority.address))
+        .to.be.revertedWithCustomError(f.registry, "AccessControlUnauthorizedAccount");
+      await expect(f.registry.connect(f.council).setTitleAdmin(ethers.ZeroAddress))
+        .to.be.revertedWithCustomError(f.registry, "ZeroTitleAdmin");
+      await expect(f.registry.connect(f.council).setTitleAdmin(f.arbiter.address))
+        .to.emit(f.registry, "TitleAdminChanged");
+      expect(await f.registry.titleAdmin()).to.equal(f.arbiter.address);
+    });
   });
 
   // ========================================================== 4. pledge

@@ -77,6 +77,7 @@ contract GroveTitleRegistry is AccessControl {
     event GroveDeactivated(bytes32 indexed plotId, address indexed token, bytes32 reason);
     event GroveReactivated(bytes32 indexed plotId, address indexed token);
     event StewardChanged(bytes32 indexed plotId, address indexed oldSteward, address indexed newSteward);
+    event TitleAdminChanged(address indexed oldAdmin, address indexed newAdmin);
 
     error GroveAlreadyRegistered(bytes32 plotId, address token);
     error UnknownGrove(bytes32 plotId);
@@ -85,6 +86,7 @@ contract GroveTitleRegistry is AccessControl {
     error NoVerifiedRecord(bytes32 plotId);
     error GroveInactive(bytes32 plotId);
     error SupplyDriftUnresolved(bytes32 plotId, uint256 shortfall, uint256 stewardBalance);
+    error ZeroTitleAdmin();
 
     constructor(
         IdentityRegistry identity_,
@@ -96,8 +98,41 @@ contract GroveTitleRegistry is AccessControl {
         identity = identity_;
         enforcement = enforcement_;
         anchorRegistry = anchorRegistry_;
+        titleAdmin = councilAdmin;
         _grantRole(DEFAULT_ADMIN_ROLE, councilAdmin);
         _grantRole(GROVE_AUTHORITY_ROLE, groveAuthority);
+    }
+
+    /**
+     * @notice Who receives DEFAULT_ADMIN_ROLE on each newly deployed GroveTitle.
+     *
+     * @dev This used to be `_msgSender()` — the grove authority calling
+     *      registerGrove — which handed the office that registers groves the
+     *      power to administer every role on the token it had just created.
+     *      Because AccessControl administers every role with DEFAULT_ADMIN_ROLE
+     *      unless told otherwise, and nothing here calls `_setRoleAdmin`, that
+     *      party could grant itself AGENT_ROLE and then mint against no anchored
+     *      count, burn a holder's shares, freeze an address, or pause the token
+     *      — and, because `_sync` burns only from the steward, an unbacked mint
+     *      to any other address wedges `syncSupply` on SupplyDriftUnresolved
+     *      permanently, disabling the correction that was supposed to police it.
+     *
+     *      It is the council's, and settable by the council, rather than fixed
+     *      at deployment: an immutable reference to whoever administers a rule
+     *      is the failure mode docs/grove-plot-identity.md and the architecture
+     *      supplement both record — a later council would otherwise inherit
+     *      nothing and have to redeploy, forking the perimeter instead of
+     *      replacing it. Existing titles are unaffected by a change here; the
+     *      council already holds DEFAULT_ADMIN_ROLE on each of them and can
+     *      re-point them individually.
+     */
+    address public titleAdmin;
+
+    /// @notice Council-only. Changes who administers titles deployed AFTER this.
+    function setTitleAdmin(address newAdmin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newAdmin == address(0)) revert ZeroTitleAdmin();
+        emit TitleAdminChanged(titleAdmin, newAdmin);
+        titleAdmin = newAdmin;
     }
 
     // ------------------------------------------------------------- issuance
@@ -151,7 +186,11 @@ contract GroveTitleRegistry is AccessControl {
     /// @dev Split out to keep the stack shallow. Agent powers go to the
     ///      registry itself, because supply is a mechanical function of the
     ///      anchored record and must not be a discretionary power anyone holds.
-    ///      Administrative control of the token goes to the registrar.
+    ///      Administrative control of the token goes to `titleAdmin` — the
+    ///      council, not the registrar. Granting AGENT_ROLE to the registry is
+    ///      necessary and was never sufficient: whoever administers the token
+    ///      can grant that role onward to themselves, so the two offices have to
+    ///      be different parties for the sentence above to mean anything.
     function _deployTitle(RegisterParams calldata p) private returns (address) {
         GroveTitle t = new GroveTitle(
             GroveTitle.Config({
@@ -163,7 +202,7 @@ contract GroveTitleRegistry is AccessControl {
                 minimumTier: p.minimumTier,
                 identity: identity,
                 enforcement: enforcement,
-                authorityAdmin: _msgSender(),
+                authorityAdmin: titleAdmin,
                 agent: address(this)
             })
         );
