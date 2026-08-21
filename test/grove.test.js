@@ -453,7 +453,7 @@ describe("Grove — anchored records, licensed verifiers, and survival-based ple
         .to.be.revertedWithCustomError(title, "AccessControlUnauthorizedAccount");
     });
 
-    it("blocks the full escalation: mint, burn, freeze and pause", async function () {
+    it("blocks the grove authority's escalation: mint, burn, freeze and pause", async function () {
       const f = await deploy();
       await anchorAndConfirm(f, OBS(1), 500);
       const title = await registerGrove(f);
@@ -480,6 +480,44 @@ describe("Grove — anchored records, licensed verifiers, and survival-based ple
       expect(inSync).to.equal(true);
       await f.registry.syncSupply(PLOT);
       expect(await title.totalSupply()).to.equal(500n);
+    });
+
+    /*
+     * The escalation is relocated, not eliminated, and the name of the test above
+     * has to say whose escalation it blocks or it repeats the sin of the one it
+     * replaced. The council holds DEFAULT_ADMIN_ROLE on every title and can do
+     * exactly what the grove authority no longer can. That is the design — the
+     * council is the trusted root — but a trust assumption nobody asserts is a
+     * trust assumption nobody notices, so assert it. If this test ever starts
+     * failing, the council's powers changed and somebody should know.
+     */
+    it("relocates those powers to the council rather than removing them", async function () {
+      const f = await deploy();
+      await anchorAndConfirm(f, OBS(1), 500);
+      const title = await registerGrove(f);
+      const AGENT = await title.AGENT_ROLE();
+
+      await title.connect(f.council).grantRole(AGENT, f.council.address);
+
+      // One bound survives and is worth stating, because it caught this test:
+      // the recipient still has to clear the identity gate. The council can mint
+      // against no anchored count, but not to an address the registry does not
+      // know — which is not much of a limit when it can mint to any address that
+      // is registered, but it is the reason an escalation cannot end in a
+      // stranger's wallet.
+      await expect(title.connect(f.council).mint(f.council.address, 1_000n))
+        .to.be.revertedWithCustomError(title, "NotVerified");
+
+      await title.connect(f.council).mint(f.ngo.address, 1_000n);
+      expect(await title.totalSupply()).to.equal(1_500n);
+
+      // And it wedges the correction in exactly the way the old defect did:
+      // _sync burns only from the steward, so shares elsewhere are unreachable.
+      const [, , inSync, reason] = await f.registry.supplyStatus(PLOT);
+      expect(inSync).to.equal(false);
+      expect(reason).to.contain("sold on");
+      await expect(f.registry.syncSupply(PLOT))
+        .to.be.revertedWithCustomError(f.registry, "SupplyDriftUnresolved");
     });
 
     it("lets the council retarget the admin of titles deployed afterwards", async function () {
