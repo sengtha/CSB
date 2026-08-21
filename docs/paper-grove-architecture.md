@@ -40,6 +40,12 @@ survived a first review and failed a second. A design paper cannot be
 evidence-based. It can still be wrong about its own artefact, and this is the
 device for not being.
 
+A fifth was caught by something else, and the distinction matters more than the
+count. It was not a claim this apparatus could have tested: the disproving line
+was already quoted in this paper, and the error was reasoning past it rather than
+missing it. §0.4 records what did catch it, which was a reader disagreeing out
+loud. The apparatus is necessary and it is not sufficient.
+
 | Marker | Meaning |
 |---|---|
 | `[SPECIFIED]` | The design states it. No claim that code implements it. |
@@ -190,6 +196,34 @@ identically. That was wrong — `provenanceLabel` distinguishes them at
 from reading one call site rather than all of them. §5.4 now states the narrower
 true claim. The same class of error produced an earlier mis-description of
 `refundByArbiter`, taken from its doc comment rather than its body.
+
+**One correction is of a different kind, and is the reason this subsection
+exists.** Asked whether losing a plot salt would mean losing payment, the author
+answered that in general it would not: `claimMilestone` takes an observation id
+rather than a plot name, so a record already anchored stays claimable without the
+salt. That is true of exactly one case — a milestone whose window is already open,
+whose qualifying record is already anchored, verified and unclaimed — and false of
+a pledge.
+
+`GrovePledge.sol:253` refuses any proof anchored before the milestone's
+`notBefore`, with the reason in the comment immediately above it (`:251-252`):
+*"The proof has to be NEWER than the milestone, or an old healthy record pays out
+every future survival check."* And `:186` requires each milestone's
+`notBefore` to be at or after the previous milestone's `deadline`, so a record
+anchored in time for milestone N is by construction too old for milestone N+1. One
+anchor can never serve two milestones. Every milestone therefore needs its own
+fresh anchor, and so its own `plotId`, and so the salt, for the whole life of a
+pledge. **A lost salt is a lost payment** — which was the claim being contradicted.
+
+What makes this one worth separating: the other four errors came from trusting a
+doc comment, or from reading too few call sites. Here the disproving line was in
+output that had just been read, quoted in the same document, in the section
+(§4.4) that exists to explain that very check. The failure was not missing
+evidence but reasoning past it — noticing that the function signature takes an
+observation id, and stopping before asking which observation ids the function
+will accept. A method that catches the first four does not catch this one, and
+nothing in this paper's apparatus would have caught it either; a reader
+disagreeing out loud did.
 
 **Not verified at all:** the citations in §2 — four `[CITE]` markers there, nine
 across the paper excluding the legend row. No reference has been invented in
