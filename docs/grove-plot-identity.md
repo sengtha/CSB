@@ -224,13 +224,49 @@ seed phrase", with nothing new to lose.
 
 Two costs, and the first is a blocker until checked:
 
-1. **It depends on signature determinism.** RFC 6979 makes ECDSA deterministic in
-   principle, but whether every wallet a grower actually uses produces a
-   byte-identical `personal_sign` for the same message is an implementation
-   question. If it is not deterministic, the scheme fails *silently* — the grower
-   gets a different plotId and believes she has lost her plot. **I could not
-   resolve this**, and it must be tested against real wallets before this option is
-   costed against the others.
+1. **It depends on signature determinism. Half of this is now settled.** RFC 6979
+   makes ECDSA deterministic in principle. Measured with ethers v6 — 200
+   signatures of the same message by the same key:
+
+   ```
+   distinct results:          1
+   deterministic:             true
+   differs across keys:       true
+   differs across plots:      true
+   survives mnemonic restore: true
+   ```
+
+   All four properties the scheme needs hold, and the fourth is the one the whole
+   recovery argument rests on: a wallet rebuilt from its seed phrase reproduces
+   the signature byte for byte, so it reproduces the salt, so it reproduces the
+   `plotId`.
+
+   **What is still open is the half that matters in the field.** That result is a
+   library, not a wallet. MetaMask, Trust, Rainbow and whatever a grower actually
+   installs each implement `personal_sign` themselves, and a wallet that adds
+   entropy — or normalises the message differently, or changes either across a
+   version bump — breaks the scheme *silently*: the grower gets a different
+   `plotId` and concludes she has lost her plot. The failure is indistinguishable
+   from the loss it was meant to prevent, which is why this cannot be assumed.
+
+   Anyone holding a real wallet can close it in about a minute. Connect the
+   wallet, open the console, and run:
+
+   ```js
+   const [a] = await ethereum.request({ method: "eth_requestAccounts" });
+   const m = "grove-plot-salt-v1|plot/peam-krasop/mangrove-01";
+   const s = new Set();
+   for (let i = 0; i < 5; i++) {
+     s.add(await ethereum.request({ method: "personal_sign", params: [m, a] }));
+   }
+   console.log(s.size === 1 ? "deterministic" : `NON-DETERMINISTIC (${s.size} results)`);
+   ```
+
+   Test each wallet the deployment would support, and each on more than one
+   version. One non-deterministic wallet does not merely exclude that wallet — it
+   makes the scheme unsafe to offer at all, because a grower cannot be expected to
+   know which wallet she used two years ago. `[PARTIAL — library deterministic,
+   wallets untested]`
 2. **It requires a wallet at plot-creation time.** Grove's stated contract is that
    the phone is the source of truth with no account and no network (SPEC §1). Tying
    plot identity to a chain account contradicts that for every grower, including
@@ -286,8 +322,11 @@ ships, ship B, with `label` absent by default and no bare-name lookup path.
 **Settle recovery first.** Both changes convert a risk the grower can already
 mitigate by choosing a better name into one she cannot mitigate at all, and the
 failure mode ends in an unclaimable pledge against living trees. The wallet-derived
-salt is the option worth pricing, and it is blocked on the determinism question
-above.
+salt is the option worth pricing, and it is now blocked on a narrower question
+than it was: the library half of the determinism problem is measured and holds,
+including reproduction from a seed phrase, so what remains is testing the wallets
+a grower would actually install — about a minute each, with the snippet in the
+recovery section.
 
 Until then the shipped position stands and is honest: the interface says a short
 name can be worked out from its hash, and advises picking one the grower would not
