@@ -285,6 +285,34 @@ be read as describing that commit. The escalation was also **wider than §4.2
 states**: `AGENT_ROLE` gates `burn`, `setAddressFrozen` and `setPaused` as well as
 `mint`, so the self-grant yielded control of the asset, not only its supply.
 
+**What the fix buys is separation, not removal, and a revision must not say
+otherwise.** §4.2 recommends passing the council "so that token governance and
+grove registration are not the same office", and that is exactly what was done —
+two offices where there was one. The powers themselves are unchanged: the council
+holds `DEFAULT_ADMIN_ROLE` on every title and can grant itself `AGENT_ROLE`, mint
+against no anchored count, burn, freeze and pause, and wedge `syncSupply` on
+`SupplyDriftUnresolved` in precisely the way the original defect did. That is the
+design — the council is the trusted root — but I1 does not become absolute, and a
+revised §4.2 that reads as though it does would replace a disclosed defect with an
+undisclosed assumption. The relocation is now asserted in the test suite rather
+than left implicit, so a future change to the council's powers fails a test.
+
+One bound survives and was found by writing that assertion rather than by reading
+the contract: `GroveTitle` gates the recipient on the identity registry, so a mint
+reverts `NotVerified` for an unregistered address. An escalation cannot end in a
+stranger's wallet. That is a weak limit — any registered address will do — but it
+is real and was not stated anywhere.
+
+**§7.1's adversary table has no council row, and the capability moved into it.**
+The table models a "Grove authority" whose powers this fix removes. It does not
+model the council at all, in a system where the council is `DEFAULT_ADMIN_ROLE`
+on the identity registry, the enforcement registry, the anchor, the title
+registry and now every title. A threat model that omits its own root of trust is
+incomplete in the direction that matters least under a single-key deployment,
+where every role is one key anyway, and most under the separated deployment the
+architecture is written for. A revision should add the row and state plainly what
+constrains that party: nothing on chain, and the identity gate on recipients.
+
 **Two of §2's four citation gaps have been sourced** — §2.1 (Chave et al. 2014)
 and §2.3 (Probst et al. 2024; West et al. 2023). §2.2 (digital twins) and §2.4
 (EUDR) remain genuinely unsourced.
