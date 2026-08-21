@@ -335,8 +335,16 @@ const server = http.createServer(async (req, res) => {
     const cors = { "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=6" };
     if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
     try {
+      // `observation` is the preferred way in: it is a content hash that is
+      // already public, and it spares the verifier's page from ever handling the
+      // plot's name. `plot` (a 32-byte key, never the name) stays for CamboVerse
+      // and anyone already using it.
       const plot = url.searchParams.get("plot");
-      const body = plot
+      const observation = url.searchParams.get("observation");
+      const body = observation
+        ? await grove.cached(`obs:${observation}`,
+            () => grove.grovePlotByObservation(RPC_URL, loadDeployments(), observation))
+        : plot
         ? await grove.cached(`plot:${plot}`, () => grove.grovePlot(RPC_URL, loadDeployments(), plot))
         : await grove.cached("stats", () => grove.groveStats(RPC_URL, loadDeployments()));
       send(res, body?.error ? 400 : 200, body, cors);

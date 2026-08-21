@@ -251,6 +251,42 @@ const riel = (units) => (Number(units) / 100).toFixed(2);
  *                  is deliberately not on chain: a garden's name is often the
  *                  owner's name.
  */
+/**
+ * The same plot payload, reached from an observation id instead of a plot key.
+ *
+ * Why this exists: a verifier used to be identified a grove by NAME, which the
+ * page then hashed. That works, but it puts the name in the input, in the query
+ * string when the lookup is shared as a link, and therefore in browser history,
+ * referrer headers, and this server's request log. An observation id leaks
+ * nothing extra — it is a content hash that is already public on chain and in
+ * every Grove feed — and the anchor itself carries the plotId (GroveAnchor.sol
+ * Anchor.plotId, field 0), so the name is not needed to answer the question.
+ *
+ * Note this is only a transport improvement. It does NOT make a plot name
+ * private: a short name is still recoverable from an anchored plotId by anyone
+ * who tries, and iAny's publish worker serves the name in clear for published
+ * records. See docs/grove-plot-identity.md.
+ */
+async function grovePlotByObservation(rpcUrl, deployments, observationIdHex) {
+  const id = String(observationIdHex ?? "").trim();
+  if (!/^0x[0-9a-fA-F]{64}$/.test(id)) {
+    return { error: "observation must be a 0x-prefixed 32-byte id" };
+  }
+  const d = deployments ?? {};
+  const anchorAddr = d.contracts?.GroveAnchor;
+  if (!anchorAddr) return { available: false, reason: "GroveAnchor is not deployed on this chain" };
+
+  const c = caller(makeRpc(rpcUrl));
+  const anchor = decodeAnchor(await c(anchorAddr, SEL.anchorOf + bytes32(id)));
+  // decodeAnchor returns null on a zero anchoredAt, which is what an unknown
+  // observation id reads as — there is no separate "not found" to distinguish.
+  if (!anchor || anchor.plotId === ZERO32) {
+    return { available: true, anchored: false, observation: id, knownObservation: false };
+  }
+  const out = await grovePlot(rpcUrl, deployments, anchor.plotId);
+  return out?.error ? out : { ...out, knownObservation: true };
+}
+
 async function grovePlot(rpcUrl, deployments, plotIdHex) {
   if (!/^0x[0-9a-fA-F]{64}$/.test(String(plotIdHex ?? ""))) {
     return { error: "plot must be a 0x-prefixed 32-byte hash" };
@@ -578,4 +614,4 @@ async function cached(key, fn) {
   return value;
 }
 
-module.exports = { grovePlot, groveStats, groveDemo, groveCheck, groveTitles, cached };
+module.exports = { grovePlot, grovePlotByObservation, groveStats, groveDemo, groveCheck, groveTitles, cached };
