@@ -91,10 +91,30 @@ one decides what an agronomist's signature is good for.
 ### 3.2 `GroveAnchor` — the record, and who went to look
 
 `anchor(observationId, plotId, prevId, liveCount, species)` commits a Grove
-record's **content hash** and nothing else. No GPS, no photo, no device key, no
-plot name — `plotId` is `keccak256` of the plot string. A farmer's fruit trees
-are worth stealing, and a permissioned national chain is still readable by
-everyone on it.
+record's **content hash** and nothing else. No GPS, no photo, no device key, and
+no plot name *as text* — `plotId` is `keccak256` of the plot string, computed on
+the device. A farmer's fruit trees are worth stealing, and a permissioned
+national chain is still readable by everyone on it.
+
+**The plot name is not protected by that hash, and the interface now says so.**
+Names have to be short, memorable and speakable, because a verifier types one
+into a phone while standing in a field — `home-garden-01` and
+`plot/peam-krasop/mangrove-01` are our own examples. A wordlist of plausible
+names crossed with a two-digit index is a few million candidates, which is
+seconds of hashing against the anchored `plotId`s. Set beside the `liveCount` and
+`species` committed in the same anchor, what a reader recovers is an addressable
+inventory of a grower's most stealable assets. Hashing in the browser keeps the
+name from the app server; it does nothing about a hash published on a ledger
+every permitted party can read.
+
+The fix is a **salted commitment** — `plotId = keccak256(plot ‖ salt)`, with the
+salt held on the device and disclosed to a verifier on the visit. It is not done:
+it changes the derivation in `iAny grove/core/csb.ts`, the name→plot lookup in
+every consumer, and the recovery story when a phone is lost, so it is a change
+across three repositories rather than a line edit. Until it lands, `/anchor.html`,
+`/verify.html` and iAny's `/garden` panel state the limit plainly and advise
+choosing a name the grower would not mind a stranger guessing. This is an
+interim position, stated deliberately — not an oversight.
 
 Three rules do the work:
 
