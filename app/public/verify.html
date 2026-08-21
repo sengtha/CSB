@@ -70,14 +70,23 @@
         that makes it cheap. Fix is a salted commitment in iAny
         grove/core/csb.ts; deliberately out of scope for this copy change.
       -->
-      <p class="note">Type the plot name the grower gave you. It is hashed in your
-        browser and the name itself is never sent — but that hash goes on chain,
-        and a short everyday name can be worked back out of it. Treat a plot name
-        as something a stranger may eventually learn, and say so to any grower who
-        is choosing one.</p>
+      <p class="note"><strong>Preferred:</strong> paste the record id the grower's
+        phone shows you, or open the link in their QR code. The record id is a
+        content hash that is already public, so this route never puts the grove's
+        name into this page, the address bar, or a server log.</p>
+      <div class="row">
+        <input id="obs" placeholder="record id, 0x… (64 hex characters)" spellcheck="false" />
+        <button id="obs-go">Look up</button>
+      </div>
+
+      <p class="note" style="margin-top:12px">If all you were given is the grove's
+        name, you can still look it up. It is hashed in your browser and the name
+        itself is never sent — but that hash goes on chain, and a short everyday
+        name can be worked back out of it. Treat a plot name as something a
+        stranger may eventually learn, and say so to any grower choosing one.</p>
       <div class="row">
         <input id="plot" placeholder="plot name, exactly as the grower wrote it" spellcheck="false" />
-        <button id="plot-go">Look up</button>
+        <button id="plot-go">Look up by name</button>
       </div>
       <div id="found"></div>
     </div>
@@ -175,29 +184,57 @@ async function myAddress() {
   catch (_) { return null; }
 }
 
-async function lookup(plotName) {
+/**
+ * Look a grove up, by record id or by name.
+ *
+ * Prefer `{ observation }`. The record id is a content hash already published on
+ * chain and in every Grove feed, and GroveAnchor's Anchor struct carries the
+ * plotId, so the grove's NAME never has to be typed here, put in a shareable
+ * link, or written to a request log. `{ name }` is kept because a verifier is
+ * sometimes handed nothing else.
+ *
+ * What hashing the name here does and does not buy: the chain never receives the
+ * name — CSB only ever sees keccak256 of it — but a short everyday name is
+ * recoverable FROM that hash by anyone who tries, and iAny's publish worker
+ * serves the name in clear for any published record. So this is about what this
+ * page transmits, not a privacy guarantee. See docs/grove-plot-identity.md.
+ */
+async function lookup(source) {
+  const src = typeof source === "string" ? { name: source } : (source ?? {});
+  const byName = typeof src.name === "string";
   const box = $("found");
   $("verdict-card").style.display = "none";
   box.innerHTML = `<div class="out">Reading the chain…</div>`;
   try {
-    // The plot's NAME is hashed here and never sent as text — the chain files
-    // groves under keccak256(plot) and never learns what it is called.
-    const key = ethers.id(plotName);
-    const s = await (await fetch(`/grove?plot=${key}`)).json();
+    const key = byName ? ethers.id(src.name) : null;
+    const s = await (await fetch(byName
+      ? `/grove?plot=${key}`
+      : `/grove?observation=${encodeURIComponent(src.observation)}`)).json();
+    if (s?.error) throw new Error(s.error);
     if (!s?.available) throw new Error(s?.reason || "could not read the chain");
     if (!s.anchored) {
-      box.innerHTML = `<div class="out no">No grove with that name is anchored on this chain.
+      box.innerHTML = byName
+        ? `<div class="out no">No grove with that name is anchored on this chain.
         <span class="note">Check the spelling with the grower — the name is hashed, so one
         different character is a different plot. The grower anchors it at
+        <a href="anchor.html">Anchor</a>.</span></div>`
+        : `<div class="out no">That record id is not anchored on this chain.
+        <span class="note">Check you copied the whole id — 64 hex characters after
+        <span class="addr">0x</span>. The grower anchors a record at
         <a href="anchor.html">Anchor</a>.</span></div>`;
       return;
     }
     const h = s.head;
-    current = { plotName, plot: key, head: h, status: s };
+    const plotKey = s.plot ?? key;
+    current = { source: src, plotName: byName ? src.name : null, plot: plotKey, head: h, status: s };
 
     box.innerHTML = `
       <table class="kv">
-        <tr><th>Grove</th><td>${esc(plotName)} <span class="note">→ ${esc(key.slice(0, 14))}…</span></td></tr>
+        <tr><th>Grove</th><td>${byName
+          ? `${esc(src.name)} <span class="note">→ ${esc(String(plotKey).slice(0, 14))}…</span>`
+          : `<span class="addr">${esc(String(plotKey).slice(0, 14))}…</span>
+             <span class="note">(found from the record id — the grove's name was never sent)</span>`
+        }</td></tr>
         <tr><th>Plants the grower recorded</th><td><strong>${h.liveCount}</strong> ${esc(h.species || "")}</td></tr>
         <tr><th>On chain since</th><td>${day(h.anchoredAt)}
           <span class="note">(block time — not the phone's clock)</span></td></tr>
@@ -276,7 +313,7 @@ async function attest(confirm) {
       <span class="note">${confirm
         ? "This record now counts toward verification, and your licence is behind it."
         : "Verification is withheld while this stands, whatever confirmations exist."}</span></div>`;
-    setTimeout(() => lookup(current.plotName), 3000);
+    setTimeout(() => lookup(current.source), 3000);
   } catch (e) {
     box.innerHTML = e?.code === 4001
       ? `<div class="out info">Cancelled in the wallet — nothing was recorded.</div>`
@@ -287,17 +324,50 @@ async function attest(confirm) {
   btns.forEach((b) => (b.disabled = false));
 }
 
+$("obs-go").onclick = () => {
+  const id = $("obs").value.trim();
+  if (!id) return;
+  if (!/^0x[0-9a-fA-F]{64}$/.test(id)) {
+    $("found").innerHTML = `<div class="out no">That is not a record id.
+      <span class="note">It is <span class="addr">0x</span> followed by 64 hex characters.
+      The grower's phone shows it, and their QR code carries it.</span></div>`;
+    return;
+  }
+  lookup({ observation: id });
+};
+$("obs").addEventListener("keydown", (e) => { if (e.key === "Enter") $("obs-go").click(); });
 $("plot-go").onclick = () => {
   const name = $("plot").value.trim();
-  if (name) lookup(name);
+  if (name) lookup({ name });
 };
 $("plot").addEventListener("keydown", (e) => { if (e.key === "Enter") $("plot-go").click(); });
 $("confirm").onclick = () => attest(true);
 $("dispute").onclick = () => attest(false);
 
-// A deep link from a garden app, or a QR code at the gate.
+/*
+ * A deep link from a garden app, or a QR code at the gate.
+ *
+ * `?obs=` only. This used to accept `?plot=<name>` and look it up, which put a
+ * grove's name — often its owner's name — into the address bar, and from there
+ * into browser history, the referrer header of anything the page links to, and
+ * every server log that saw the request. A record id has none of that problem:
+ * it is a content hash, public by construction, and it resolves to the plot on
+ * chain. Deliberately NOT falling back to `?plot=`: a fallback that still
+ * accepts a name is the path every existing QR code would keep using, which
+ * would leave the leak in place under a new name.
+ */
 const q = new URLSearchParams(location.search);
-if (q.get("plot")) { $("plot").value = q.get("plot"); lookup(q.get("plot")); }
+const deepObs = q.get("obs");
+if (deepObs && /^0x[0-9a-fA-F]{64}$/.test(deepObs.trim())) {
+  $("obs").value = deepObs.trim();
+  lookup({ observation: deepObs.trim() });
+} else if (q.has("plot")) {
+  $("found").innerHTML = `<div class="out no">This link carries a grove <em>name</em> in its
+    address, which this page no longer accepts — a name in a URL ends up in browser
+    history and server logs. <span class="note">Ask the grower for the record id, or use
+    their QR code; or type the name into the second box below, which keeps it out of the
+    address bar.</span></div>`;
+}
 
 if (window.ethereum?.on) window.ethereum.on("accountsChanged", refreshGate);
 </script>
