@@ -171,7 +171,7 @@ function decode() {
       <tr><th>Species</th><td>${esc(d.species || "—")}</td></tr>
       <tr><th>Record hash <span style="font-weight:400">— the record itself stays on your phone</span></th>
           <td class="addr">${esc(d.observationId)}</td></tr>
-      <tr><th>Plot <span style="font-weight:400">— a hash; the chain never learns its name</span></th>
+      <tr><th>Plot <span style="font-weight:400">— a hash; the name is not sent, but a short one can be guessed from it</span></th>
           <td class="addr">${esc(d.plotId)}</td></tr>
       <tr><th>Follows</th><td>${d.prevId === ZERO32
         ? "nothing — this opens the plot's history, and makes you its steward"
