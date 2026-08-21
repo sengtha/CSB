@@ -61,10 +61,22 @@
 
     <div class="card">
       <h2>1 · Find the grove</h2>
+      <!--
+        This note used to say the chain "only ever sees the hash, never the
+        garden's name". For a short name the hash IS the name: plot names must be
+        speakable because you are typing one in a field, so the candidate space
+        is small enough to enumerate against the anchored plotIds in seconds. The
+        placeholder was "home-garden-01", which advertised the very convention
+        that makes it cheap. Fix is a salted commitment in iAny
+        grove/core/csb.ts; deliberately out of scope for this copy change.
+      -->
       <p class="note">Type the plot name the grower gave you. It is hashed in your
-        browser — the chain only ever sees the hash, never the garden's name.</p>
+        browser and the name itself is never sent — but that hash goes on chain,
+        and a short everyday name can be worked back out of it. Treat a plot name
+        as something a stranger may eventually learn, and say so to any grower who
+        is choosing one.</p>
       <div class="row">
-        <input id="plot" placeholder="plot name, e.g. home-garden-01" spellcheck="false" />
+        <input id="plot" placeholder="plot name, exactly as the grower wrote it" spellcheck="false" />
         <button id="plot-go">Look up</button>
       </div>
       <div id="found"></div>

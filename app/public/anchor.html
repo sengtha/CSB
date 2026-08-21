@@ -42,11 +42,24 @@
         phone's word for it and a licensed field verifier has somewhere to put
         their name.
       </p>
+      <!--
+        This paragraph used to end "the chain cannot learn where your garden is",
+        which was false. The plot name is hashed on the device and never sent as
+        text, but the hash is public on chain and plot names are short and
+        speakable by necessity, so a wordlist recovers most of them in seconds —
+        beside the liveCount and species in the same anchor, that is an
+        addressable inventory of what is worth stealing. The fix is a salted
+        commitment (plotId = keccak256(plot ‖ salt)) in iAny grove/core/csb.ts,
+        which spans three repositories and is not part of this copy change.
+      -->
       <p class="note" style="margin-top:10px">
-        Only the hash travels. Not the plot's name, not the photo, not your
-        location, not your device key — the chain cannot learn where your garden
-        is from anything on this page. You sign with your own wallet; nobody here
-        can send it for you.
+        Only hashes travel. Your photo, your coordinates and your device key
+        never leave your phone, and the plot's name is never sent as text. The
+        name's <em>hash</em> is public on the chain, though, and a short everyday
+        name — <span class="addr">home-garden-01</span> — can be worked back out
+        of that hash by anyone willing to spend a minute on it. Until we fix that
+        properly, pick a plot name you would not mind a stranger guessing. You
+        sign with your own wallet; nobody here can send it for you.
       </p>
     </div>
 
