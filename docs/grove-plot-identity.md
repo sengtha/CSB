@@ -118,6 +118,59 @@ would keep using, which leaves the leak in place under a new name.
 
 ---
 
+## A breaks CamboVerse's chain status, and the fix is the same one
+
+Not an aside. It is the second half of the recovery problem wearing different
+clothes, and it settles what the record and the QR code have to carry.
+
+CamboVerse derives the plot key from the name, in **two** places, not one:
+
+| Site | Path | What it does |
+|---|---|---|
+| `csb.ts` `plotStatus` — `:160` pinned, `:165` after `ecf97f4` | read | `const key = plotKey(plot)` → `GET /grove?plot=<key>` |
+| `csb.ts` `anchorCall` — `:210` pinned, `:215` after `ecf97f4` | write | `const plotId = plotKey(obs.plot)` → the anchor calldata it hands the grower |
+
+(Both in `CamboVerse:src/grove/csb.ts`. The note's line numbers are to the pinned
+`0fde2e9`; the copy fix in `ecf97f4` added a comment above `plotStatus` and moved
+both down five lines. Cited by function name so the reference survives the next
+one.)
+
+Under A, neither has the salt, and neither can get it: the viewer holds published
+records, and the salt is deliberately not in them. So the read path computes a key
+no plot was ever filed under and CSB answers `{ available: false }` for **every
+published plot** — no anchored badge, no block timestamp, no verified state, no
+licensed confirmer, no pledge status. The garden still renders, because the
+signed records carry it and the chain is additive by design; it renders with its
+entire provenance layer silently switched off. The write path is worse in kind:
+`anchorCall` would produce calldata for a *different plot*, opening a second
+chain for a garden that already has one, with `plotSteward` frozen on each.
+
+**This is a consequence of the design, not a defect in anything today**, and it
+does not argue against A on its own. What it does is force a decision A cannot
+avoid: **if the plot key is secret, every consumer that today derives it must be
+given it instead.**
+
+That is the same sentence as the recovery answer, and the same fix serves both:
+
+> The `plotId` travels — in the record, and in the grower's QR code — while the
+> salt stays on the phone.
+
+A consumer that receives the `plotId` needs no salt and no name: it can query the
+chain, render the badge, and build anchor calldata. A grower restoring from a
+backup that contains the `plotId` can extend her chain even if the salt is gone,
+because `GroveAnchor` never sees the preimage — it only ever compares 32-byte
+keys. And item 0's verifier flow already works this way.
+
+Two consequences to carry into the design rather than discover later:
+
+- **Publishing the `plotId` is publishing a commitment, not a name** — which is
+  the entire point of B, and is why A and B want the same record-format change.
+  A alone would have to add a `plotId` field to the record for consumers, at
+  which point the format has broken anyway and B is the cheaper destination.
+- **The salt then protects only the preimage**, which nothing needs after
+  creation. That is a good place to be: the secret stops being load-bearing for
+  daily operation, which is what makes losing it survivable.
+
 ## Recovery — the section the decision turns on
 
 This applies to A and B **equally**, so it is not a reason to prefer one.
