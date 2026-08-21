@@ -191,9 +191,69 @@ from reading one call site rather than all of them. §5.4 now states the narrowe
 true claim. The same class of error produced an earlier mis-description of
 `refundByArbiter`, taken from its doc comment rather than its body.
 
-**Not verified at all:** every citation in §2. Nine `[CITE]` markers stand for
-literature that has not been sourced, and no reference in this paper has been
-invented in their place.
+**Not verified at all:** the citations in §2 — four `[CITE]` markers there, nine
+across the paper excluding the legend row. No reference has been invented in
+their place. (Two of the four have since been sourced; see §0.5.)
+
+### 0.5 What has changed since this supplement was written
+
+The supplement is pinned to the commits in §0 and every claim above remains
+accurate about them. Work continued afterwards, and a reader comparing the
+repositories against this document will find differences. They are listed here
+rather than folded in, so the pinning stays honest.
+
+**The plot-name claim was corrected at seven sites, not three.** §8.1 credits
+`CSB@4fae96c` and `iAny@ec91c77` (21 August 2026) with removing the claim that the
+chain cannot learn a grove's name. Those two commits fixed the three surfaces they
+touched; five more instances were still live when that sentence was written —
+CamboVerse `src/grove/csb.ts` and two test comments, iAny `grove/core/csb.ts`'s
+module header and `grove/BRIDGE.md:136`, and CSB's own `docs/grove.md:237` and
+`app/public/anchor.html:174`. All are now fixed, in `CSB@3245244`,
+`CamboVerse@ecf97f4`, `iAny@96b506d` and `CSB@261cfc1`.
+
+Two of those deserve recording as method, not housekeeping. `iAny`'s
+`grove/core/csb.ts` asserted the guarantee in its module header and denied it in
+the `plotKey` comment forty lines below, because `ec91c77` corrected one and did
+not read upward to the other — a file that contradicted itself for a month.
+`app/public/anchor.html` did the same: `4fae96c` rewrote its lead paragraph and
+left the calldata decoder labelling the plot row *"a hash; the chain never learns
+its name"*, on the screen a grower reads immediately before signing. **Fixing half
+a file is worse than fixing none of it**, because the reader who finds the header
+has no reason to scroll to the correction. The general lesson, which the sequence
+paid for six times over: when a claim is wrong, grep every repository for its
+shape before fixing the first instance, not after.
+
+**Verification no longer requires the plot name.** `CSB@3245244` added
+`/grove?observation=<id>`, resolving an observation id to its plot through
+`anchorOf`, and made a record id the primary route in `verify.html`. The page had
+been reading `?plot=<name>` straight out of the query string, which put the name
+into browser history, referrer headers and every server log that saw the request.
+`?plot=` in a deep link is now refused rather than redirected: a fallback that
+still accepted a name would be the path every existing QR code kept using.
+
+**The salted commitment is no longer described as "the fix".** §8.1 recommends it
+as the immediate answer to enumeration. `docs/grove-plot-identity.md` supersedes
+that recommendation, on a fact §8.1 does not state: iAny's publish worker serves
+`plot` **verbatim** in the public feed and takes it in a URL path, so salting the
+on-chain `plotId` protects only growers who never publish — and publishing is what
+the federation is for. The note separates the on-chain problem (A) from the
+record-format problem (B), recommends B, and shows that A alone would switch off
+CamboVerse's entire provenance layer, because the viewer derives the plot key from
+the name in two places and can hold no salt. Recovery is unresolved and is the
+decision both turn on: after either change, a lost salt makes a plot permanently
+unextendable while `plotSteward` still names the grower, and `GrovePledge.claim`
+requires a matching `plotId`, so it is a lost payment against standing trees.
+
+**The role-graph defect of §4.2 is fixed.** `_deployTitle` now seeds each title's
+`DEFAULT_ADMIN_ROLE` from a council-held, council-settable `titleAdmin` rather
+than `_msgSender()`. §4.2, §7.1 and §10 remain accurate about `29baa48` and should
+be read as describing that commit. The escalation was also **wider than §4.2
+states**: `AGENT_ROLE` gates `burn`, `setAddressFrozen` and `setPaused` as well as
+`mint`, so the self-grant yielded control of the asset, not only its supply.
+
+**Two of §2's four citation gaps have been sourced** — §2.1 (Chave et al. 2014)
+and §2.3 (Probst et al. 2024; West et al. 2023). §2.2 (digital twins) and §2.4
+(EUDR) remain genuinely unsourced.
 
 ---
 
