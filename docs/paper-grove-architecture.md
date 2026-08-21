@@ -305,13 +305,42 @@ is real and was not stated anywhere.
 
 **§7.1's adversary table has no council row, and the capability moved into it.**
 The table models a "Grove authority" whose powers this fix removes. It does not
-model the council at all, in a system where the council is `DEFAULT_ADMIN_ROLE`
-on the identity registry, the enforcement registry, the anchor, the title
-registry and now every title. A threat model that omits its own root of trust is
-incomplete in the direction that matters least under a single-key deployment,
-where every role is one key anyway, and most under the separated deployment the
-architecture is written for. A revision should add the row and state plainly what
-constrains that party: nothing on chain, and the identity gate on recipients.
+model the council at all, in a system where the council holds
+`DEFAULT_ADMIN_ROLE` in **six** constructors — `IdentityRegistry.sol:68`,
+`EnforcementRegistry.sol:30`, `AttesterRegistry.sol:74`, `GroveAnchor.sol:138`,
+`GroveTitleRegistry.sol:99` and `GrovePledge.sol:153` — plus every title, via
+`titleAdmin` (`GroveTitle.sol:104`). None of the six calls `_setRoleAdmin`, so in
+each one `DEFAULT_ADMIN_ROLE` administers every other role the contract defines.
+
+**Two of those six carry the consequences, and they are the two an earlier draft
+of this section left out.**
+
+`GrovePledge` defines `ARBITER_ROLE` (`:51`), which gates `releaseByArbiter`
+(`:292`) and `refundByArbiter` (`:308`). §7.3 establishes that `releaseByArbiter`
+checks no window and demands no proof. So the council can grant itself
+`ARBITER_ROLE` and settle any funded pledge in full on day one — **I4 bypassed
+entirely, on the contract that holds the money.**
+
+`AttesterRegistry` defines `REGISTRAR_ROLE` (`:36`), which gates
+`licenseAttester` (`:82`), `setSuspended` (`:105`) and `removeAttester` (`:111`).
+So the council can license its own verifiers and suspend inconvenient ones —
+**I5's accountable witness is accountable to the party being witnessed.** The
+self-attestation refusal in `attest()` raises the cost to two addresses and no
+more.
+
+A threat model that omits its own root of trust is incomplete in the direction
+that matters least under a single-key deployment, where every role is one key
+anyway, and most under the separated deployment the architecture is written for —
+which is the deployment the invariants are about. A revision should add the row
+and state plainly what constrains that party: nothing on chain, and the identity
+gate on recipients.
+
+**How the undercount happened, since it is the same failure this section
+documents elsewhere.** An earlier version of this paragraph said four, having
+grepped the five contracts the sentence itself named rather than all of
+`contracts/`. The check confirmed the prose instead of testing it, which is what
+a check is for. It was caught by a reader who counted independently, and the
+sequence is now familiar: a note about an omission, carrying an omission.
 
 **Two of §2's four citation gaps have been sourced** — §2.1 (Chave et al. 2014)
 and §2.3 (Probst et al. 2024; West et al. 2023). §2.2 (digital twins) and §2.4
