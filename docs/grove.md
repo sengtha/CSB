@@ -234,7 +234,13 @@ virtual grove is worth nothing if the only way to check it is to ask the project
 that drew the badge.
 
 CamboVerse consumes exactly this ([`src/grove/csb.ts`](https://github.com/camboversecenter/CamboVerse/blob/main/src/grove/csb.ts)),
-computing `keccak256(plot)` locally so the plot's name never leaves the browser.
+computing `keccak256(plot)` locally, so the name is never sent as text and this
+endpoint only ever receives the hash. That bounds what is transmitted and is not
+a privacy guarantee — §3.2 says why, and the same paragraph applies here: a short
+name is recoverable from an anchored `plotId`. Verification does not need the
+name at all, and `/verify.html` now prefers a record id
+(`/grove?observation=<id>`), which resolves the plot through `anchorOf` and keeps
+the name out of the page, the URL and this server's log.
 
 ## 6. Deploying it onto a chain that already exists
 
