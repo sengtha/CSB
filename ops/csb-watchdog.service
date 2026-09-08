@@ -11,7 +11,9 @@ Environment=CSB_RPC_URL=http://127.0.0.1:9650/ext/bc/299jCTH4ErmwFMB3ZKa18Ck9EDz
 Environment=CSB_HEALTH_PORT=9650
 Environment=CSB_SUBNET_ID=fgNiKVRTRJFZbCzSUPJMix6YdG2HfpXGf1LP9rQ58b5TU9mJL
 # Warn when a validator's P-Chain fee balance drops below this many AVAX.
-Environment=CSB_MIN_VALIDATOR_BALANCE=0.25
+# 0.6 is a fortnight at the measured 0.042 AVAX/day. It was 0.25 — six days —
+# until the balance hit zero a second time on 2026-09-08.
+Environment=CSB_MIN_VALIDATOR_BALANCE=0.6
 ExecStart=/usr/local/bin/csb-watchdog
 
 # There is deliberately no restart switch. This unit reports and exits; a

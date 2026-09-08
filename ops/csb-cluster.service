@@ -1,0 +1,37 @@
+[Unit]
+Description=CSB Avalanche L1 validator cluster (avalanche-cli local network)
+# The cluster peers with Fuji, so it needs real network before it can bootstrap.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# oneshot + RemainAfterExit: the start script exits once the cluster is up, but
+# the unit stays "active" so `systemctl status csb-cluster` reflects intent
+# rather than the lifetime of a script that has already finished.
+Type=oneshot
+RemainAfterExit=yes
+User=root
+Environment=HOME=/root
+# systemd's default PATH omits ~/bin, which is where avalanche-cli installs.
+Environment=PATH=/root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=CSB_CLUSTER=csb-local-node-fuji
+Environment=CSB_SUBNET_ID=fgNiKVRTRJFZbCzSUPJMix6YdG2HfpXGf1LP9rQ58b5TU9mJL
+
+ExecStart=/usr/local/bin/csb-cluster-start
+
+# A graceful stop on shutdown, so the node closes its database rather than being
+# SIGKILLed at the end of the shutdown timeout. `stop` only — never `destroy`,
+# which deletes the cluster and every contract on it with no undo.
+ExecStop=/bin/sh -c 'PATH=/root/bin:$PATH avalanche node local stop csb-local-node-fuji || true'
+
+# Bootstrapping against Fuji takes minutes, not seconds.
+TimeoutStartSec=900
+TimeoutStopSec=180
+
+# NO Restart=. ops/csb-watchdog.sh documents at length why automatic restarts
+# made every previous CSB outage worse: a node that is up and answering with an
+# error is telling you the cause, and restarting it discards that. This unit
+# covers boot, and boot only.
+
+[Install]
+WantedBy=multi-user.target

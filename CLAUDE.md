@@ -57,6 +57,15 @@ deployed address; the copy in a fresh clone is stale or absent.
   removes its ability to ever restart, and the gap before anyone notices is
   however long until something restarts. This took CSB out on 2026-07-28 and was
   found on 08-02. `ops/csb-upgrade-avalanchego.sh`, `docs/architecture.md` §2.
+- **A reboot.** Nothing started the cluster at boot until `ops/csb-cluster.service`
+  existed. Check with `systemctl status csb-cluster`.
+
+**The two clocks fail together, and that is not a coincidence.** A VM up long
+enough to be rebooted is a VM up long enough to drain the validator balance. On
+2026-09-08 both fired at once, and an hour went into the balance before anyone
+checked whether the processes were alive. `bash ops/csb-nodes.sh` answers both:
+section 1 is processes, section 3 is the balance — and section 3 now falls back
+to Fuji's public API, so it still answers when the node is down.
 
 ## Conventions
 

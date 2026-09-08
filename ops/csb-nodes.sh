@@ -106,30 +106,82 @@ echo "=============== 3. registered L1 validators ==============="
 # The authoritative answer, and the one that matters for whether the chain can
 # finalise. Asked of the P-Chain, not of any node's opinion of itself.
 first_port="${CSB_API_PORT:-9650}"
+# The Fuji P-Chain is PUBLIC, and this validator is registered on it. Asking the
+# local node first is right when it is up — but the moment you most need this
+# number is when the chain is down, and a down node cannot tell you why. Falling
+# back to Fuji's own API means the balance stays readable in exactly the
+# situation the check exists for. Discovered the hard way on 2026-09-08, when
+# the cluster was stopped AND the balance was zero and this section printed
+# nothing but "P-Chain did not answer".
+PUBLIC_P="${CSB_PUBLIC_PCHAIN:-https://api.avax-test.network/ext/bc/P}"
 
-vals=$(curl -s -m 10 -X POST -H 'content-type:application/json' --data "{
-  \"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"platform.getCurrentValidators\",
-  \"params\":{\"subnetID\":\"$SUBNET_ID\"}
-}" "http://127.0.0.1:$first_port/ext/bc/P" 2>/dev/null)
+ask_p() {
+  curl -s -m 15 -X POST -H 'content-type:application/json' --data "{
+    \"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"platform.getCurrentValidators\",
+    \"params\":{\"subnetID\":\"$SUBNET_ID\"}
+  }" "$1" 2>/dev/null
+}
+
+source_used="local node on port $first_port"
+vals=$(ask_p "http://127.0.0.1:$first_port/ext/bc/P")
+case "$vals" in
+  *'"validators"'*) ;;
+  *)
+    echo "Local P-Chain on port $first_port did not answer — asking Fuji directly."
+    vals=$(ask_p "$PUBLIC_P")
+    source_used="$PUBLIC_P"
+    ;;
+esac
+echo "source: $source_used"
 
 if [ -z "$vals" ]; then
-  echo "P-Chain did not answer on port $first_port."
+  echo "Neither the local node nor $PUBLIC_P answered. Check outbound network."
 else
   # nodeID and balance are what matter: a validator with balance 0 has been
   # deactivated under ACP-77 and contributes no stake while still being listed.
+  # Double quotes INSIDE, single quotes OUTSIDE, and no backslash escapes at all.
+  # The previous version escaped its quotes as \" inside an f-string expression,
+  # which Python only permits from 3.12; on the 3.11 this VM runs it is a
+  # SyntaxError, so the parser never executed and the `||` fallback quietly
+  # dumped raw JSON instead — during the one incident it was written for. Every
+  # value is hoisted into a plain variable first so no f-string ever needs a
+  # quote of its own.
+  #
+  # A heredoc would avoid escaping entirely but cannot be used here: `python3 -`
+  # reads the SCRIPT from stdin, so there is no stdin left to pipe the JSON in on.
   printf '%s' "$vals" | python3 -c '
-import json,sys
-try: r = json.load(sys.stdin).get("result", {})
-except Exception: print("unparseable reply:", sys.stdin.read()[:200]); sys.exit()
+import json, sys
+
+try:
+    r = json.load(sys.stdin).get("result", {})
+except Exception:
+    print("unparseable reply from the P-Chain")
+    sys.exit(1)
+
 vs = r.get("validators", [])
-print(f"registered validators: {len(vs)}")
+print("registered validators: %d" % len(vs))
 for v in vs:
-    bal = v.get("balance")
-    try: bal = f"{int(bal)/1e9:.4f} AVAX"
-    except Exception: bal = str(bal)
-    flag = "  <-- ZERO BALANCE: deactivated, contributes no stake" if v.get("balance") in ("0",0) else ""
-    print(f"  {v.get(\"nodeID\")}  weight {v.get(\"weight\")}  balance {bal}{flag}")
-' 2>/dev/null || printf '%s\n' "$vals" | head -c 600
+    raw = v.get("balance")
+    node = v.get("nodeID", "?")
+    weight = v.get("weight", "?")
+    # Absent is NOT zero. Conflating the two is what made the July outage look
+    # like a mempool problem, and the distinction is kept wherever it appears.
+    if raw is None:
+        print("  %s  weight %s  balance not reported" % (node, weight))
+        continue
+    avax = int(raw) / 1e9
+    if avax <= 0:
+        flag = "  <-- ZERO: DEACTIVATED, contributes no stake"
+    elif avax < 0.6:
+        flag = "  <-- LOW: about %.0f days left at the measured drain" % (avax / 0.042)
+    else:
+        flag = ""
+    print("  %s  weight %s  balance %.4f AVAX%s" % (node, weight, avax, flag))
+    if avax < 0.6:
+        vid = v.get("validationID", "<validationID>")
+        print("        avalanche validator increaseBalance --fuji --key csb-deployer \\")
+        print("          --validation-id %s --balance 2" % vid)
+' || { echo "could not parse the reply:"; printf '%s\n' "$vals" | head -c 600; }
 fi
 
 echo

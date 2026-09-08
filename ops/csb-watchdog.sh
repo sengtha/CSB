@@ -57,7 +57,14 @@ CHAIN_ID="${CSB_CHAIN_ALIAS:-299jCTH4ErmwFMB3ZKa18Ck9EDzc99DMD48zkszxcArpaUfTqW}
 # Warn below this many AVAX of validator balance. The fee accrues per second per
 # validator, so this is runway, not a cliff — the point is to be told while
 # topping up is still a one-line command.
-MIN_BALANCE="${CSB_MIN_VALIDATOR_BALANCE:-0.25}"
+#
+# RAISED FROM 0.25 TO 0.6 on 2026-09-08, after the balance reached zero for the
+# second time. The measured drain is about 0.042 AVAX/day, so 0.25 was six days
+# of warning. Six days is enough for a team on a rota and not enough for one
+# person with other work; 0.6 is a fortnight, which survives a holiday. The
+# number is arithmetic against a measured rate, not a feeling — re-derive it if
+# the validator count changes, because the fee is per validator.
+MIN_BALANCE="${CSB_MIN_VALIDATOR_BALANCE:-0.6}"
 
 log() { echo "[$(date -u +%FT%TZ)] $*"; }
 
@@ -108,14 +115,20 @@ for v in vals:
         print(f"!! {node}  balance: 0 — DEACTIVATED. This validator contributes no stake.")
         bad.append(v)
     elif avax < min_balance:
-        print(f"!! {node}  balance: {avax:.4f} AVAX — below {min_balance} AVAX, top up soon.")
+        # Days, not just "below the line". A threshold tells you something is
+        # wrong; runway tells you how long you have, which is the number that
+        # decides whether this waits until Monday.
+        print(f"!! {node}  balance: {avax:.4f} AVAX — below {min_balance} AVAX, "
+              f"about {avax / 0.042:.0f} days left at the measured drain.")
         bad.append(v)
     else:
         print(f"   {node}  balance: {avax:.4f} AVAX  weight {v.get('weight','?')}")
 
 for v in bad:
     print("   fix: avalanche validator increaseBalance --fuji --key csb-deployer \\")
-    print(f"          --validation-id {v.get('validationID','<validationID>')} --balance 1")
+    # 2, not 1: at 0.042 AVAX/day one buys 24 days, which puts the next outage
+    # inside the same month rather than out of it.
+    print(f"          --validation-id {v.get('validationID','<validationID>')} --balance 2")
 
 sys.exit(2 if bad else 0)
 PY
